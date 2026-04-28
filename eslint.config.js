@@ -37,4 +37,13 @@ export default [
       "@typescript-eslint/consistent-type-imports": "error",
     },
   },
+  {
+    // NestJS s'appuie sur `emitDecoratorMetadata` : les imports utilisés comme
+    // types de paramètres de constructeur sont aussi nécessaires à runtime
+    // (DI). On désactive donc la règle pour le backend uniquement.
+    files: ["apps/backend/**/*.ts"],
+    rules: {
+      "@typescript-eslint/consistent-type-imports": "off",
+    },
+  },
 ];
