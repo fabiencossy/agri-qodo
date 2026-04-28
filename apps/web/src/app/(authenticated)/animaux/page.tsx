@@ -1,10 +1,10 @@
 "use client";
 
-import { Beef, Minus, Plus } from "lucide-react";
-import { useState } from "react";
+import { Beef, Check, Minus, Plus } from "lucide-react";
+import { useEffect, useState } from "react";
 import { Breadcrumb } from "@/components/app/breadcrumb";
 import { Button } from "@/components/ui/button";
-import { useAnimauxSummary, useCreateBatch, useRemoveBatch } from "@/lib/animaux";
+import { useAnimauxSummary, useSetEffectif } from "@/lib/animaux";
 import {
   type AnimalCategorie,
   CATEGORIES_ORDER,
@@ -28,8 +28,12 @@ export default function AnimauxPage() {
             </h1>
             <p className="mt-1 text-foreground/70">
               {summary.data
-                ? `${totalActifs} animal${totalActifs > 1 ? "x" : ""} actif${totalActifs > 1 ? "s" : ""} sur l'exploitation`
+                ? `${totalActifs} animau${totalActifs > 1 ? "x" : "l"} actif${totalActifs > 1 ? "s" : ""} sur l'exploitation`
                 : "Chargement…"}
+            </p>
+            <p className="mt-1 text-xs text-foreground/50">
+              Saisis le total désiré par catégorie puis valide. À terme, les bovins seront tirés
+              automatiquement de la BDTA (Identitas).
             </p>
           </div>
         </div>
@@ -54,25 +58,34 @@ export default function AnimauxPage() {
 }
 
 function CategorieRow({ categorie, current }: { categorie: AnimalCategorie; current: number }) {
-  const [delta, setDelta] = useState(1);
-  const createBatch = useCreateBatch();
-  const removeBatch = useRemoveBatch();
-  const isPending = createBatch.isPending || removeBatch.isPending;
+  const [target, setTarget] = useState<number>(current);
+  const setEffectif = useSetEffectif();
 
-  const onAdd = () => {
-    if (delta < 1) return;
-    createBatch.mutate({ categorie, nombre: delta });
-  };
-  const onRemove = () => {
-    if (delta < 1 || delta > current) return;
-    if (!confirm(`Retirer ${delta} ${libelleCategorie(categorie).toLowerCase()} ?`)) return;
-    removeBatch.mutate({ categorie, nombre: delta });
+  // Resync local input quand le serveur renvoie une nouvelle valeur (après mutation
+  // ou après chargement initial). Évite de désynchroniser si l'utilisateur tape.
+  useEffect(() => {
+    setTarget(current);
+  }, [current]);
+
+  const dirty = target !== current;
+  const isPending = setEffectif.isPending;
+
+  const onSave = () => {
+    if (!dirty || target < 0) return;
+    if (target < current) {
+      const removed = current - target;
+      const ok = confirm(
+        `Retirer ${removed} ${libelleCategorie(categorie).toLowerCase()} ? Les non-identifiés sont retirés en priorité.`,
+      );
+      if (!ok) return;
+    }
+    setEffectif.mutate({ categorie, total: target });
   };
 
   return (
     <div
       className={`flex flex-wrap items-center gap-3 rounded-2xl border border-border bg-background p-4 ${
-        current === 0 ? "opacity-60" : ""
+        current === 0 && !dirty ? "opacity-60" : ""
       }`}
     >
       <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-green/10 text-2xl">
@@ -84,27 +97,35 @@ function CategorieRow({ categorie, current }: { categorie: AnimalCategorie; curr
           {current} actif{current > 1 ? "s" : ""}
         </div>
       </div>
-      <div className="flex items-center gap-2">
-        <input
-          type="number"
-          min={1}
-          max={9999}
-          value={delta}
-          onChange={(e) => setDelta(Math.max(1, Number(e.target.value) || 1))}
-          className="h-10 w-20 rounded-lg border border-border bg-background px-2 text-base tabular-nums"
-        />
-        <Button
-          variant="ghost"
-          onClick={onRemove}
-          disabled={isPending || current === 0 || delta > current}
-          aria-label="Retirer"
-        >
-          <Minus className="h-4 w-4" />
-        </Button>
-        <Button onClick={onAdd} disabled={isPending} aria-label="Ajouter">
-          <Plus className="h-4 w-4" />
-        </Button>
-      </div>
+
+      <Button
+        variant="ghost"
+        onClick={() => setTarget(Math.max(0, target - 1))}
+        disabled={isPending || target === 0}
+        aria-label="Diminuer le total"
+      >
+        <Minus className="h-4 w-4" />
+      </Button>
+      <input
+        type="number"
+        min={0}
+        max={99999}
+        value={target}
+        onChange={(e) => setTarget(Math.max(0, Math.floor(Number(e.target.value) || 0)))}
+        className="h-10 w-24 rounded-lg border border-border bg-background px-2 text-center text-base tabular-nums"
+      />
+      <Button
+        variant="ghost"
+        onClick={() => setTarget(target + 1)}
+        disabled={isPending}
+        aria-label="Augmenter le total"
+      >
+        <Plus className="h-4 w-4" />
+      </Button>
+      <Button onClick={onSave} disabled={!dirty || isPending}>
+        <Check className="mr-1 h-4 w-4" />
+        Valider
+      </Button>
     </div>
   );
 }

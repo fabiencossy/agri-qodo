@@ -58,3 +58,15 @@ export function useRemoveBatch() {
     onSuccess: () => invalidateAll(qc),
   });
 }
+
+export function useSetEffectif() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { categorie: AnimalCategorie; total: number }) =>
+      api<{ categorie: AnimalCategorie; total: number; delta: number }>("/api/animaux/effectif", {
+        method: "PUT",
+        body: input,
+      }),
+    onSuccess: () => invalidateAll(qc),
+  });
+}

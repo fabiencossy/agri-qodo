@@ -107,6 +107,55 @@ export class AnimauxService {
     if (result.count === 0) throw new NotFoundException("Animal introuvable");
   }
 
+  /**
+   * Définit l'effectif total d'une catégorie. Calcule le delta vs l'effectif
+   * actuel et crée ou supprime les rows nécessaires. Pattern UI naturel :
+   * "j'ai 25 vaches laitières" plutôt que "+24" ou "-1".
+   */
+  async setEffectif(categorie: AnimalCategorie, total: number) {
+    if (!Number.isInteger(total) || total < 0 || total > 100000) {
+      throw new ConflictException("Effectif invalide");
+    }
+    const { tenantId } = this.tenantContext.get();
+    const current = await this.prisma.tenantAware.animal.count({
+      where: { categorie, isActive: true },
+    });
+    const delta = total - current;
+    if (delta === 0) return { categorie, total, delta: 0 };
+    if (delta > 0) {
+      await this.prisma.tenantAware.animal.createMany({
+        data: Array.from({ length: delta }, () => ({ tenantId, categorie })),
+      });
+      return { categorie, total, delta };
+    }
+    // delta < 0 : on retire les |delta| plus récents non identifiés
+    // (sans nom ni n° boucle) en priorité, pour préserver les bovins suivis.
+    const candidats = await this.prisma.tenantAware.animal.findMany({
+      where: { categorie, isActive: true, nom: null, numeroBoucle: null },
+      orderBy: { createdAt: "desc" },
+      take: -delta,
+      select: { id: true },
+    });
+    if (candidats.length < -delta) {
+      // pas assez d'anonymes — on complète sur les autres (les plus récents).
+      const more = await this.prisma.tenantAware.animal.findMany({
+        where: {
+          categorie,
+          isActive: true,
+          id: { notIn: candidats.map((c) => c.id) },
+        },
+        orderBy: { createdAt: "desc" },
+        take: -delta - candidats.length,
+        select: { id: true },
+      });
+      candidats.push(...more);
+    }
+    await this.prisma.tenantAware.animal.deleteMany({
+      where: { id: { in: candidats.map((c) => c.id) } },
+    });
+    return { categorie, total, delta };
+  }
+
   /** Suppression batch : retire `nombre` derniers animaux d'une catégorie. */
   async removeBatch(categorie: AnimalCategorie, nombre: number): Promise<{ deleted: number }> {
     if (!Number.isInteger(nombre) || nombre <= 0) {

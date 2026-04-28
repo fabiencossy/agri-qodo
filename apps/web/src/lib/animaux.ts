@@ -94,6 +94,18 @@ export function useRemoveBatch() {
   });
 }
 
+export function useSetEffectif() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { categorie: AnimalCategorie; total: number }) =>
+      api<{ categorie: AnimalCategorie; total: number; delta: number }>("/api/animaux/effectif", {
+        method: "PUT",
+        body: input,
+      }),
+    onSuccess: () => invalidateAll(qc),
+  });
+}
+
 export function useDeleteAnimal() {
   const qc = useQueryClient();
   return useMutation({

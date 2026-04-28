@@ -11,6 +11,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Put,
   Query,
   UseGuards,
 } from "@nestjs/common";
@@ -66,6 +67,18 @@ export class AnimauxController {
   })
   createBatch(@Body() dto: CreateAnimauxBatchDto) {
     return this.service.createBatch(dto);
+  }
+
+  @Put("effectif")
+  @ApiOperation({
+    summary:
+      "Définit l'effectif total d'une catégorie (ajuste automatiquement vs l'effectif actuel).",
+  })
+  setEffectif(
+    @Body("categorie", new ParseEnumPipe(AnimalCategorie)) categorie: AnimalCategorie,
+    @Body("total", ParseIntPipe) total: number,
+  ) {
+    return this.service.setEffectif(categorie, total);
   }
 
   @Patch(":id")
