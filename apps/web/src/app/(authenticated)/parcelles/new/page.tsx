@@ -1,14 +1,27 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
+import { Map, PencilLine } from "lucide-react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { Breadcrumb } from "@/components/app/breadcrumb";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { useCreateParcelle, type ZoneAgricole } from "@/lib/parcelles";
+import { type GeoJsonPolygon, useCreateParcelle, type ZoneAgricole } from "@/lib/parcelles";
+
+// Leaflet n'est chargé que côté client (window required).
+const ParcelleDrawMap = dynamic(() => import("@/components/maps/parcelle-draw-map"), {
+  ssr: false,
+  loading: () => (
+    <div className="flex h-[450px] items-center justify-center rounded-xl border border-border bg-muted text-sm text-foreground/60">
+      Chargement de la carte…
+    </div>
+  ),
+});
 
 const ZONES: Array<{ value: ZoneAgricole; label: string }> = [
   { value: "ZA", label: "Zone agricole" },
@@ -31,14 +44,18 @@ const formSchema = z.object({
 });
 
 type FormValues = z.infer<typeof formSchema>;
+type Mode = "carte" | "manuel";
 
 export default function NewParcellePage() {
   const router = useRouter();
   const createMutation = useCreateParcelle();
+  const [mode, setMode] = useState<Mode>("carte");
+  const [geom, setGeom] = useState<GeoJsonPolygon | null>(null);
 
   const {
     register,
     handleSubmit,
+    setValue,
     formState: { errors },
   } = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -51,6 +68,13 @@ export default function NewParcellePage() {
     },
   });
 
+  const onPolygonChange = (nextGeom: GeoJsonPolygon | null, surfaceM2: number) => {
+    setGeom(nextGeom);
+    if (nextGeom) {
+      setValue("surfaceM2", Number(surfaceM2.toFixed(2)));
+    }
+  };
+
   const onSubmit = (values: FormValues) => {
     createMutation.mutate(
       {
@@ -61,11 +85,10 @@ export default function NewParcellePage() {
           ? { identifiantCadastral: values.identifiantCadastral }
           : {}),
         ...(values.notes ? { notes: values.notes } : {}),
+        ...(mode === "carte" && geom ? { geomGeoJson: geom } : {}),
       },
       {
-        onSuccess: () => {
-          router.push("/parcelles");
-        },
+        onSuccess: () => router.push("/parcelles"),
       },
     );
   };
@@ -79,20 +102,53 @@ export default function NewParcellePage() {
           { label: "Nouvelle parcelle" },
         ]}
       />
-      <div className="mx-auto max-w-2xl px-4 py-8">
+      <div className="mx-auto max-w-3xl px-4 py-8">
         <h1 className="mb-6 text-2xl font-bold">Nouvelle parcelle</h1>
+
+        <div className="mb-6 inline-flex rounded-lg border border-border bg-background p-1">
+          <button
+            type="button"
+            onClick={() => setMode("carte")}
+            className={`flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
+              mode === "carte" ? "bg-green text-white" : "text-foreground/70 hover:bg-muted"
+            }`}
+          >
+            <Map className="h-4 w-4" />
+            Dessiner sur la carte
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode("manuel")}
+            className={`flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
+              mode === "manuel" ? "bg-green text-white" : "text-foreground/70 hover:bg-muted"
+            }`}
+          >
+            <PencilLine className="h-4 w-4" />
+            Saisir manuellement
+          </button>
+        </div>
 
         <form
           onSubmit={handleSubmit(onSubmit)}
           className="space-y-5 rounded-2xl border border-border bg-background p-6"
         >
+          {mode === "carte" && (
+            <Field label="Tracé de la parcelle">
+              <ParcelleDrawMap onPolygonChange={onPolygonChange} />
+            </Field>
+          )}
+
           <Field label="Nom de la parcelle" error={errors.nom?.message}>
-            <Input autoFocus placeholder="Champ du Loup" {...register("nom")} />
+            <Input autoFocus={mode === "manuel"} placeholder="Champ du Loup" {...register("nom")} />
           </Field>
 
           <Field
             label="Surface (m²)"
-            hint="1 hectare = 10 000 m²"
+            hint={
+              mode === "carte"
+                ? "Calculée automatiquement depuis la carte"
+                : "1 hectare = 10 000 m²"
+            }
             error={errors.surfaceM2?.message}
           >
             <Input
@@ -100,6 +156,7 @@ export default function NewParcellePage() {
               step="0.01"
               min="0"
               placeholder="12500"
+              readOnly={mode === "carte" && geom !== null}
               {...register("surfaceM2")}
             />
           </Field>

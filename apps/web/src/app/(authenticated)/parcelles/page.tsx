@@ -1,13 +1,34 @@
 "use client";
 
-import { MapPin, Plus, Trash2 } from "lucide-react";
+import { LayoutGrid, Map as MapIcon, MapPin, Plus, Trash2 } from "lucide-react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
+import { useState } from "react";
 import { Breadcrumb } from "@/components/app/breadcrumb";
 import { Button } from "@/components/ui/button";
-import { formatSurface, libelleZone, useDeleteParcelle, useParcelles } from "@/lib/parcelles";
+import {
+  formatSurface,
+  libelleZone,
+  useDeleteParcelle,
+  useParcelles,
+  useParcellesMap,
+} from "@/lib/parcelles";
+
+const ParcellesMapView = dynamic(() => import("@/components/maps/parcelles-map-view"), {
+  ssr: false,
+  loading: () => (
+    <div className="flex h-[500px] items-center justify-center rounded-xl border border-border bg-muted text-sm text-foreground/60">
+      Chargement de la carte…
+    </div>
+  ),
+});
+
+type View = "liste" | "carte";
 
 export default function ParcellesPage() {
+  const [view, setView] = useState<View>("liste");
   const parcelles = useParcelles();
+  const parcellesMap = useParcellesMap();
   const deleteMutation = useDeleteParcelle();
 
   const onDelete = (id: string, nom: string) => {
@@ -20,7 +41,7 @@ export default function ParcellesPage() {
     <>
       <Breadcrumb items={[{ label: "Accueil", href: "/" }, { label: "Parcelles" }]} />
       <div className="mx-auto max-w-5xl px-4 py-8">
-        <div className="mb-8 flex items-end justify-between">
+        <div className="mb-6 flex items-end justify-between">
           <div>
             <h1 className="text-3xl font-bold">Mes parcelles</h1>
             <p className="mt-1 text-foreground/70">
@@ -36,6 +57,43 @@ export default function ParcellesPage() {
             </Button>
           </Link>
         </div>
+
+        {parcelles.data && parcelles.data.length > 0 && (
+          <div className="mb-6 inline-flex rounded-lg border border-border bg-background p-1">
+            <button
+              type="button"
+              onClick={() => setView("liste")}
+              className={`flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
+                view === "liste" ? "bg-green text-white" : "text-foreground/70 hover:bg-muted"
+              }`}
+            >
+              <LayoutGrid className="h-4 w-4" />
+              Liste
+            </button>
+            <button
+              type="button"
+              onClick={() => setView("carte")}
+              className={`flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
+                view === "carte" ? "bg-green text-white" : "text-foreground/70 hover:bg-muted"
+              }`}
+            >
+              <MapIcon className="h-4 w-4" />
+              Carte
+            </button>
+          </div>
+        )}
+
+        {view === "carte" && parcellesMap.data && (
+          <>
+            <ParcellesMapView parcelles={parcellesMap.data} />
+            {parcellesMap.data.every((p) => p.geom === null) && (
+              <p className="mt-3 text-center text-sm text-foreground/60">
+                Aucune parcelle n'a de tracé géographique. Crée une nouvelle parcelle avec le mode «
+                Dessiner sur la carte ».
+              </p>
+            )}
+          </>
+        )}
 
         {parcelles.isError && (
           <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -59,7 +117,7 @@ export default function ParcellesPage() {
           </div>
         )}
 
-        {parcelles.data && parcelles.data.length > 0 && (
+        {view === "liste" && parcelles.data && parcelles.data.length > 0 && (
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {parcelles.data.map((p) => (
               <article

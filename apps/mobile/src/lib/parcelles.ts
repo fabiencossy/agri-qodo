@@ -14,20 +14,42 @@ export interface Parcelle {
   updatedAt: string;
 }
 
+export interface GeoJsonPolygon {
+  type: "Polygon";
+  coordinates: number[][][];
+}
+
 export interface CreateParcelleInput {
   nom: string;
   surfaceM2: number;
   zone: ZoneAgricole;
   identifiantCadastral?: string;
   notes?: string;
+  geomGeoJson?: GeoJsonPolygon;
+}
+
+export interface ParcelleMapItem {
+  id: string;
+  nom: string;
+  surfaceM2: string;
+  zone: ZoneAgricole;
+  geom: GeoJsonPolygon | null;
 }
 
 const QUERY_KEY = ["parcelles"] as const;
+const MAP_QUERY_KEY = ["parcelles", "map"] as const;
 
 export function useParcelles() {
   return useQuery({
     queryKey: QUERY_KEY,
     queryFn: () => api<Parcelle[]>("/api/parcelles"),
+  });
+}
+
+export function useParcellesMap() {
+  return useQuery({
+    queryKey: MAP_QUERY_KEY,
+    queryFn: () => api<ParcelleMapItem[]>("/api/parcelles/map"),
   });
 }
 
@@ -38,6 +60,7 @@ export function useCreateParcelle() {
       api<Parcelle>("/api/parcelles", { method: "POST", body: input }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: QUERY_KEY });
+      void qc.invalidateQueries({ queryKey: MAP_QUERY_KEY });
     },
   });
 }
@@ -48,6 +71,7 @@ export function useDeleteParcelle() {
     mutationFn: (id: string) => api<void>(`/api/parcelles/${id}`, { method: "DELETE" }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: QUERY_KEY });
+      void qc.invalidateQueries({ queryKey: MAP_QUERY_KEY });
     },
   });
 }

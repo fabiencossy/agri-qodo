@@ -30,6 +30,14 @@ export class ParcellesController {
     return this.parcelles.list();
   }
 
+  @Get("map")
+  @ApiOperation({
+    summary: "Liste des parcelles avec leur géométrie GeoJSON (pour affichage carte)",
+  })
+  listForMap() {
+    return this.parcelles.listForMap();
+  }
+
   @Get(":id")
   @ApiOperation({ summary: "Détail d'une parcelle par id" })
   getById(@Param("id", ParseUUIDPipe) id: string) {
