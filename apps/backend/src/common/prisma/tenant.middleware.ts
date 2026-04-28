@@ -31,7 +31,14 @@ import { ForbiddenException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import type { TenantContextService } from "../tenant/tenant-context.service";
 
-const TENANT_SCOPED_MODELS = new Set<string>(["Parcelle", "Culture", "Animal", "LotAnimal"]);
+/**
+ * Modèles tenant-scoped, normalisés en lowercase pour résister aux
+ * variantes de casing (PascalCase vs camelCase) que Prisma peut renvoyer
+ * dans `model` selon le contexte d'extension.
+ */
+const TENANT_SCOPED_MODELS_LC = new Set<string>(
+  ["Parcelle", "Culture", "Animal", "LotAnimal", "SortieSrpa"].map((m) => m.toLowerCase()),
+);
 
 const READ_OPS = new Set<string>([
   "findFirst",
@@ -75,7 +82,7 @@ export function buildTenantExtension(tenantContext: TenantContextService) {
       $allModels: {
         async $allOperations({ model, operation, args, query }) {
           const tenantId = tenantContext.tryGet()?.tenantId;
-          if (!tenantId || !TENANT_SCOPED_MODELS.has(model)) {
+          if (!tenantId || !model || !TENANT_SCOPED_MODELS_LC.has(model.toLowerCase())) {
             return query(args);
           }
 
@@ -113,4 +120,4 @@ export function buildTenantExtension(tenantContext: TenantContextService) {
   });
 }
 
-export const TENANT_AWARE_MODELS = TENANT_SCOPED_MODELS;
+export const TENANT_AWARE_MODELS = TENANT_SCOPED_MODELS_LC;

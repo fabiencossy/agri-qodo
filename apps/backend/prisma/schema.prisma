@@ -134,6 +134,7 @@ model Exploitation {
   interventionsAuthored Intervention[] @relation("InterventionAuthor")
   animaux         Animal[]
   lots            LotAnimal[]
+  sortiesSrpa     SortieSrpa[]
   partnerLinksOwned   PartnerLink[] @relation("PartnerLinkOwner")
   partnerLinksPartner PartnerLink[] @relation("PartnerLinkPartner")
 
@@ -297,6 +298,29 @@ model LotAnimal {
 
   @@index([tenantId])
   @@map("lots_animaux")
+}
+
+// ====================================================================
+// SRPA — Sorties Régulières au Plein Air (M5)
+// ====================================================================
+
+model SortieSrpa {
+  id            String          @id @default(uuid())
+  tenantId      String          @map("tenant_id")
+  date          DateTime        @db.Date
+  categorie     AnimalCategorie
+  nombreAnimaux Int?            @map("nombre_animaux")
+  dureeMinutes  Int?            @map("duree_minutes")
+  notes         String?
+  createdAt     DateTime        @default(now()) @map("created_at")
+  updatedAt     DateTime        @updatedAt @map("updated_at")
+
+  tenant        Exploitation @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, date, categorie])
+  @@index([tenantId])
+  @@index([date])
+  @@map("sorties_srpa")
 }
 
 // ====================================================================

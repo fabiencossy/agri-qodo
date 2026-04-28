@@ -68,7 +68,8 @@ export default function AuthenticatedLayout() {
         {/* Routes accessibles mais cachées des onglets */}
         <Tabs.Screen name="parcelles/new" options={{ href: null }} />
         <Tabs.Screen name="interventions/new" options={{ href: null }} />
-        <Tabs.Screen name="srpa" options={{ href: null }} />
+        <Tabs.Screen name="srpa/index" options={{ href: null }} />
+        <Tabs.Screen name="srpa/new" options={{ href: null }} />
         <Tabs.Screen name="veille" options={{ href: null }} />
       </Tabs>
       <Fab />

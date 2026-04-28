@@ -9,6 +9,7 @@ import { HealthModule } from "./modules/health/health.module";
 import { InterventionsModule } from "./modules/interventions/interventions.module";
 import { ParcellesModule } from "./modules/parcelles/parcelles.module";
 import { PartnerLinksModule } from "./modules/partner-links/partner-links.module";
+import { SrpaModule } from "./modules/srpa/srpa.module";
 import { TenantsModule } from "./modules/tenants/tenants.module";
 
 @Module({
@@ -47,6 +48,7 @@ import { TenantsModule } from "./modules/tenants/tenants.module";
     TenantsModule,
     ParcellesModule,
     InterventionsModule,
+    SrpaModule,
     PartnerLinksModule,
   ],
 })
