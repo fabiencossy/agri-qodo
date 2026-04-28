@@ -418,6 +418,13 @@ model Produit {
   libelle     String
   fournisseur String?
   marque      String?
+  // Numéro/code officiel (n° swissgranum, n° Mst Agroscope, n° W-OSAV pour
+  // les phytos…). Permet la traçabilité réglementaire et la jointure avec
+  // les listes officielles lors des futurs imports automatiques.
+  numeroOfficiel    String?    @map("numero_officiel")
+  // Source du référentiel (ex: "swissgranum 2025", "Agroscope eagff Mst 2025-28",
+  // "OSAV PSM 15.04.2026"). Visible utilisateur — exigence OSAV.
+  sourceCatalogue   String?    @map("source_catalogue")
   // SEMENCE : code espèce qui matche les clés du rule engine
   // (suisse_bilanz.besoin_n_par_culture). Permet à un SEMIS de créer
   // automatiquement la Culture sur la parcelle.
