@@ -7,8 +7,15 @@
  * Modules à implémenter :
  *  - suisse-bilanz : calcul flux N et P selon Guide Agridea 1.18
  *  - ugb : conversion catégorie animale → unité gros bétail
- *  - assolement : vérification rotation régulière
+ *  - assolement : vérification rotation régulière (livré étape 5a)
  *  - parcelle : validation surface, géométrie, zone agricole
  */
 
 export const PACKAGE_NAME = "@agri-qodo/domain" as const;
+
+export {
+  verifierAssolement,
+  type AssolementIncident,
+  type AssolementResult,
+  type CultureRecord,
+} from "./assolement";

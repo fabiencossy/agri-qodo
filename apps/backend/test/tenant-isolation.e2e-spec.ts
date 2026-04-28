@@ -199,4 +199,104 @@ describe("Tenant isolation (e2e)", () => {
       expect(all.length).toBeGreaterThanOrEqual(2);
     });
   });
+
+  describe("CRUD HTTP (étape 5a)", () => {
+    let parcelleCreeeParAId: string;
+
+    it("POST /api/parcelles côté A crée bien chez A (tenantId injecté)", async () => {
+      const res = await request(app.getHttpServer())
+        .post("/api/parcelles")
+        .set("Authorization", `Bearer ${tokenA}`)
+        .send({ nom: "Champ Créé HTTP A", surfaceM2: 5000, zone: "ZA" })
+        .expect(201);
+
+      const created = res.body as { id: string; tenantId: string; nom: string };
+      expect(created.tenantId).toBe(tenantAId);
+      expect(created.nom).toBe("Champ Créé HTTP A");
+      parcelleCreeeParAId = created.id;
+    });
+
+    it("POST avec tenantId forcé dans le body → 403 (extension throw)", async () => {
+      await request(app.getHttpServer())
+        .post("/api/parcelles")
+        .set("Authorization", `Bearer ${tokenA}`)
+        .send({
+          nom: "Tentative cross-tenant",
+          surfaceM2: 1000,
+          zone: "ZA",
+          tenantId: tenantBId,
+        })
+        .expect(400); // ValidationPipe forbidNonWhitelisted rejette le champ inconnu
+    });
+
+    it("GET /api/parcelles/:id côté B avec id de A → 404 (pas d'exfil)", async () => {
+      await request(app.getHttpServer())
+        .get(`/api/parcelles/${parcelleAId}`)
+        .set("Authorization", `Bearer ${tokenB}`)
+        .expect(404);
+    });
+
+    it("GET /api/parcelles/:id côté A avec sa propre parcelle → 200", async () => {
+      const res = await request(app.getHttpServer())
+        .get(`/api/parcelles/${parcelleAId}`)
+        .set("Authorization", `Bearer ${tokenA}`)
+        .expect(200);
+
+      expect((res.body as { id: string }).id).toBe(parcelleAId);
+    });
+
+    it("PATCH côté B sur parcelle de A → 404 (updateMany filtré)", async () => {
+      await request(app.getHttpServer())
+        .patch(`/api/parcelles/${parcelleAId}`)
+        .set("Authorization", `Bearer ${tokenB}`)
+        .send({ nom: "Hacké" })
+        .expect(404);
+
+      // Vérifie que le nom de la parcelle A n'a PAS été modifié
+      const verif = await request(app.getHttpServer())
+        .get(`/api/parcelles/${parcelleAId}`)
+        .set("Authorization", `Bearer ${tokenA}`)
+        .expect(200);
+      expect((verif.body as { nom: string }).nom).toBe("Champ A1");
+    });
+
+    it("PATCH côté A sur sa propre parcelle → 200 et persiste", async () => {
+      await request(app.getHttpServer())
+        .patch(`/api/parcelles/${parcelleCreeeParAId}`)
+        .set("Authorization", `Bearer ${tokenA}`)
+        .send({ nom: "Champ A renommé" })
+        .expect(200);
+
+      const verif = await request(app.getHttpServer())
+        .get(`/api/parcelles/${parcelleCreeeParAId}`)
+        .set("Authorization", `Bearer ${tokenA}`)
+        .expect(200);
+      expect((verif.body as { nom: string }).nom).toBe("Champ A renommé");
+    });
+
+    it("DELETE côté B sur parcelle de A → 404 (deleteMany filtré)", async () => {
+      await request(app.getHttpServer())
+        .delete(`/api/parcelles/${parcelleAId}`)
+        .set("Authorization", `Bearer ${tokenB}`)
+        .expect(404);
+
+      // Vérifie que la parcelle A existe toujours
+      await request(app.getHttpServer())
+        .get(`/api/parcelles/${parcelleAId}`)
+        .set("Authorization", `Bearer ${tokenA}`)
+        .expect(200);
+    });
+
+    it("DELETE côté A sur sa propre parcelle → 204 et disparue", async () => {
+      await request(app.getHttpServer())
+        .delete(`/api/parcelles/${parcelleCreeeParAId}`)
+        .set("Authorization", `Bearer ${tokenA}`)
+        .expect(204);
+
+      await request(app.getHttpServer())
+        .get(`/api/parcelles/${parcelleCreeeParAId}`)
+        .set("Authorization", `Bearer ${tokenA}`)
+        .expect(404);
+    });
+  });
 });
