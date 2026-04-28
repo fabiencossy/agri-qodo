@@ -12,7 +12,7 @@ import { useIsAuthenticated, useLogin } from "@/lib/auth";
 
 const loginSchema = z.object({
   email: z.string().email("E-mail invalide"),
-  password: z.string().min(8, "8 caractères minimum"),
+  password: z.string().min(4, "4 caractères minimum"),
 });
 
 type LoginForm = z.infer<typeof loginSchema>;
