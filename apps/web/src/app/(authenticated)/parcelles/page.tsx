@@ -1,6 +1,6 @@
 "use client";
 
-import { LayoutGrid, Map as MapIcon, MapPin, Plus, Trash2 } from "lucide-react";
+import { FileUp, LayoutGrid, Map as MapIcon, MapPin, Plus, Trash2 } from "lucide-react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useState } from "react";
@@ -50,12 +50,20 @@ export default function ParcellesPage() {
                 : "Chargement…"}
             </p>
           </div>
-          <Link href="/parcelles/new">
-            <Button>
-              <Plus className="mr-2 h-4 w-4" />
-              Nouvelle parcelle
-            </Button>
-          </Link>
+          <div className="flex gap-2">
+            <Link href="/parcelles/import">
+              <Button variant="secondary">
+                <FileUp className="mr-2 h-4 w-4" />
+                Importer
+              </Button>
+            </Link>
+            <Link href="/parcelles/new">
+              <Button>
+                <Plus className="mr-2 h-4 w-4" />
+                Nouvelle parcelle
+              </Button>
+            </Link>
+          </div>
         </div>
 
         {parcelles.data && parcelles.data.length > 0 && (
@@ -106,14 +114,23 @@ export default function ParcellesPage() {
             <MapPin className="mx-auto h-10 w-10 text-foreground/30" />
             <h2 className="mt-4 text-lg font-semibold">Aucune parcelle pour l'instant</h2>
             <p className="mt-1 text-sm text-foreground/60">
-              Commencez par créer votre première parcelle.
+              Importez vos parcelles depuis votre portail cantonal en un clic, ou commencez par en
+              créer une.
             </p>
-            <Link href="/parcelles/new" className="mt-6 inline-block">
-              <Button>
-                <Plus className="mr-2 h-4 w-4" />
-                Créer ma première parcelle
-              </Button>
-            </Link>
+            <div className="mt-6 flex justify-center gap-3">
+              <Link href="/parcelles/import">
+                <Button>
+                  <FileUp className="mr-2 h-4 w-4" />
+                  Importer un fichier
+                </Button>
+              </Link>
+              <Link href="/parcelles/new">
+                <Button variant="secondary">
+                  <Plus className="mr-2 h-4 w-4" />
+                  Créer manuellement
+                </Button>
+              </Link>
+            </div>
           </div>
         )}
 

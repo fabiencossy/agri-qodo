@@ -1,9 +1,14 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
-import { Prisma } from "@prisma/client";
+import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import { Prisma, ZoneAgricole } from "@prisma/client";
+import area from "@turf/area";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { TenantContextService } from "@/common/tenant/tenant-context.service";
 import type { CreateParcelleDto, GeoJsonGeometry } from "./dto/create-parcelle.dto";
+import type { ImportParcellesDto, ImportResult } from "./dto/import-parcelles.dto";
 import type { UpdateParcelleDto } from "./dto/update-parcelle.dto";
+
+const MAX_FEATURES_PER_IMPORT = 1000;
+const ZONE_VALUES = new Set<string>(Object.values(ZoneAgricole));
 
 interface ParcelleMapRow {
   id: string;
@@ -121,4 +126,143 @@ export class ParcellesService {
       throw new NotFoundException("Parcelle introuvable");
     }
   }
+
+  /**
+   * Import en masse depuis un GeoJSON FeatureCollection (typiquement
+   * un export Acorda/GELAN/Agriportal).
+   *
+   * Chaque feature crée une parcelle avec un mapping intelligent des
+   * properties (voir extractFromFeature). Les erreurs sur features
+   * individuelles n'arrêtent pas l'import — on continue et on retourne
+   * un résumé.
+   */
+  async importGeoJson(dto: ImportParcellesDto): Promise<ImportResult> {
+    const fc = dto.featureCollection as { type?: string; features?: unknown[] };
+    if (!fc || fc.type !== "FeatureCollection" || !Array.isArray(fc.features)) {
+      throw new BadRequestException("Le fichier n'est pas un GeoJSON FeatureCollection valide");
+    }
+    if (fc.features.length === 0) {
+      throw new BadRequestException("Aucune parcelle à importer");
+    }
+    if (fc.features.length > MAX_FEATURES_PER_IMPORT) {
+      throw new BadRequestException(
+        `Trop de parcelles : maximum ${MAX_FEATURES_PER_IMPORT} par import`,
+      );
+    }
+
+    const defaultZone = dto.defaultZone ?? ZoneAgricole.ZA;
+    const result: ImportResult = {
+      total: fc.features.length,
+      created: 0,
+      errors: [],
+    };
+
+    for (let i = 0; i < fc.features.length; i++) {
+      const feature = fc.features[i] as ParsedFeature | undefined;
+      try {
+        const data = extractFromFeature(feature, defaultZone, i);
+        await this.create(data);
+        result.created++;
+      } catch (err) {
+        const props = feature?.properties as Record<string, unknown> | undefined;
+        const nom = props?.["nom"]?.toString() ?? props?.["name"]?.toString();
+        result.errors.push({
+          index: i,
+          ...(nom ? { nom } : {}),
+          message: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    return result;
+  }
+}
+
+interface ParsedFeature {
+  type?: string;
+  properties?: Record<string, unknown>;
+  geometry?: { type?: string; coordinates?: unknown };
+}
+
+/**
+ * Extrait un CreateParcelleDto depuis une feature GeoJSON en testant
+ * plusieurs noms de properties usuels (Acorda, GELAN, OFAG, etc.).
+ */
+function extractFromFeature(
+  feature: ParsedFeature | undefined,
+  defaultZone: ZoneAgricole,
+  index: number,
+): CreateParcelleDto {
+  if (!feature || feature.type !== "Feature") {
+    throw new Error(`Feature #${index + 1} : format invalide`);
+  }
+  const geom = feature.geometry as GeoJsonGeometry | undefined;
+  if (!geom || (geom.type !== "Polygon" && geom.type !== "MultiPolygon")) {
+    throw new Error(`Feature #${index + 1} : géométrie absente ou non Polygon/MultiPolygon`);
+  }
+  const props = (feature.properties ?? {}) as Record<string, unknown>;
+
+  const nom =
+    pickString(props, ["nom", "name", "PARCEL_NAME", "NUMMER", "NUM_PARC"]) ??
+    `Parcelle ${index + 1}`;
+  const identifiantCadastral = pickString(props, [
+    "identifiantCadastral",
+    "egrid",
+    "EGRID",
+    "EGRIS_EGRID",
+    "numero_cadastral",
+    "NUMMER",
+  ]);
+  const zoneRaw = pickString(props, ["zone", "ZONE", "zone_agricole"]);
+  const zone =
+    zoneRaw && ZONE_VALUES.has(zoneRaw.toUpperCase())
+      ? (zoneRaw.toUpperCase() as ZoneAgricole)
+      : defaultZone;
+
+  let surfaceM2 = pickNumber(props, [
+    "surfaceM2",
+    "surface_m2",
+    "FLAECHE_M2",
+    "SURFACE_M2",
+    "AREA_M2",
+  ]);
+  if (surfaceM2 === undefined) {
+    // Calcul géodésique si surface absente
+    surfaceM2 = area({ type: "Feature", geometry: geom, properties: {} });
+  }
+  if (!Number.isFinite(surfaceM2) || surfaceM2 <= 0) {
+    throw new Error(`Feature #${index + 1} : surface invalide`);
+  }
+
+  const data: CreateParcelleDto = {
+    nom: nom.slice(0, 120),
+    surfaceM2: Math.round(surfaceM2 * 100) / 100,
+    zone,
+    geomGeoJson: geom,
+  };
+  if (identifiantCadastral) {
+    data.identifiantCadastral = identifiantCadastral.slice(0, 50);
+  }
+  return data;
+}
+
+function pickString(props: Record<string, unknown>, keys: string[]): string | undefined {
+  for (const key of keys) {
+    const v = props[key];
+    if (typeof v === "string" && v.trim().length > 0) return v.trim();
+    if (typeof v === "number") return String(v);
+  }
+  return undefined;
+}
+
+function pickNumber(props: Record<string, unknown>, keys: string[]): number | undefined {
+  for (const key of keys) {
+    const v = props[key];
+    if (typeof v === "number" && Number.isFinite(v)) return v;
+    if (typeof v === "string") {
+      const n = Number(v);
+      if (Number.isFinite(n)) return n;
+    }
+  }
+  return undefined;
 }
