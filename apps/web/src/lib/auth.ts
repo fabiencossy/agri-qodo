@@ -17,6 +17,14 @@ export interface CurrentTenant {
   canton: string;
 }
 
+export interface CurrentUser {
+  id: string;
+  email: string;
+  prenom: string;
+  nom: string;
+  role: "OWNER" | "EMPLOYE" | "COMPTABLE" | "CONSULTANT";
+}
+
 /** Hook qui dit si l'utilisateur a un token. Pas de vérif côté serveur ici. */
 export function useIsAuthenticated(): boolean | null {
   const query = useQuery({
@@ -73,6 +81,14 @@ export function useCurrentTenant() {
   return useQuery({
     queryKey: ["current-tenant"],
     queryFn: () => api<CurrentTenant>("/api/tenants/me"),
+    enabled: getStoredTokens() !== null,
+  });
+}
+
+export function useCurrentUser() {
+  return useQuery({
+    queryKey: ["current-user"],
+    queryFn: () => api<CurrentUser>("/api/auth/me"),
     enabled: getStoredTokens() !== null,
   });
 }
