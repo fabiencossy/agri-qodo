@@ -1,0 +1,25 @@
+{
+  "expo": {
+    "name": "Agri Qodo",
+    "slug": "agri-qodo",
+    "version": "0.0.1",
+    "orientation": "portrait",
+    "scheme": "agriqodo",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "splash": {
+      "backgroundColor": "#2E7D32"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "ch.agriqodo.app"
+    },
+    "android": {
+      "package": "ch.agriqodo.app"
+    },
+    "plugins": ["expo-router"],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
