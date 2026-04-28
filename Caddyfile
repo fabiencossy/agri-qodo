@@ -1,0 +1,31 @@
+# Caddy — reverse proxy HTTPS automatique pour le backend Agri Qodo.
+# Caddy obtient et renouvelle les certificats Let's Encrypt automatiquement.
+#
+# Le domaine est passé en variable d'env DOMAIN_API depuis docker-compose.
+
+{$DOMAIN_API} {
+	# CORS : on autorise newagri.qodo.ch (Vercel) — au cas où le proxy
+	# Vercel rewrite ne soit pas utilisé (ex: appel direct depuis le mobile).
+	@cors_preflight method OPTIONS
+	header @cors_preflight Access-Control-Allow-Origin "{header.Origin}"
+	header @cors_preflight Access-Control-Allow-Methods "GET, POST, PATCH, PUT, DELETE, OPTIONS"
+	header @cors_preflight Access-Control-Allow-Headers "Authorization, Content-Type"
+	header @cors_preflight Access-Control-Max-Age "86400"
+	respond @cors_preflight 204
+
+	header Access-Control-Allow-Origin "{header.Origin}"
+	header Access-Control-Allow-Credentials "true"
+
+	reverse_proxy backend:3001 {
+		# Headers utiles côté NestJS (req.ip réel, host original)
+		header_up X-Real-IP {remote_host}
+		header_up X-Forwarded-For {remote_host}
+		header_up X-Forwarded-Proto https
+	}
+
+	encode gzip zstd
+	log {
+		output stdout
+		format console
+	}
+}

@@ -1,0 +1,81 @@
+# Docker Compose pour déploiement Agri Qodo sur VPS (Infomaniak Cloud Server).
+# Frontend hébergé chez Vercel séparément.
+#
+# Services :
+#   - postgres : PostgreSQL 16 + extension PostGIS
+#   - backend  : NestJS (Dockerfile multi-stage)
+#   - caddy    : reverse proxy HTTPS automatique (Let's Encrypt)
+#
+# Mise en place :
+#   1. cp .env.production.example .env.production && remplir les valeurs
+#   2. docker compose -f docker-compose.prod.yml --env-file .env.production up -d
+#   3. Premier seed : docker compose exec backend ts-node prisma/seed.ts
+#                     docker compose exec backend ts-node prisma/seed-rules.ts
+#                     docker compose exec backend ts-node prisma/seed-produits.ts
+
+services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    container_name: agriqodo-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-agriqodo}
+      POSTGRES_USER: ${POSTGRES_USER:-agriqodo}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - agriqodo
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-agriqodo}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: .
+      dockerfile: apps/backend/Dockerfile
+    container_name: agriqodo-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      DATABASE_URL: postgresql://${POSTGRES_USER:-agriqodo}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-agriqodo}?schema=public
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-15m}
+      JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-7d}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    networks:
+      - agriqodo
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: agriqodo-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    environment:
+      DOMAIN_API: ${DOMAIN_API}
+    depends_on:
+      - backend
+    networks:
+      - agriqodo
+
+volumes:
+  postgres_data:
+  caddy_data:
+  caddy_config:
+
+networks:
+  agriqodo:
+    driver: bridge
