@@ -4,11 +4,15 @@ import { Menu } from "lucide-react";
 import Link from "next/link";
 import { useCurrentTenant } from "@/lib/auth";
 
+/**
+ * Top bar visible uniquement sur mobile/tablet (< lg).
+ * Sur desktop, la sidebar gauche prend le relais.
+ */
 export function TopBar({ onMenuClick }: { onMenuClick: () => void }) {
   const tenant = useCurrentTenant();
   return (
-    <header className="sticky top-0 z-30 h-14 border-b border-border bg-background/80 backdrop-blur">
-      <div className="mx-auto flex h-full max-w-5xl items-center gap-3 px-4">
+    <header className="sticky top-0 z-30 h-14 border-b border-border bg-background/80 backdrop-blur lg:hidden">
+      <div className="flex h-full items-center gap-3 px-4">
         <button
           onClick={onMenuClick}
           aria-label="Ouvrir le menu"

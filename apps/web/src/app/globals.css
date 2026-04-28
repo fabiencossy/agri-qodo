@@ -7,16 +7,23 @@
   --foreground: 26 26 26;
   --muted: 245 245 245;
   --border: 230 230 230;
+  color-scheme: light;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: 18 18 18;
-    --foreground: 240 240 240;
-    --muted: 30 30 30;
-    --border: 50 50 50;
-  }
-}
+/*
+ * Mode clair forcé pour MVP. Si vous voulez activer un mode sombre
+ * optionnel via un toggle utilisateur, ajouter :
+ *
+ *   .dark {
+ *     --background: 18 18 18;
+ *     --foreground: 240 240 240;
+ *     --muted: 30 30 30;
+ *     --border: 50 50 50;
+ *     color-scheme: dark;
+ *   }
+ *
+ * + tailwind.config darkMode: 'class' + bouton qui toggle 'dark' sur <html>.
+ */
 
 html,
 body {

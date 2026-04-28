@@ -18,11 +18,15 @@ const TABS: Tab[] = [
   { href: "/stats", label: "Stats", icon: BarChart3 },
 ];
 
+/**
+ * Onglets sticky visibles sur mobile/tablet.
+ * Sur desktop (lg+), la sidebar fournit la navigation complète.
+ */
 export function NavTabs() {
   const pathname = usePathname();
   return (
-    <nav className="sticky top-14 z-20 border-b border-border bg-background">
-      <div className="mx-auto flex max-w-5xl">
+    <nav className="sticky top-14 z-20 border-b border-border bg-background lg:hidden">
+      <div className="flex">
         {TABS.map((tab) => {
           const isActive = tab.href === "/" ? pathname === "/" : pathname.startsWith(tab.href);
           const Icon = tab.icon;
