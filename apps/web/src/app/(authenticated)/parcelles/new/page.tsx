@@ -1,15 +1,13 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { ChevronLeft } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
+import { Breadcrumb } from "@/components/app/breadcrumb";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { useIsAuthenticated } from "@/lib/auth";
 import { useCreateParcelle, type ZoneAgricole } from "@/lib/parcelles";
 
 const ZONES: Array<{ value: ZoneAgricole; label: string }> = [
@@ -36,12 +34,7 @@ type FormValues = z.infer<typeof formSchema>;
 
 export default function NewParcellePage() {
   const router = useRouter();
-  const isAuthenticated = useIsAuthenticated();
   const createMutation = useCreateParcelle();
-
-  useEffect(() => {
-    if (isAuthenticated === false) router.replace("/login");
-  }, [isAuthenticated, router]);
 
   const {
     register,
@@ -57,8 +50,6 @@ export default function NewParcellePage() {
       notes: "",
     },
   });
-
-  if (!isAuthenticated) return null;
 
   const onSubmit = (values: FormValues) => {
     createMutation.mutate(
@@ -80,21 +71,17 @@ export default function NewParcellePage() {
   };
 
   return (
-    <div className="min-h-screen">
-      <header className="border-b border-border bg-background/80 backdrop-blur">
-        <div className="mx-auto flex max-w-2xl items-center gap-3 px-4 py-3">
-          <Link
-            href="/parcelles"
-            className="rounded-md p-1.5 text-foreground/60 hover:bg-muted"
-            aria-label="Retour"
-          >
-            <ChevronLeft className="h-5 w-5" />
-          </Link>
-          <h1 className="text-lg font-semibold">Nouvelle parcelle</h1>
-        </div>
-      </header>
+    <>
+      <Breadcrumb
+        items={[
+          { label: "Accueil", href: "/" },
+          { label: "Parcelles", href: "/parcelles" },
+          { label: "Nouvelle parcelle" },
+        ]}
+      />
+      <div className="mx-auto max-w-2xl px-4 py-8">
+        <h1 className="mb-6 text-2xl font-bold">Nouvelle parcelle</h1>
 
-      <main className="mx-auto max-w-2xl px-4 py-8">
         <form
           onSubmit={handleSubmit(onSubmit)}
           className="space-y-5 rounded-2xl border border-border bg-background p-6"
@@ -162,8 +149,8 @@ export default function NewParcellePage() {
             </Link>
           </div>
         </form>
-      </main>
-    </div>
+      </div>
+    </>
   );
 }
 

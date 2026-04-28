@@ -2,23 +2,13 @@
 
 import { MapPin, Plus, Trash2 } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { Breadcrumb } from "@/components/app/breadcrumb";
 import { Button } from "@/components/ui/button";
-import { useIsAuthenticated } from "@/lib/auth";
 import { formatSurface, libelleZone, useDeleteParcelle, useParcelles } from "@/lib/parcelles";
 
 export default function ParcellesPage() {
-  const router = useRouter();
-  const isAuthenticated = useIsAuthenticated();
   const parcelles = useParcelles();
   const deleteMutation = useDeleteParcelle();
-
-  useEffect(() => {
-    if (isAuthenticated === false) router.replace("/login");
-  }, [isAuthenticated, router]);
-
-  if (!isAuthenticated) return null;
 
   const onDelete = (id: string, nom: string) => {
     if (confirm(`Supprimer la parcelle « ${nom} » ? Cette action est définitive.`)) {
@@ -27,31 +17,25 @@ export default function ParcellesPage() {
   };
 
   return (
-    <div className="min-h-screen">
-      <header className="border-b border-border bg-background/80 backdrop-blur">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
-          <div className="flex items-center gap-3">
-            <Link href="/" className="text-xl font-bold text-green">
-              🌱 Agri Qodo
-            </Link>
-            <span className="text-sm text-foreground/60">· Parcelles</span>
+    <>
+      <Breadcrumb items={[{ label: "Accueil", href: "/" }, { label: "Parcelles" }]} />
+      <div className="mx-auto max-w-5xl px-4 py-8">
+        <div className="mb-8 flex items-end justify-between">
+          <div>
+            <h1 className="text-3xl font-bold">Mes parcelles</h1>
+            <p className="mt-1 text-foreground/70">
+              {parcelles.data
+                ? `${parcelles.data.length} parcelle${parcelles.data.length > 1 ? "s" : ""}`
+                : "Chargement…"}
+            </p>
           </div>
           <Link href="/parcelles/new">
-            <Button size="sm">
+            <Button>
               <Plus className="mr-2 h-4 w-4" />
               Nouvelle parcelle
             </Button>
           </Link>
         </div>
-      </header>
-
-      <main className="mx-auto max-w-5xl px-4 py-8">
-        <h1 className="mb-2 text-3xl font-bold">Mes parcelles</h1>
-        <p className="mb-8 text-foreground/70">
-          {parcelles.data
-            ? `${parcelles.data.length} parcelle${parcelles.data.length > 1 ? "s" : ""}`
-            : "Chargement…"}
-        </p>
 
         {parcelles.isError && (
           <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -114,7 +98,7 @@ export default function ParcellesPage() {
             ))}
           </div>
         )}
-      </main>
-    </div>
+      </div>
+    </>
   );
 }
