@@ -4,13 +4,15 @@
  * Règles simplifiées MVP :
  *   1. Pas la même espèce sur la même parcelle deux campagnes consécutives,
  *      sauf prairies (permanentes ou temporaires multi-annuelles).
- *   2. Sur les 5 dernières campagnes, au moins 4 espèces distinctes
- *      cultivées sur l'ensemble de la SAU (règle de diversité simplifiée).
+ *   2. Sur les N dernières campagnes (par défaut 5), au moins K espèces
+ *      distinctes cultivées sur l'ensemble de la SAU (par défaut 4).
  *
- * NOTE : Les vraies règles d'assolement OPD sont plus complexes (familles
- * botaniques, parts maximales par culture, exceptions zone montagne…).
- * Cette implémentation MVP couvre le cas commun grandes cultures plaine ;
- * V2 affinera selon les guides Agridea PER 2026.
+ * Configuration via `AssolementConfig` — résolu côté backend par le
+ * `RuleEngineService` depuis le template OPD-CH-2026 ou un override
+ * tenant. Voir docs/adr/ADR-003-rule-engine.md.
+ *
+ * Le module reste pur (pas de dépendance à Prisma / NestJS) pour rester
+ * testable sans I/O et utilisable côté mobile (offline).
  */
 
 export interface CultureRecord {
@@ -21,6 +23,26 @@ export interface CultureRecord {
   /** Année de récolte. 2026 = saison cultivée pour récolte 2026. */
   campagne: number;
 }
+
+export interface AssolementConfig {
+  /** Nombre de campagnes consécutives sur lesquelles évaluer la diversité. */
+  nbCampagnesDiversite: number;
+  /** Nombre minimum d'espèces distinctes dans la fenêtre. */
+  minEspecesDistinctes: number;
+  /** Préfixes d'espèces considérées comme prairies (exemption rotation). */
+  prairiePrefixes: string[];
+}
+
+/**
+ * Configuration par défaut alignée sur le template OPD-CH-2026 (cf
+ * `prisma/seed-rules.ts`). Utilisée comme fallback si le RuleEngine
+ * n'est pas disponible (tests purs domain, exécution offline mobile).
+ */
+export const DEFAULT_ASSOLEMENT_CONFIG: AssolementConfig = {
+  nbCampagnesDiversite: 5,
+  minEspecesDistinctes: 4,
+  prairiePrefixes: ["prairie_", "paturage_"],
+};
 
 export interface AssolementResult {
   ok: boolean;
@@ -42,19 +64,22 @@ export type AssolementIncident =
       minimumRequis: number;
     };
 
-const PRAIRIE_PREFIXES = ["prairie_", "paturage_"];
-const NB_CAMPAGNES_DIVERSITE = 5;
-const MIN_ESPECES_DISTINCTES = 4;
-
-function isPrairie(espece: string): boolean {
-  return PRAIRIE_PREFIXES.some((prefix) => espece.startsWith(prefix));
+function isPrairie(espece: string, prefixes: readonly string[]): boolean {
+  return prefixes.some((prefix) => espece.startsWith(prefix));
 }
 
 /**
  * Vérifie l'assolement régulier sur un historique de cultures.
  * Renvoie tous les incidents détectés (pas court-circuit au premier).
+ *
+ * @param cultures Historique des cultures (toutes parcelles).
+ * @param config Configuration des seuils (défaut : OPD-CH-2026 standard).
+ *               Côté backend, fourni par `RuleEngineService.getMany()`.
  */
-export function verifierAssolement(cultures: readonly CultureRecord[]): AssolementResult {
+export function verifierAssolement(
+  cultures: readonly CultureRecord[],
+  config: AssolementConfig = DEFAULT_ASSOLEMENT_CONFIG,
+): AssolementResult {
   const incidents: AssolementIncident[] = [];
 
   // Règle 1 : pas la même espèce 2 campagnes consécutives sur la même parcelle.
@@ -74,7 +99,7 @@ export function verifierAssolement(cultures: readonly CultureRecord[]): Assoleme
       if (
         courante.campagne === prec.campagne + 1 &&
         courante.espece === prec.espece &&
-        !isPrairie(courante.espece)
+        !isPrairie(courante.espece, config.prairiePrefixes)
       ) {
         incidents.push({
           type: "monoculture_consecutive",
@@ -86,19 +111,19 @@ export function verifierAssolement(cultures: readonly CultureRecord[]): Assoleme
     }
   }
 
-  // Règle 2 : diversité sur les 5 dernières campagnes.
+  // Règle 2 : diversité sur les N dernières campagnes.
   if (cultures.length > 0) {
     const campagneMax = Math.max(...cultures.map((c) => c.campagne));
-    const campagneMin = campagneMax - NB_CAMPAGNES_DIVERSITE + 1;
+    const campagneMin = campagneMax - config.nbCampagnesDiversite + 1;
     const fenetre = cultures.filter((c) => c.campagne >= campagneMin && c.campagne <= campagneMax);
     const especesUniques = [...new Set(fenetre.map((c) => c.espece))];
-    if (especesUniques.length < MIN_ESPECES_DISTINCTES) {
+    if (especesUniques.length < config.minEspecesDistinctes) {
       const campagnesFenetre = [...new Set(fenetre.map((c) => c.campagne))].sort((a, b) => a - b);
       incidents.push({
         type: "diversite_insuffisante",
         campagnes: campagnesFenetre,
         especesUniques,
-        minimumRequis: MIN_ESPECES_DISTINCTES,
+        minimumRequis: config.minEspecesDistinctes,
       });
     }
   }

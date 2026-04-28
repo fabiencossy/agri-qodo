@@ -108,6 +108,12 @@ enum UserRole {
   CONSULTANT // Conseiller (Agridea, fiduciaire)
 }
 
+enum RuleSetScope {
+  GLOBAL // Template universel (OPD-CH-2026, OPD-CH-2026-BIO, …)
+  CANTON // Variante cantonale
+  TENANT // Override par exploitation
+}
+
 // ====================================================================
 // Tenant racine + utilisateurs
 // ====================================================================
@@ -135,6 +141,7 @@ model Exploitation {
   animaux         Animal[]
   lots            LotAnimal[]
   sortiesSrpa     SortieSrpa[]
+  ruleSets        RuleSet[]
   partnerLinksOwned   PartnerLink[] @relation("PartnerLinkOwner")
   partnerLinksPartner PartnerLink[] @relation("PartnerLinkPartner")
 
@@ -327,6 +334,51 @@ model SortieSrpa {
 // Lien partenaire entre exploitations (M16)
 // Voir §11 spec.
 // ====================================================================
+
+// ====================================================================
+// Rule Engine — moteurs de calcul configurables par template / canton
+// / tenant (cf ADR-003).
+// ====================================================================
+
+model RuleSet {
+  id            String       @id @default(uuid())
+  name          String       @unique
+  description   String?
+  scope         RuleSetScope
+  tenantId      String?      @map("tenant_id")
+  canton        Canton?
+  parentId      String?      @map("parent_id")
+  isActive      Boolean      @default(true) @map("is_active")
+  effectiveFrom DateTime     @default(now()) @map("effective_from")
+  effectiveTo   DateTime?    @map("effective_to")
+  createdAt     DateTime     @default(now()) @map("created_at")
+  updatedAt     DateTime     @updatedAt @map("updated_at")
+
+  parent        RuleSet?      @relation("RuleSetParent", fields: [parentId], references: [id], onDelete: SetNull)
+  children      RuleSet[]     @relation("RuleSetParent")
+  rules         Rule[]
+  tenant        Exploitation? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([scope])
+  @@index([tenantId])
+  @@map("rule_sets")
+}
+
+model Rule {
+  id          String   @id @default(uuid())
+  ruleSetId   String   @map("rule_set_id")
+  key         String
+  valueJson   Json     @map("value_json")
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  ruleSet     RuleSet  @relation(fields: [ruleSetId], references: [id], onDelete: Cascade)
+
+  @@unique([ruleSetId, key])
+  @@index([key])
+  @@map("rules")
+}
 
 model PartnerLink {
   id              String            @id @default(uuid())

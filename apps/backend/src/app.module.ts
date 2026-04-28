@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { LoggerModule } from "nestjs-pino";
 import { PrismaModule } from "./common/prisma/prisma.module";
+import { RuleEngineModule } from "./common/rule-engine/rule-engine.module";
 import { TenantModule } from "./common/tenant/tenant.module";
 import { validateEnv } from "./config/env.schema";
 import { AuthModule } from "./modules/auth/auth.module";
@@ -43,6 +44,7 @@ import { TenantsModule } from "./modules/tenants/tenants.module";
     }),
     PrismaModule,
     TenantModule,
+    RuleEngineModule,
     HealthModule,
     AuthModule,
     TenantsModule,

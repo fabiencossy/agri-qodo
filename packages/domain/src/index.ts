@@ -14,8 +14,10 @@
 export const PACKAGE_NAME = "@agri-qodo/domain" as const;
 
 export {
-  verifierAssolement,
+  DEFAULT_ASSOLEMENT_CONFIG,
+  type AssolementConfig,
   type AssolementIncident,
   type AssolementResult,
   type CultureRecord,
+  verifierAssolement,
 } from "./assolement";
