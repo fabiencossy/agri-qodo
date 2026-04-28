@@ -10,6 +10,7 @@ import {
   LogOut,
   type LucideIcon,
   MapPin,
+  Package,
   Sprout,
 } from "lucide-react";
 import Link from "next/link";
@@ -29,6 +30,7 @@ const NAVIGATION: NavLink[] = [
   { href: "/interventions", label: "Carnet des champs", icon: Sprout },
   { href: "/animaux", label: "Cheptel", icon: Beef },
   { href: "/srpa", label: "SRPA — sorties pâturage", icon: ClipboardList },
+  { href: "/produits", label: "Catalogue produits", icon: Package },
 ];
 
 const PILOTAGE: NavLink[] = [
