@@ -15,6 +15,7 @@ export default [
       "**/*.config.js",
       "**/*.config.cjs",
       "**/*.config.mjs",
+      "**/next-env.d.ts", // auto-généré par Next.js
     ],
   },
   js.configs.recommended,

@@ -2,18 +2,41 @@
   "name": "@agri-qodo/web",
   "version": "0.0.0",
   "private": true,
-  "description": "Frontend web Next.js 15 d'Agri Qodo (étape 3)",
+  "description": "Frontend web Next.js 15 d'Agri Qodo",
   "license": "AGPL-3.0-or-later",
   "scripts": {
-    "dev": "echo 'web dev: à implémenter étape 3 (Next.js 15)' && exit 0",
-    "build": "tsc -p tsconfig.json",
+    "dev": "next dev --turbopack -p 3000",
+    "build": "next build",
+    "start": "next start -p 3000",
     "lint": "eslint src --max-warnings 0",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "echo 'tests à implémenter étape 3' && exit 0",
-    "clean": "rm -rf .next dist .turbo"
+    "test": "echo 'tests à venir' && exit 0",
+    "clean": "rimraf .next dist .turbo"
   },
-  "dependencies": {},
+  "dependencies": {
+    "@tanstack/react-query": "^5.62.10",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.469.0",
+    "next": "^15.1.4",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-hook-form": "^7.54.2",
+    "rxdb": "^16.5.2",
+    "rxjs": "^7.8.1",
+    "tailwind-merge": "^2.6.0",
+    "zod": "^3.24.1",
+    "@hookform/resolvers": "^3.10.0"
+  },
   "devDependencies": {
+    "@types/node": "^22.10.5",
+    "@types/react": "^19.0.2",
+    "@types/react-dom": "^19.0.2",
+    "autoprefixer": "^10.4.20",
+    "eslint-config-next": "^15.1.4",
+    "postcss": "^8.4.49",
+    "rimraf": "^6.0.1",
+    "tailwindcss": "^3.4.17",
     "typescript": "^5.7.2"
   }
 }
