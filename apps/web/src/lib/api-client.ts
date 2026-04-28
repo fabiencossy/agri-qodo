@@ -14,7 +14,10 @@ import {
   setStoredTokens,
 } from "./auth-storage";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
+// En prod (Vercel) : NEXT_PUBLIC_API_URL est vide, les requêtes partent en
+// relatif (`/api/...`) et next.config.ts proxie vers le backend Railway.
+// En dev local : pointe directement sur le backend Nest sur localhost:3001.
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 
 export class AuthError extends Error {
   constructor(message = "Authentification expirée") {
