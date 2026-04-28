@@ -2,10 +2,11 @@
 
 /**
  * Carte de dessin de parcelle.
- * - Fond OpenStreetMap (gratuit, attribution requise).
+ * - Fonds officiels Swisstopo (geo.admin.ch) — gratuit, sans clé API,
+ *   précis pour la Suisse, avec orthophotos et cadastre fédéral.
  * - L'utilisateur dessine un polygone, la surface est calculée
  *   automatiquement (formule géodésique sur WGS84) via @turf/area.
- * - Renvoie via onPolygonDrawn la géométrie GeoJSON et la surface en m².
+ * - Renvoie via onPolygonChange la géométrie GeoJSON et la surface en m².
  *
  * NOTE Next.js : ce composant doit être chargé via `dynamic({ ssr: false })`
  * car Leaflet dépend de `window`.
@@ -21,6 +22,14 @@ export interface GeoJsonPolygon {
   type: "Polygon";
   coordinates: number[][][];
 }
+
+const SWISSTOPO_PIXELKARTE =
+  "https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.pixelkarte-farbe/default/current/3857/{z}/{x}/{y}.jpeg";
+const SWISSTOPO_ORTHO =
+  "https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissimage/default/current/3857/{z}/{x}/{y}.jpeg";
+const SWISSTOPO_CADASTRE =
+  "https://wmts.geo.admin.ch/1.0.0/ch.kantone.cadastralwebmap-farbe/default/current/3857/{z}/{x}/{y}.png";
+const SWISSTOPO_ATTRIBUTION = '&copy; <a href="https://www.swisstopo.admin.ch">swisstopo</a>';
 
 interface PolygonFeature {
   type: "Feature";
@@ -55,10 +64,27 @@ export default function ParcelleDrawMap({
 
     const map = L.map(containerRef.current).setView(SUISSE_ROMANDE, 13);
 
-    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+    const carte = L.tileLayer(SWISSTOPO_PIXELKARTE, {
+      attribution: SWISSTOPO_ATTRIBUTION,
       maxZoom: 19,
     }).addTo(map);
+    const ortho = L.tileLayer(SWISSTOPO_ORTHO, {
+      attribution: SWISSTOPO_ATTRIBUTION,
+      maxZoom: 19,
+    });
+    const cadastre = L.tileLayer(SWISSTOPO_CADASTRE, {
+      attribution: SWISSTOPO_ATTRIBUTION,
+      maxZoom: 19,
+      opacity: 0.7,
+    });
+
+    L.control
+      .layers(
+        { Carte: carte, "Vue satellite": ortho },
+        { "Cadastre fédéral": cadastre },
+        { position: "topleft", collapsed: false },
+      )
+      .addTo(map);
 
     const drawnItems = new L.FeatureGroup();
     map.addLayer(drawnItems);
