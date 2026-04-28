@@ -6,8 +6,10 @@ export class LoginDto {
   @IsEmail()
   email!: string;
 
-  @ApiProperty({ example: "motDePasseFort", minLength: 8 })
+  // MinLength(4) pour autoriser un compte de démonstration partageable
+  // (test/test). La création de comptes réels reste à durcir séparément.
+  @ApiProperty({ example: "motDePasseFort", minLength: 4 })
   @IsString()
-  @MinLength(8)
+  @MinLength(4)
   password!: string;
 }
