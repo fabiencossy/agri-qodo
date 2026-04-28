@@ -57,14 +57,26 @@ const DEMO_TENANTS: DemoTenant[] = [
     cheptel: [],
   },
   {
+    code: "AQ-VD-ADMIN-PUBLIC",
+    nom: "Admin Agri Qodo",
+    canton: Canton.VD,
+    numeroUfam: "0001",
+    npa: "1000",
+    localite: "Lausanne",
+    emailContact: "admin@admin.ch",
+    user: { email: "admin@admin.ch", password: "admin", prenom: "Admin", nom: "Qodo" },
+    parcelles: [],
+    cheptel: [],
+  },
+  {
     code: "AQ-VD-DEMO-PUBLIC",
     nom: "Démo Agri Qodo",
     canton: Canton.VD,
     numeroUfam: "0000",
     npa: "1400",
     localite: "Yverdon-les-Bains",
-    emailContact: "test@test.ch",
-    user: { email: "test@test.ch", password: "test", prenom: "Test", nom: "Demo" },
+    emailContact: "demo@demo.ch",
+    user: { email: "demo@demo.ch", password: "demo", prenom: "Demo", nom: "Agri Qodo" },
     // Parcelles dessinées approximativement autour d'Yverdon (vu carte CH).
     // GeoJSON MultiPolygon WGS84.
     parcelles: [
