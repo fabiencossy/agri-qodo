@@ -5,9 +5,13 @@ import { PrismaService } from "@/common/prisma/prisma.service";
 export class ParcellesService {
   constructor(private readonly prisma: PrismaService) {}
 
-  list(tenantId: string) {
-    return this.prisma.parcelle.findMany({
-      where: { tenantId },
+  /**
+   * Le filtre `tenantId` est injecté automatiquement par
+   * `prisma.tenantAware` (voir tenant.middleware.ts). Aucun filtre manuel
+   * nécessaire.
+   */
+  list() {
+    return this.prisma.tenantAware.parcelle.findMany({
       orderBy: { nom: "asc" },
     });
   }

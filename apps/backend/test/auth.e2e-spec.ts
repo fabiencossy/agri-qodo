@@ -1,10 +1,11 @@
-import { ValidationPipe, type INestApplication } from "@nestjs/common";
+import { type INestApplication } from "@nestjs/common";
 import { Test, type TestingModule } from "@nestjs/testing";
 import { Canton } from "@prisma/client";
 import bcrypt from "bcrypt";
 import request from "supertest";
 import { AppModule } from "@/app.module";
 import { PrismaService } from "@/common/prisma/prisma.service";
+import { configureApp } from "@/configure-app";
 
 describe("Auth (e2e)", () => {
   let app: INestApplication;
@@ -21,8 +22,7 @@ describe("Auth (e2e)", () => {
     }).compile();
 
     app = moduleRef.createNestApplication();
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
-    app.setGlobalPrefix("api", { exclude: ["health"] });
+    configureApp(app);
     await app.init();
 
     prisma = app.get(PrismaService);

@@ -88,9 +88,9 @@ Règle absolue : **les flèches de dépendance ne remontent jamais.** Le domaine
 ## Choix techniques majeurs (renvois ADR)
 
 - ADR-001 : Stack monorepo (Turborepo + pnpm + NestJS + Next.js + Expo) — **rédigé**
-- ADR-002 : Choix de la persistance offline mobile (WatermelonDB) — _à rédiger_
-- ADR-003 : Choix de la persistance offline web (RxDB) — _à rédiger_
-- ADR-004 : Stratégie multi-tenant (middleware Prisma) — _à rédiger_
+- ADR-002 : Stratégie multi-tenant strict (3 couches : ALS + Prisma extension + tests) — **rédigé**
+- ADR-003 : Choix de la persistance offline mobile (WatermelonDB) — _à rédiger_
+- ADR-004 : Choix de la persistance offline web (RxDB) — _à rédiger_
 - ADR-005 : Connecteur Odoo (XML-RPC + JSON-RPC en lib partagée) — _à rédiger_
 - ADR-006 : Modèle de sync différentielle et résolution de conflits — _à rédiger_
 

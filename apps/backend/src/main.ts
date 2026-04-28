@@ -9,6 +9,8 @@ import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 import helmet from "helmet";
 import { Logger } from "nestjs-pino";
 import { AppModule } from "./app.module";
+import { tenantContextMiddleware } from "./common/tenant/tenant-context.middleware";
+import { TenantContextService } from "./common/tenant/tenant-context.service";
 import type { Env } from "./config/env.schema";
 
 async function bootstrap(): Promise<void> {
@@ -17,6 +19,11 @@ async function bootstrap(): Promise<void> {
 
   const config = app.get(ConfigService<Env, true>);
   const isDev = config.get("NODE_ENV", { infer: true }) === "development";
+
+  // CRITIQUE : le middleware tenant doit être installé AVANT toute logique
+  // qui touche à la base de données. Il pose un scope AsyncLocalStorage
+  // pour chaque requête, que le JwtAuthGuard remplit après authentification.
+  app.use(tenantContextMiddleware(app.get(TenantContextService)));
 
   app.use(helmet());
   app.enableCors({

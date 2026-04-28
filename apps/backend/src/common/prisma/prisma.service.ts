@@ -1,11 +1,35 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
 import { PrismaClient } from "@prisma/client";
+import { TenantContextService } from "../tenant/tenant-context.service";
+import { buildTenantExtension } from "./tenant.middleware";
+
+/**
+ * Construit le client Prisma "tenant-aware" via $extends.
+ * Le retour porte le typage exact du client extended (pour intellisense).
+ */
+function makeTenantAware(base: PrismaClient, tenantContext: TenantContextService) {
+  return base.$extends(buildTenantExtension(tenantContext));
+}
+
+export type TenantAwarePrisma = ReturnType<typeof makeTenantAware>;
 
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(PrismaService.name);
 
-  constructor() {
+  /**
+   * Client multi-tenant strict.
+   *
+   * Tous les services métier touchant aux modèles tenant-scoped (Parcelle,
+   * Culture, Animal, LotAnimal) DOIVENT utiliser `prisma.tenantAware.X`.
+   *
+   * Le client de base (`prisma.X`) reste accessible pour les modèles non
+   * tenant-scoped (User, RefreshToken, Exploitation, Intervention, PartnerLink)
+   * et les opérations admin (seed, jobs internes).
+   */
+  readonly tenantAware: TenantAwarePrisma;
+
+  constructor(private readonly tenantContext: TenantContextService) {
     super({
       log: [
         { emit: "event", level: "query" },
@@ -13,6 +37,7 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
         { emit: "event", level: "error" },
       ],
     });
+    this.tenantAware = makeTenantAware(this, this.tenantContext);
   }
 
   async onModuleInit(): Promise<void> {
