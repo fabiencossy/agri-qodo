@@ -1,0 +1,48 @@
+services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    container_name: agriqodo-postgres-dev
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: agriqodo
+      POSTGRES_PASSWORD: agriqodo
+      POSTGRES_DB: agriqodo_dev
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agriqodo -d agriqodo_dev"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: agriqodo-redis-dev
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: agriqodo-mailhog-dev
+    restart: unless-stopped
+    ports:
+      - "1025:1025" # SMTP
+      - "8025:8025" # Web UI
+
+volumes:
+  postgres_data:
+    name: agriqodo_postgres_dev
+  redis_data:
+    name: agriqodo_redis_dev

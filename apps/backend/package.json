@@ -1,0 +1,21 @@
+{
+  "name": "@agri-qodo/backend",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Backend NestJS d'Agri Qodo (étape 2)",
+  "license": "AGPL-3.0-or-later",
+  "type": "module",
+  "main": "dist/main.js",
+  "scripts": {
+    "dev": "echo 'backend dev: à implémenter étape 2 (NestJS)' && exit 0",
+    "build": "tsc -p tsconfig.json",
+    "lint": "eslint src --max-warnings 0",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "echo 'tests à implémenter étape 2' && exit 0",
+    "clean": "rm -rf dist .turbo"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "typescript": "^5.7.2"
+  }
+}

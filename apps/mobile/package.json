@@ -1,0 +1,19 @@
+{
+  "name": "@agri-qodo/mobile",
+  "version": "0.0.0",
+  "private": true,
+  "description": "App mobile React Native + Expo d'Agri Qodo (étape 4)",
+  "license": "AGPL-3.0-or-later",
+  "scripts": {
+    "dev": "echo 'mobile dev: à implémenter étape 4 (Expo + RN)' && exit 0",
+    "build": "tsc -p tsconfig.json",
+    "lint": "eslint src --max-warnings 0",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "echo 'tests à implémenter étape 4' && exit 0",
+    "clean": "rm -rf .expo dist .turbo"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "typescript": "^5.7.2"
+  }
+}

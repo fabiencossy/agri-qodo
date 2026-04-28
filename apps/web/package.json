@@ -1,0 +1,19 @@
+{
+  "name": "@agri-qodo/web",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Frontend web Next.js 15 d'Agri Qodo (étape 3)",
+  "license": "AGPL-3.0-or-later",
+  "scripts": {
+    "dev": "echo 'web dev: à implémenter étape 3 (Next.js 15)' && exit 0",
+    "build": "tsc -p tsconfig.json",
+    "lint": "eslint src --max-warnings 0",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "echo 'tests à implémenter étape 3' && exit 0",
+    "clean": "rm -rf .next dist .turbo"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "typescript": "^5.7.2"
+  }
+}

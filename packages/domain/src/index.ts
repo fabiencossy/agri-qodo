@@ -1,0 +1,14 @@
+/**
+ * @agri-qodo/domain — logique métier pure.
+ *
+ * Aucune dépendance d'I/O, framework ou base de données.
+ * Cible 100% de couverture de tests.
+ *
+ * Modules à implémenter :
+ *  - suisse-bilanz : calcul flux N et P selon Guide Agridea 1.18
+ *  - ugb : conversion catégorie animale → unité gros bétail
+ *  - assolement : vérification rotation régulière
+ *  - parcelle : validation surface, géométrie, zone agricole
+ */
+
+export const PACKAGE_NAME = "@agri-qodo/domain" as const;

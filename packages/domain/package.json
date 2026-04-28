@@ -1,0 +1,26 @@
+{
+  "name": "@agri-qodo/domain",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Logique métier pure (Suisse-Bilanz, UGB, validation parcelle, assolement)",
+  "license": "AGPL-3.0-or-later",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "lint": "eslint src --max-warnings 0",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "echo 'tests à venir (cible 100% couverture)' && exit 0",
+    "clean": "rm -rf dist .turbo"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2"
+  }
+}
