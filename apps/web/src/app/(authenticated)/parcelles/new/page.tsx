@@ -147,7 +147,7 @@ export default function NewParcellePage() {
             hint={
               mode === "carte"
                 ? "Calculée automatiquement depuis la carte"
-                : "1 hectare = 10 000 m²"
+                : "1 are = 100 m² · 1 hectare = 10 000 m² (= 100 ares)"
             }
             error={errors.surfaceM2?.message}
           >

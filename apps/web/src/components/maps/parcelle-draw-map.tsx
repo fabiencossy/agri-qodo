@@ -132,12 +132,16 @@ export default function ParcelleDrawMap({
         className="h-[450px] w-full overflow-hidden rounded-xl border border-border"
       />
       {surface !== null && (
-        <div className="flex items-center gap-3 rounded-lg bg-green/10 px-4 py-2 text-sm text-green-dark">
+        <div className="flex flex-wrap items-center gap-3 rounded-lg bg-green/10 px-4 py-2 text-sm text-green-dark">
           <span className="font-semibold">Surface calculée :</span>
-          <span>
-            {surface >= 10000 ? `${(surface / 10000).toFixed(2)} ha` : `${surface.toFixed(0)} m²`}
+          <span className="text-base font-bold">
+            {surface >= 10000
+              ? `${(surface / 10000).toFixed(2)} ha`
+              : surface >= 100
+                ? `${(surface / 100).toFixed(2)} ares`
+                : `${surface.toFixed(0)} m²`}
           </span>
-          <span className="text-foreground/50">({surface.toFixed(0)} m²)</span>
+          <span className="text-xs text-foreground/50">soit {surface.toFixed(0)} m²</span>
         </div>
       )}
       {surface === null && (

@@ -90,9 +90,16 @@ export function libelleZone(zone: ZoneAgricole): string {
   return ZONE_LABELS[zone];
 }
 
+/**
+ * Format métier suisse :
+ *   - ≥ 1 hectare (10 000 m²) → ha
+ *   - ≥ 1 are (100 m²)        → a (ares)
+ *   - sinon                   → m²
+ */
 export function formatSurface(m2: string | number): string {
   const value = typeof m2 === "string" ? Number(m2) : m2;
-  if (Number.isNaN(value)) return "—";
+  if (Number.isNaN(value) || value < 0) return "—";
   if (value >= 10000) return `${(value / 10000).toFixed(2)} ha`;
+  if (value >= 100) return `${(value / 100).toFixed(2)} a`;
   return `${value.toFixed(0)} m²`;
 }
