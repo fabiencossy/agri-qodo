@@ -7,7 +7,9 @@ export const envSchema = z.object({
 
   DATABASE_URL: z.string().url().or(z.string().startsWith("postgresql://")),
   DATABASE_URL_TEST: z.string().optional(),
-  REDIS_URL: z.string().url().or(z.string().startsWith("redis://")),
+  // Redis pas encore utilisé en MVP (pas de cache de sessions distribué).
+  // Optional pour ne pas bloquer le démarrage en prod sans Redis.
+  REDIS_URL: z.string().startsWith("redis://").optional(),
 
   JWT_SECRET: z.string().min(32, "JWT_SECRET doit faire au moins 32 caractères"),
   JWT_EXPIRES_IN: z.string().default("15m"),
