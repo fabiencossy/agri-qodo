@@ -114,54 +114,71 @@ enum RuleSetScope {
   TENANT // Override par exploitation
 }
 
+enum ProduitCategorie {
+  SEMENCE
+  ENGRAIS_MINERAL
+  ENGRAIS_ORGANIQUE
+  PHYTO
+  AUTRE
+}
+
+enum ProduitUnite {
+  KG // poids sec — standard pour engrais minéraux et semences
+  L // litre — engrais liquides, lisier, phytos
+  T // tonne — fumier, compost
+  M3 // mètre cube — lisier dans certaines régions
+  DOSE // doses (semences calibrées, certains phytos)
+}
+
 // ====================================================================
 // Tenant racine + utilisateurs
 // ====================================================================
 
 model Exploitation {
-  id              String   @id @default(uuid())
+  id           String   @id @default(uuid())
   // Code unique format AQ-{canton}-{ufam}-{token4} — voir §6 spec
-  code            String   @unique
-  nom             String
-  canton          Canton
-  numeroUfam      String?  @map("numero_ufam") // n° canton/UFAM
-  numeroBdta      String?  @map("numero_bdta") // n° d'exploitation BDTA / Identitas
-  adresse         String?
-  npa             String?
-  localite        String?
-  emailContact    String?  @map("email_contact")
-  telephone       String?
-  createdAt       DateTime @default(now()) @map("created_at")
-  updatedAt       DateTime @updatedAt @map("updated_at")
+  code         String   @unique
+  nom          String
+  canton       Canton
+  numeroUfam   String?  @map("numero_ufam") // n° canton/UFAM
+  numeroBdta   String?  @map("numero_bdta") // n° d'exploitation BDTA / Identitas
+  adresse      String?
+  npa          String?
+  localite     String?
+  emailContact String?  @map("email_contact")
+  telephone    String?
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
 
-  users           User[]
-  parcelles       Parcelle[]
-  interventionsOwned   Intervention[] @relation("InterventionOwner")
+  users                 User[]
+  parcelles             Parcelle[]
+  interventionsOwned    Intervention[] @relation("InterventionOwner")
   interventionsAuthored Intervention[] @relation("InterventionAuthor")
-  animaux         Animal[]
-  lots            LotAnimal[]
-  sortiesSrpa     SortieSrpa[]
-  ruleSets        RuleSet[]
-  partnerLinksOwned   PartnerLink[] @relation("PartnerLinkOwner")
-  partnerLinksPartner PartnerLink[] @relation("PartnerLinkPartner")
+  animaux               Animal[]
+  lots                  LotAnimal[]
+  sortiesSrpa           SortieSrpa[]
+  ruleSets              RuleSet[]
+  produitsCustom        Produit[]
+  partnerLinksOwned     PartnerLink[]  @relation("PartnerLinkOwner")
+  partnerLinksPartner   PartnerLink[]  @relation("PartnerLinkPartner")
 
   @@map("exploitations")
 }
 
 model User {
-  id           String   @id @default(uuid())
-  email        String   @unique
-  passwordHash String   @map("password_hash")
+  id           String    @id @default(uuid())
+  email        String    @unique
+  passwordHash String    @map("password_hash")
   prenom       String
   nom          String
-  role         UserRole @default(OWNER)
-  tenantId     String   @map("tenant_id")
-  isActive     Boolean  @default(true) @map("is_active")
+  role         UserRole  @default(OWNER)
+  tenantId     String    @map("tenant_id")
+  isActive     Boolean   @default(true) @map("is_active")
   lastLoginAt  DateTime? @map("last_login_at")
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
 
-  tenant       Exploitation   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant        Exploitation   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   refreshTokens RefreshToken[]
 
   @@index([tenantId])
@@ -169,12 +186,12 @@ model User {
 }
 
 model RefreshToken {
-  id        String   @id @default(uuid())
-  userId    String   @map("user_id")
-  tokenHash String   @unique @map("token_hash")
-  expiresAt DateTime @map("expires_at")
+  id        String    @id @default(uuid())
+  userId    String    @map("user_id")
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at")
   revokedAt DateTime? @map("revoked_at")
-  createdAt DateTime @default(now()) @map("created_at")
+  createdAt DateTime  @default(now()) @map("created_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -187,22 +204,22 @@ model RefreshToken {
 // ====================================================================
 
 model Parcelle {
-  id                String       @id @default(uuid())
-  tenantId          String       @map("tenant_id")
-  nom               String
-  identifiantCadastral String?   @map("identifiant_cadastral")
-  surfaceM2         Decimal      @map("surface_m2") @db.Decimal(12, 2)
-  zone              ZoneAgricole
+  id                   String                                       @id @default(uuid())
+  tenantId             String                                       @map("tenant_id")
+  nom                  String
+  identifiantCadastral String?                                      @map("identifiant_cadastral")
+  surfaceM2            Decimal                                      @map("surface_m2") @db.Decimal(12, 2)
+  zone                 ZoneAgricole
   // Géométrie PostGIS — multipolygone WGS84 (SRID 4326).
   // Prisma ne supporte pas PostGIS nativement, on utilise Unsupported.
-  geom              Unsupported("geometry(MultiPolygon, 4326)")?
-  notes             String?
-  createdAt         DateTime     @default(now()) @map("created_at")
-  updatedAt         DateTime     @updatedAt @map("updated_at")
+  geom                 Unsupported("geometry(MultiPolygon, 4326)")?
+  notes                String?
+  createdAt            DateTime                                     @default(now()) @map("created_at")
+  updatedAt            DateTime                                     @updatedAt @map("updated_at")
 
-  tenant            Exploitation @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  cultures          Culture[]
-  interventions     Intervention[]
+  tenant        Exploitation   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  cultures      Culture[]
+  interventions Intervention[]
 
   @@index([tenantId])
   @@map("parcelles")
@@ -213,18 +230,18 @@ model Parcelle {
 // ====================================================================
 
 model Culture {
-  id           String   @id @default(uuid())
-  tenantId     String   @map("tenant_id")
-  parcelleId   String   @map("parcelle_id")
-  espece       String   // e.g. "ble_panifiable", "mais_grain", "prairie_temporaire"
-  variete      String?
-  dateSemis    DateTime? @map("date_semis")
-  dateRecolte  DateTime? @map("date_recolte") // récolte effective ou prévue
-  campagne     Int      // année de récolte (2026 = récolte 2026)
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
+  id          String    @id @default(uuid())
+  tenantId    String    @map("tenant_id")
+  parcelleId  String    @map("parcelle_id")
+  espece      String // e.g. "ble_panifiable", "mais_grain", "prairie_temporaire"
+  variete     String?
+  dateSemis   DateTime? @map("date_semis")
+  dateRecolte DateTime? @map("date_recolte") // récolte effective ou prévue
+  campagne    Int // année de récolte (2026 = récolte 2026)
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
 
-  parcelle     Parcelle @relation(fields: [parcelleId], references: [id], onDelete: Cascade)
+  parcelle Parcelle @relation(fields: [parcelleId], references: [id], onDelete: Cascade)
 
   @@index([tenantId])
   @@index([parcelleId])
@@ -237,26 +254,26 @@ model Culture {
 // ====================================================================
 
 model Intervention {
-  id              String   @id @default(uuid())
+  id               String           @id @default(uuid())
   // UUID généré côté client pour idempotence à la sync
-  clientUuid      String   @unique @map("client_uuid")
-  ownerTenantId   String   @map("owner_tenant_id")
-  authorTenantId  String   @map("author_tenant_id") // peut différer de owner si M16
-  parcelleId      String   @map("parcelle_id")
-  type            InterventionType
-  dateOperation   DateTime @map("date_operation")
-  produit         String?  // libellé produit ou code OPPh
-  quantite        Decimal? @db.Decimal(12, 3)
-  unite           String?  // "kg", "L", "t", "ha"
-  notes           String?
+  clientUuid       String           @unique @map("client_uuid")
+  ownerTenantId    String           @map("owner_tenant_id")
+  authorTenantId   String           @map("author_tenant_id") // peut différer de owner si M16
+  parcelleId       String           @map("parcelle_id")
+  type             InterventionType
+  dateOperation    DateTime         @map("date_operation")
+  produit          String? // libellé produit ou code OPPh
+  quantite         Decimal?         @db.Decimal(12, 3)
+  unite            String? // "kg", "L", "t", "ha"
+  notes            String?
   validationStatus ValidationStatus @default(SELF) @map("validation_status")
-  validatedAt     DateTime? @map("validated_at")
-  rejectedReason  String?   @map("rejected_reason")
-  createdAt       DateTime @default(now()) @map("created_at")
+  validatedAt      DateTime?        @map("validated_at")
+  rejectedReason   String?          @map("rejected_reason")
+  createdAt        DateTime         @default(now()) @map("created_at")
 
-  ownerTenant     Exploitation @relation("InterventionOwner", fields: [ownerTenantId], references: [id], onDelete: Cascade)
-  authorTenant    Exploitation @relation("InterventionAuthor", fields: [authorTenantId], references: [id], onDelete: Cascade)
-  parcelle        Parcelle     @relation(fields: [parcelleId], references: [id], onDelete: Cascade)
+  ownerTenant  Exploitation @relation("InterventionOwner", fields: [ownerTenantId], references: [id], onDelete: Cascade)
+  authorTenant Exploitation @relation("InterventionAuthor", fields: [authorTenantId], references: [id], onDelete: Cascade)
+  parcelle     Parcelle     @relation(fields: [parcelleId], references: [id], onDelete: Cascade)
 
   @@index([ownerTenantId])
   @@index([authorTenantId])
@@ -271,21 +288,21 @@ model Intervention {
 // ====================================================================
 
 model Animal {
-  id            String   @id @default(uuid())
-  tenantId      String   @map("tenant_id")
-  numeroBoucle  String?  @unique @map("numero_boucle") // n° BDTA pour bovins
+  id            String          @id @default(uuid())
+  tenantId      String          @map("tenant_id")
+  numeroBoucle  String?         @unique @map("numero_boucle") // n° BDTA pour bovins
   nom           String?
   categorie     AnimalCategorie
-  dateNaissance DateTime? @map("date_naissance")
-  lotId         String?  @map("lot_id")
-  isActive      Boolean  @default(true) @map("is_active")
+  dateNaissance DateTime?       @map("date_naissance")
+  lotId         String?         @map("lot_id")
+  isActive      Boolean         @default(true) @map("is_active")
   // Verrou optimiste pour résolution de conflits offline
-  version       Int      @default(0)
-  createdAt     DateTime @default(now()) @map("created_at")
-  updatedAt     DateTime @updatedAt @map("updated_at")
+  version       Int             @default(0)
+  createdAt     DateTime        @default(now()) @map("created_at")
+  updatedAt     DateTime        @updatedAt @map("updated_at")
 
-  tenant        Exploitation @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  lot           LotAnimal?   @relation(fields: [lotId], references: [id], onDelete: SetNull)
+  tenant Exploitation @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  lot    LotAnimal?   @relation(fields: [lotId], references: [id], onDelete: SetNull)
 
   @@index([tenantId])
   @@index([lotId])
@@ -300,8 +317,8 @@ model LotAnimal {
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
-  tenant      Exploitation @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  animaux     Animal[]
+  tenant  Exploitation @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  animaux Animal[]
 
   @@index([tenantId])
   @@map("lots_animaux")
@@ -322,7 +339,7 @@ model SortieSrpa {
   createdAt     DateTime        @default(now()) @map("created_at")
   updatedAt     DateTime        @updatedAt @map("updated_at")
 
-  tenant        Exploitation @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant Exploitation @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@unique([tenantId, date, categorie])
   @@index([tenantId])
@@ -354,10 +371,10 @@ model RuleSet {
   createdAt     DateTime     @default(now()) @map("created_at")
   updatedAt     DateTime     @updatedAt @map("updated_at")
 
-  parent        RuleSet?      @relation("RuleSetParent", fields: [parentId], references: [id], onDelete: SetNull)
-  children      RuleSet[]     @relation("RuleSetParent")
-  rules         Rule[]
-  tenant        Exploitation? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  parent   RuleSet?      @relation("RuleSetParent", fields: [parentId], references: [id], onDelete: SetNull)
+  children RuleSet[]     @relation("RuleSetParent")
+  rules    Rule[]
+  tenant   Exploitation? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([scope])
   @@index([tenantId])
@@ -373,11 +390,55 @@ model Rule {
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
-  ruleSet     RuleSet  @relation(fields: [ruleSetId], references: [id], onDelete: Cascade)
+  ruleSet RuleSet @relation(fields: [ruleSetId], references: [id], onDelete: Cascade)
 
   @@unique([ruleSetId, key])
   @@index([key])
   @@map("rules")
+}
+
+// ====================================================================
+// Catalogue Produits — semences + engrais + phytos.
+//
+// Deux scopes coexistent :
+//   - GLOBAL (tenantId NULL) : référentiel partagé livré par seed
+//     (UFA, Landor, Lonza, …). Read-only pour les utilisateurs.
+//   - TENANT (tenantId set) : produits perso d'un agriculteur (variétés
+//     spécifiques, mélanges maison, fournisseurs locaux). CRUD libre.
+//
+// Le `code` est unique global (préfixe `aq-` pour les officiels,
+// `t-{tenantId}-…` pour les perso).
+// ====================================================================
+
+model Produit {
+  id          String           @id @default(uuid())
+  tenantId    String?          @map("tenant_id") // null = produit global (read-only)
+  categorie   ProduitCategorie
+  code        String           @unique
+  libelle     String
+  fournisseur String?
+  marque      String?
+  // SEMENCE : code espèce qui matche les clés du rule engine
+  // (suisse_bilanz.besoin_n_par_culture). Permet à un SEMIS de créer
+  // automatiquement la Culture sur la parcelle.
+  especeCode  String?          @map("espece_code")
+  // ENGRAIS : teneurs N/P/K en kg/100kg de produit (ou kg/100L liquide).
+  // Pour les engrais organiques (lisier 4 kg N/m³), utiliser unite = M3
+  // ou L et exprimer le taux en kg/100L cohérent (× 1000 pour le m³).
+  tauxN       Decimal?         @map("taux_n") @db.Decimal(8, 3)
+  tauxP       Decimal?         @map("taux_p") @db.Decimal(8, 3)
+  tauxK       Decimal?         @map("taux_k") @db.Decimal(8, 3)
+  unite       ProduitUnite     @default(KG)
+  notes       String?
+  actif       Boolean          @default(true)
+  createdAt   DateTime         @default(now()) @map("created_at")
+  updatedAt   DateTime         @updatedAt @map("updated_at")
+
+  tenant Exploitation? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([categorie])
+  @@map("produits")
 }
 
 model PartnerLink {
