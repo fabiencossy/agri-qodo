@@ -46,17 +46,23 @@ export class ParcellesService {
    */
   async listForMap(): Promise<ParcelleMapItem[]> {
     const { tenantId } = this.tenantContext.get();
-    const rows = await this.prisma.$queryRaw<ParcelleMapRow[]>`
-      SELECT
-        id,
-        nom,
-        surface_m2::text AS "surfaceM2",
-        zone::text AS zone,
-        ST_AsGeoJSON(geom) AS geom
-      FROM parcelles
-      WHERE tenant_id = ${tenantId}::uuid
-      ORDER BY nom ASC
-    `;
+    // NOTE Prisma + Postgres prepared statements : caster le paramètre
+    // avec `$N::uuid` ne fonctionne pas (Postgres garde le type text et
+    // génère "operator does not exist: text = uuid"). On caste donc la
+    // colonne `tenant_id` en text et on compare avec le param text.
+    // Sécurisé : les paramètres sont bindés ($queryRawUnsafe avec args).
+    const rows = await this.prisma.$queryRawUnsafe<ParcelleMapRow[]>(
+      `SELECT
+         id,
+         nom,
+         surface_m2::text AS "surfaceM2",
+         zone::text AS zone,
+         ST_AsGeoJSON(geom) AS geom
+       FROM parcelles
+       WHERE tenant_id::text = $1
+       ORDER BY nom ASC`,
+      tenantId,
+    );
     return rows.map((r) => ({
       id: r.id,
       nom: r.nom,
@@ -88,11 +94,13 @@ export class ParcellesService {
     });
 
     if (geomGeoJson) {
-      await this.prisma.$executeRaw`
-        UPDATE parcelles
-        SET geom = ST_Multi(ST_GeomFromGeoJSON(${JSON.stringify(geomGeoJson)}))::geometry(MultiPolygon, 4326)
-        WHERE id = ${parcelle.id}::uuid
-      `;
+      await this.prisma.$executeRawUnsafe(
+        `UPDATE parcelles
+         SET geom = ST_Multi(ST_GeomFromGeoJSON($1))::geometry(MultiPolygon, 4326)
+         WHERE id::text = $2`,
+        JSON.stringify(geomGeoJson),
+        parcelle.id,
+      );
     }
 
     return parcelle;
@@ -109,11 +117,14 @@ export class ParcellesService {
     }
     if (geomGeoJson !== undefined) {
       const { tenantId } = this.tenantContext.get();
-      await this.prisma.$executeRaw`
-        UPDATE parcelles
-        SET geom = ST_Multi(ST_GeomFromGeoJSON(${JSON.stringify(geomGeoJson)}))::geometry(MultiPolygon, 4326)
-        WHERE id = ${id}::uuid AND tenant_id = ${tenantId}::uuid
-      `;
+      await this.prisma.$executeRawUnsafe(
+        `UPDATE parcelles
+         SET geom = ST_Multi(ST_GeomFromGeoJSON($1))::geometry(MultiPolygon, 4326)
+         WHERE id::text = $2 AND tenant_id::text = $3`,
+        JSON.stringify(geomGeoJson),
+        id,
+        tenantId,
+      );
     }
     return this.getById(id);
   }
