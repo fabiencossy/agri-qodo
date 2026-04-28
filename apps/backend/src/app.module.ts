@@ -15,6 +15,7 @@ import { ProduitsModule } from "./modules/produits/produits.module";
 import { SrpaModule } from "./modules/srpa/srpa.module";
 import { SuisseBilanzModule } from "./modules/suisse-bilanz/suisse-bilanz.module";
 import { TenantsModule } from "./modules/tenants/tenants.module";
+import { UsersModule } from "./modules/users/users.module";
 
 @Module({
   imports: [
@@ -51,6 +52,7 @@ import { TenantsModule } from "./modules/tenants/tenants.module";
     HealthModule,
     AuthModule,
     TenantsModule,
+    UsersModule,
     ParcellesModule,
     InterventionsModule,
     SrpaModule,

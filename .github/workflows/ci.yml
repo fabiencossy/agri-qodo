@@ -34,6 +34,16 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # Étapes "prepare" indispensables avant lint/typecheck :
+      #   - build du package domain (CJS exporté pour le backend en runtime)
+      #   - prisma generate (sinon Prisma.PrismaClientKnownRequestError n'est
+      #     pas reconnu et 10+ erreurs TS apparaissent dans les services)
+      - name: Build domain package
+        run: pnpm --filter @agri-qodo/domain build
+
+      - name: Generate Prisma Client
+        run: pnpm --filter @agri-qodo/backend exec prisma generate
+
       - name: Lint
         run: pnpm lint
 
