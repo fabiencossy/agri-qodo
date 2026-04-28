@@ -8,6 +8,7 @@ import { z } from "zod";
 import { Breadcrumb } from "@/components/app/breadcrumb";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useCategoriesActives } from "@/lib/animaux";
 import {
   type AnimalCategorie,
   CATEGORIES_ORDER,
@@ -41,6 +42,13 @@ const today = (): string => new Date().toISOString().slice(0, 10);
 export default function NewSortiePage() {
   const router = useRouter();
   const createMutation = useCreateSortie();
+  const categoriesActives = useCategoriesActives();
+  // Si l'exploitation a déjà des animaux, on ne propose que ces catégories.
+  // Sinon (cheptel pas encore saisi) on retombe sur la liste complète.
+  const categoriesAffichees: AnimalCategorie[] =
+    categoriesActives.data && categoriesActives.data.length > 0
+      ? CATEGORIES_ORDER.filter((c) => categoriesActives.data?.includes(c))
+      : CATEGORIES_ORDER;
 
   const {
     register,
@@ -99,7 +107,7 @@ export default function NewSortiePage() {
               name="categorie"
               render={({ field: { value, onChange } }) => (
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                  {CATEGORIES_ORDER.map((c: AnimalCategorie) => (
+                  {categoriesAffichees.map((c: AnimalCategorie) => (
                     <button
                       key={c}
                       type="button"

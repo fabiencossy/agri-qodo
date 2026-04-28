@@ -13,6 +13,7 @@ import {
   View,
 } from "react-native";
 import { z } from "zod";
+import { useCategoriesActives } from "@/lib/animaux";
 import {
   type AnimalCategorie,
   CATEGORIES_ORDER,
@@ -44,6 +45,11 @@ const today = (): string => new Date().toISOString().slice(0, 10);
 
 export default function NewSortieScreen() {
   const createMutation = useCreateSortie();
+  const categoriesActives = useCategoriesActives();
+  const categoriesAffichees: AnimalCategorie[] =
+    categoriesActives.data && categoriesActives.data.length > 0
+      ? CATEGORIES_ORDER.filter((c) => categoriesActives.data?.includes(c))
+      : CATEGORIES_ORDER;
 
   const {
     control,
@@ -95,7 +101,7 @@ export default function NewSortieScreen() {
             name="categorie"
             render={({ field: { value, onChange } }) => (
               <View className="flex-row flex-wrap gap-2">
-                {CATEGORIES_ORDER.map((c: AnimalCategorie) => (
+                {categoriesAffichees.map((c: AnimalCategorie) => (
                   <Pressable
                     key={c}
                     onPress={() => onChange(c)}

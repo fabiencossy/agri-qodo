@@ -2,6 +2,7 @@
 
 import {
   BarChart3,
+  Beef,
   BookOpen,
   ClipboardList,
   FlaskConical,
@@ -26,6 +27,7 @@ const NAVIGATION: NavLink[] = [
   { href: "/", label: "Accueil", icon: Home },
   { href: "/parcelles", label: "Parcelles", icon: MapPin },
   { href: "/interventions", label: "Carnet des champs", icon: Sprout },
+  { href: "/animaux", label: "Cheptel", icon: Beef },
   { href: "/srpa", label: "SRPA — sorties pâturage", icon: ClipboardList },
 ];
 

@@ -20,6 +20,7 @@ const NAVIGATION: NavLink[] = [
     label: "Carnet des champs",
     icon: "sprout-outline",
   },
+  { href: "/animaux", label: "Cheptel", icon: "cow" },
   { href: "/srpa", label: "SRPA", icon: "clipboard-text-outline" },
 ];
 

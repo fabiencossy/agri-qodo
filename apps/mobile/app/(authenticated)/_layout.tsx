@@ -70,6 +70,7 @@ export default function AuthenticatedLayout() {
         <Tabs.Screen name="interventions/new" options={{ href: null }} />
         <Tabs.Screen name="srpa/index" options={{ href: null }} />
         <Tabs.Screen name="srpa/new" options={{ href: null }} />
+        <Tabs.Screen name="animaux/index" options={{ href: null }} />
         <Tabs.Screen name="veille" options={{ href: null }} />
       </Tabs>
       <Fab />
