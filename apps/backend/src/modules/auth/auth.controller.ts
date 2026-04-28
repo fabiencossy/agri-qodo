@@ -1,6 +1,7 @@
-import { Body, Controller, HttpCode, HttpStatus, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, HttpCode, HttpStatus, Post, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { CurrentUser } from "@/common/decorators/current-user.decorator";
+import { PrismaService } from "@/common/prisma/prisma.service";
 import { AuthService } from "./auth.service";
 import { AuthTokensDto } from "./dto/auth-tokens.dto";
 import { LoginDto } from "./dto/login.dto";
@@ -11,7 +12,10 @@ import type { JwtPayload } from "./types/jwt-payload.type";
 @ApiTags("auth")
 @Controller("auth")
 export class AuthController {
-  constructor(private readonly auth: AuthService) {}
+  constructor(
+    private readonly auth: AuthService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   @Post("login")
   @HttpCode(HttpStatus.OK)
@@ -27,6 +31,19 @@ export class AuthController {
   })
   refresh(@Body() dto: RefreshDto): Promise<AuthTokensDto> {
     return this.auth.refresh(dto.refreshToken);
+  }
+
+  @Get("me")
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "Profil de l'utilisateur connecté." })
+  async me(@CurrentUser() user: JwtPayload) {
+    const profil = await this.prisma.user.findUnique({
+      where: { id: user.sub },
+      select: { id: true, email: true, prenom: true, nom: true, role: true },
+    });
+    if (!profil) throw new Error("Utilisateur introuvable");
+    return profil;
   }
 
   @Post("logout")
