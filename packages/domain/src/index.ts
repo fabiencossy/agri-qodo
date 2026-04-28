@@ -21,3 +21,15 @@ export {
   type CultureRecord,
   verifierAssolement,
 } from "./assolement";
+
+export {
+  type ApportEngrais,
+  type BilanInput,
+  type BilanResult,
+  calculerBilan,
+  type ComptageAnimaux,
+  type CultureParcelle,
+  DEFAULT_SUISSE_BILANZ_CONFIG,
+  type DetailParcelle,
+  type SuisseBilanzConfig,
+} from "./suisse-bilanz";

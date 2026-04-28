@@ -4,6 +4,7 @@ import {
   BarChart3,
   BookOpen,
   ClipboardList,
+  FlaskConical,
   Home,
   LogOut,
   type LucideIcon,
@@ -29,6 +30,7 @@ const NAVIGATION: NavLink[] = [
 ];
 
 const PILOTAGE: NavLink[] = [
+  { href: "/suisse-bilanz", label: "Suisse-Bilanz", icon: FlaskConical },
   { href: "/stats", label: "Statistiques", icon: BarChart3 },
   { href: "/veille", label: "Veille réglementaire", icon: BookOpen },
 ];

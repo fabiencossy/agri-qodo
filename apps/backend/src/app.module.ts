@@ -11,6 +11,7 @@ import { InterventionsModule } from "./modules/interventions/interventions.modul
 import { ParcellesModule } from "./modules/parcelles/parcelles.module";
 import { PartnerLinksModule } from "./modules/partner-links/partner-links.module";
 import { SrpaModule } from "./modules/srpa/srpa.module";
+import { SuisseBilanzModule } from "./modules/suisse-bilanz/suisse-bilanz.module";
 import { TenantsModule } from "./modules/tenants/tenants.module";
 
 @Module({
@@ -51,6 +52,7 @@ import { TenantsModule } from "./modules/tenants/tenants.module";
     ParcellesModule,
     InterventionsModule,
     SrpaModule,
+    SuisseBilanzModule,
     PartnerLinksModule,
   ],
 })

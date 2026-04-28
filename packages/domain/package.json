@@ -4,13 +4,12 @@
   "private": true,
   "description": "Logique métier pure (Suisse-Bilanz, UGB, validation parcelle, assolement)",
   "license": "AGPL-3.0-or-later",
-  "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "default": "./dist/index.js"
     }
   },
   "scripts": {
