@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
-import { api, AuthError } from "./api-client";
+import { api } from "./api-client";
 import {
   type AuthTokens,
   clearStoredTokens,
@@ -62,17 +62,27 @@ export function useLogout() {
 
   return useMutation({
     mutationFn: async (): Promise<void> => {
+      // La déconnexion locale doit TOUJOURS réussir, même si le serveur
+      // est down ou renvoie une 5xx — sinon l'utilisateur reste coincé sur
+      // l'app sans pouvoir partir. On tente la révocation côté serveur,
+      // mais on swallow toutes les erreurs (réseau, 401, 5xx) — c'est une
+      // optimisation (révoquer le refresh token), pas une condition de
+      // déconnexion.
       try {
         await api<void>("/api/auth/logout", { method: "POST" });
-      } catch (err) {
-        // 401 déjà = on est déconnecté
-        if (!(err instanceof AuthError)) throw err;
+      } catch {
+        // intentionnellement silencieux
       }
       clearStoredTokens();
     },
     onSuccess: () => {
       queryClient.clear();
       router.push("/login");
+    },
+    // Si onSuccess ne s'exécute pas (pas attendu mais filet), nettoyer ici
+    // aussi — onSettled tourne dans tous les cas.
+    onSettled: () => {
+      clearStoredTokens();
     },
   });
 }
