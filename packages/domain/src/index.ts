@@ -33,3 +33,11 @@ export {
   type DetailParcelle,
   type SuisseBilanzConfig,
 } from "./suisse-bilanz";
+
+export {
+  DEFAULT_INTERDICTIONS_CONFIG,
+  estFumureOrganiqueInterdite,
+  type InterdictionResult,
+  type InterdictionsPerConfig,
+  type PeriodeInterdite,
+} from "./interdictions-per";
