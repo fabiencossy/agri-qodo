@@ -343,27 +343,50 @@ export class InterventionsService {
     const sql = `SELECT
         i.id,
         i.parcelle_id AS "parcelleId",
+        p.nom AS "parcelleNom",
         i.type::text AS type,
         i.date_operation AS "dateOperation",
         i.surface_travaillee_m2::text AS "surfaceTravailleeM2",
         i.produit,
+        c.espece AS "cultureEspece",
+        c.variete AS "cultureVariete",
+        c.campagne AS "cultureCampagne",
         ST_AsGeoJSON(i.geom) AS geom
       FROM interventions i
+      JOIN parcelles p ON p.id = i.parcelle_id
+      LEFT JOIN cultures c ON c.id = i.culture_id
       WHERE ${conditions.join(" AND ")} AND i.geom IS NOT NULL
       ORDER BY i.date_operation DESC`;
     const rows = await this.prisma.$queryRawUnsafe<
       {
         id: string;
         parcelleId: string;
+        parcelleNom: string;
         type: string;
         dateOperation: Date;
         surfaceTravailleeM2: string | null;
         produit: string | null;
+        cultureEspece: string | null;
+        cultureVariete: string | null;
+        cultureCampagne: number | null;
         geom: string | null;
       }[]
     >(sql, ...params);
     return rows.map((r) => ({
-      ...r,
+      id: r.id,
+      parcelleId: r.parcelleId,
+      parcelleNom: r.parcelleNom,
+      type: r.type,
+      dateOperation: r.dateOperation,
+      surfaceTravailleeM2: r.surfaceTravailleeM2,
+      produit: r.produit,
+      culture: r.cultureEspece
+        ? {
+            espece: r.cultureEspece,
+            variete: r.cultureVariete,
+            campagne: r.cultureCampagne ?? 0,
+          }
+        : null,
       geom: r.geom ? (JSON.parse(r.geom) as InterventionGeoJsonGeometry) : null,
     }));
   }
