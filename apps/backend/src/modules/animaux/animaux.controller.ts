@@ -50,6 +50,14 @@ export class AnimauxController {
     return this.service.categoriesActives();
   }
 
+  @Get("ugb")
+  @ApiOperation({
+    summary: "UGB exploitation (coefficients OPD-CH par catégorie, affinés par date de naissance).",
+  })
+  ugb() {
+    return this.service.ugbSummary();
+  }
+
   @Get(":id")
   getById(@Param("id", ParseUUIDPipe) id: string) {
     return this.service.getById(id);

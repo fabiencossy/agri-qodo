@@ -1,4 +1,9 @@
 import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
+import {
+  type AnimalUgbInput,
+  calculerUgbExploitation,
+  type UgbExploitationResult,
+} from "@agri-qodo/domain";
 import { type AnimalCategorie, Prisma } from "@prisma/client";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { TenantContextService } from "@/common/tenant/tenant-context.service";
@@ -40,6 +45,23 @@ export class AnimauxService {
   async categoriesActives(): Promise<AnimalCategorie[]> {
     const summary = await this.summary();
     return summary.filter((s) => s.nombreActifs > 0).map((s) => s.categorie);
+  }
+
+  /**
+   * UGB exploitation : coefficients officiels OPD-CH-2026 par catégorie,
+   * affinés par date de naissance pour les bovins identifiés. Source unique
+   * pour l'affichage cheptel, les contrôles SRPA/SST et la charge UGB/SAU.
+   */
+  async ugbSummary(): Promise<UgbExploitationResult> {
+    const animaux = await this.prisma.tenantAware.animal.findMany({
+      where: { isActive: true },
+      select: { categorie: true, dateNaissance: true },
+    });
+    const input: AnimalUgbInput[] = animaux.map((a) => ({
+      categorie: a.categorie,
+      dateNaissance: a.dateNaissance,
+    }));
+    return calculerUgbExploitation(input);
   }
 
   async getById(id: string) {
