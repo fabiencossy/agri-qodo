@@ -50,6 +50,9 @@ services:
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-15m}
       JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-7d}
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      # Clé maître AES-256-GCM pour chiffrer les API keys Odoo par tenant (M6 PR-A).
+      # Doit rester stable une fois en prod, sinon les API keys deviennent illisibles.
+      ODOO_CREDENTIALS_KEY: ${ODOO_CREDENTIALS_KEY}
     networks:
       - agriqodo
 
