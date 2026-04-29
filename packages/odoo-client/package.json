@@ -2,7 +2,7 @@
   "name": "@agri-qodo/odoo-client",
   "version": "0.0.0",
   "private": true,
-  "description": "Client XML-RPC et JSON-RPC pour Odoo Enterprise",
+  "description": "Client JSON-RPC pour Odoo Enterprise (multi-version v19+)",
   "license": "AGPL-3.0-or-later",
   "type": "module",
   "main": "dist/index.js",
@@ -17,10 +17,12 @@
     "build": "tsc -p tsconfig.json",
     "lint": "eslint src --max-warnings 0",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "echo 'tests à venir' && exit 0",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "clean": "rm -rf dist .turbo"
   },
   "devDependencies": {
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
   }
 }
