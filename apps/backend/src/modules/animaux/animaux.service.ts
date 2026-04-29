@@ -1,7 +1,9 @@
 import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import {
   type AnimalUgbInput,
+  type BdtaImportRow,
   calculerUgbExploitation,
+  parseBdtaCsv,
   type UgbExploitationResult,
 } from "@agri-qodo/domain";
 import { type AnimalCategorie, Prisma } from "@prisma/client";
@@ -10,6 +12,7 @@ import { TenantContextService } from "@/common/tenant/tenant-context.service";
 import type { CreateAnimalDto } from "./dto/create-animal.dto";
 import type { CreateAnimauxBatchDto } from "./dto/create-animaux-batch.dto";
 import type { IdentifierAnimalDto } from "./dto/identifier-animal.dto";
+import type { ImportBdtaDto, ImportBdtaResult } from "./dto/import-bdta.dto";
 import type { UpdateAnimalDto } from "./dto/update-animal.dto";
 
 /** Catégories pour lesquelles un n° de boucle BDTA a du sens (bovins). */
@@ -170,6 +173,115 @@ export class AnimauxService {
       }
       throw err;
     }
+  }
+
+  /**
+   * Import d'un export CSV BDTA / Agate. Pour chaque ligne du CSV :
+   *   - n° boucle déjà présent en base → update (refresh sexe/âge)
+   *   - n° boucle inconnu, anonyme dispo de la même catégorie → promote
+   *   - sinon → create
+   * Préserve l'effectif total quand on a déjà saisi le compteur. Réservé
+   * aux bovins (la BDTA ne contient que des cloven-hoofed).
+   */
+  async importBdta(dto: ImportBdtaDto): Promise<ImportBdtaResult> {
+    const parsed = parseBdtaCsv(dto.csv);
+    const result: ImportBdtaResult = {
+      created: 0,
+      updated: 0,
+      promoted: 0,
+      skipped: parsed.errors.length,
+      errors: parsed.errors.map((e) => ({ ligne: e.ligne, raison: e.raison })),
+    };
+
+    if (parsed.rows.length === 0) {
+      return result;
+    }
+
+    const { tenantId } = this.tenantContext.get();
+
+    // Toutes les opérations dans une transaction pour cohérence.
+    await this.prisma.$transaction(async (tx) => {
+      const tenantTx = tx.animal;
+      for (const row of parsed.rows) {
+        try {
+          await this.applyBdtaRow(tenantTx, tenantId, row, result);
+        } catch (err) {
+          if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+            result.skipped++;
+            result.errors.push({
+              ligne: row.ligne,
+              raison: `n° boucle ${row.numeroBoucle} déjà utilisé sur une autre exploitation`,
+            });
+          } else {
+            throw err;
+          }
+        }
+      }
+    });
+
+    return result;
+  }
+
+  private async applyBdtaRow(
+    tenantTx: Prisma.AnimalDelegate,
+    tenantId: string,
+    row: BdtaImportRow,
+    result: ImportBdtaResult,
+  ): Promise<void> {
+    const existing = await tenantTx.findFirst({
+      where: { tenantId, numeroBoucle: row.numeroBoucle },
+    });
+
+    if (existing) {
+      const updates: Prisma.AnimalUpdateInput = {};
+      if (existing.categorie !== row.categorie) updates.categorie = row.categorie;
+      if (row.dateNaissance && !existing.dateNaissance) {
+        updates.dateNaissance = row.dateNaissance;
+      }
+      if (row.nom && !existing.nom) updates.nom = row.nom;
+      if (Object.keys(updates).length > 0) {
+        await tenantTx.update({ where: { id: existing.id }, data: updates });
+      }
+      result.updated++;
+      return;
+    }
+
+    // Pas d'existant — promouvoir un anonyme de la même catégorie si dispo.
+    const anonyme = await tenantTx.findFirst({
+      where: {
+        tenantId,
+        categorie: row.categorie,
+        isActive: true,
+        numeroBoucle: null,
+        nom: null,
+        dateNaissance: null,
+      },
+      orderBy: { createdAt: "asc" },
+    });
+
+    if (anonyme) {
+      await tenantTx.update({
+        where: { id: anonyme.id },
+        data: {
+          numeroBoucle: row.numeroBoucle,
+          nom: row.nom,
+          dateNaissance: row.dateNaissance,
+        },
+      });
+      result.promoted++;
+      return;
+    }
+
+    await tenantTx.create({
+      data: {
+        tenantId,
+        categorie: row.categorie,
+        numeroBoucle: row.numeroBoucle,
+        nom: row.nom,
+        dateNaissance: row.dateNaissance,
+      },
+    });
+    result.created++;
   }
 
   /**

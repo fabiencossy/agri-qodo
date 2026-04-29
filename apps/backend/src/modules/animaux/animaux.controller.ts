@@ -22,6 +22,7 @@ import { AnimauxService } from "./animaux.service";
 import { CreateAnimalDto } from "./dto/create-animal.dto";
 import { CreateAnimauxBatchDto } from "./dto/create-animaux-batch.dto";
 import { IdentifierAnimalDto } from "./dto/identifier-animal.dto";
+import { ImportBdtaDto } from "./dto/import-bdta.dto";
 import { UpdateAnimalDto } from "./dto/update-animal.dto";
 
 @ApiTags("animaux")
@@ -85,6 +86,15 @@ export class AnimauxController {
   })
   identifier(@Body() dto: IdentifierAnimalDto) {
     return this.service.identifier(dto);
+  }
+
+  @Post("import-bdta")
+  @ApiOperation({
+    summary:
+      "Import d'un export CSV BDTA (n° boucle, sexe, date naissance, race) — réconcilie par n° boucle.",
+  })
+  importBdta(@Body() dto: ImportBdtaDto) {
+    return this.service.importBdta(dto);
   }
 
   @Post("batch")
