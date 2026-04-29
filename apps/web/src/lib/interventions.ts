@@ -65,6 +65,11 @@ export interface Intervention {
   createdAt: string;
 }
 
+export interface InterventionGeoJsonPolygon {
+  type: "Polygon";
+  coordinates: number[][][];
+}
+
 export interface CreateInterventionInput {
   parcelleId: string;
   type: InterventionType;
@@ -76,6 +81,20 @@ export interface CreateInterventionInput {
   surfaceTravailleeM2?: number;
   techniqueEpandage?: TechniqueEpandage;
   notes?: string;
+  /** Sous-zone géométrique (Polygon GeoJSON) — recalcule surfaceTravailleeM2 côté backend. */
+  geomGeoJson?: InterventionGeoJsonPolygon;
+}
+
+export interface InterventionWithGeom {
+  id: string;
+  parcelleId: string;
+  parcelleNom: string;
+  type: InterventionType;
+  dateOperation: string;
+  surfaceTravailleeM2: string | null;
+  produit: string | null;
+  culture: { espece: string; variete: string | null; campagne: number } | null;
+  geom: InterventionGeoJsonPolygon | null;
 }
 
 const QUERY_KEY = ["interventions"] as const;
@@ -84,6 +103,28 @@ export function useInterventions() {
   return useQuery({
     queryKey: QUERY_KEY,
     queryFn: () => api<Intervention[]>("/api/interventions"),
+  });
+}
+
+/**
+ * Liste les interventions ayant une sous-zone géométrique. Filtrable par
+ * campagne (année) et/ou parcelle. Sert à la page Plan d'assolement et
+ * à l'affichage des sous-zones existantes sur la carte.
+ */
+export function useInterventionsWithGeom(filters?: { campagne?: number; parcelleId?: string }) {
+  const params = new URLSearchParams();
+  if (filters?.campagne !== undefined) params.set("campagne", String(filters.campagne));
+  if (filters?.parcelleId) params.set("parcelleId", filters.parcelleId);
+  const qs = params.toString();
+  const url = qs ? `/api/interventions/with-geom?${qs}` : "/api/interventions/with-geom";
+  return useQuery({
+    queryKey: [
+      "interventions",
+      "with-geom",
+      filters?.campagne ?? null,
+      filters?.parcelleId ?? null,
+    ],
+    queryFn: () => api<InterventionWithGeom[]>(url),
   });
 }
 

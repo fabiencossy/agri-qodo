@@ -1,11 +1,24 @@
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
-import { Prisma, ZoneAgricole } from "@prisma/client";
+import { InterventionType, Prisma, ValidationStatus, ZoneAgricole } from "@prisma/client";
 import area from "@turf/area";
+import { randomUUID } from "node:crypto";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { TenantContextService } from "@/common/tenant/tenant-context.service";
 import type { CreateParcelleDto, GeoJsonGeometry } from "./dto/create-parcelle.dto";
 import type { ImportParcellesDto, ImportResult } from "./dto/import-parcelles.dto";
 import type { UpdateParcelleDto } from "./dto/update-parcelle.dto";
+
+/**
+ * Métadonnées culturales extraites optionnellement d'une feature GeoJSON
+ * lors de l'import enrichi (cf §6 spec). Si présentes, l'import crée une
+ * `Culture` + une `Intervention SEMIS` rétroactive couvrant la parcelle
+ * — l'agriculteur n'a pas besoin de re-saisir l'assolement existant.
+ */
+interface ImportedCultureInfo {
+  espece: string;
+  variete?: string;
+  dateSemis: Date;
+}
 
 const MAX_FEATURES_PER_IMPORT = 1000;
 const ZONE_VALUES = new Set<string>(Object.values(ZoneAgricole));
@@ -187,8 +200,17 @@ export class ParcellesService {
     for (let i = 0; i < fc.features.length; i++) {
       const feature = fc.features[i] as ParsedFeature | undefined;
       try {
-        const data = extractFromFeature(feature, defaultZone, i);
-        await this.create(data);
+        const { data, culture } = extractFromFeature(feature, defaultZone, i);
+        const created = await this.create(data);
+        if (culture && data.geomGeoJson) {
+          await this.seedRetroactiveSemis(
+            created.id,
+            data.geomGeoJson,
+            Number(created.surfaceM2),
+            culture,
+          );
+          result.cultures = (result.cultures ?? 0) + 1;
+        }
         result.created++;
       } catch (err) {
         const props = feature?.properties as Record<string, unknown> | undefined;
@@ -203,6 +225,70 @@ export class ParcellesService {
 
     return result;
   }
+
+  /**
+   * Crée rétroactivement une Culture + Intervention SEMIS pour une parcelle
+   * fraîchement importée dont le GeoJSON portait une `culture`. La géom
+   * de l'intervention couvre toute la parcelle (Polygon — premier ring du
+   * MultiPolygon parent si la parcelle est multi-morceaux).
+   *
+   * Le SEMIS est marqué `ValidationStatus.SELF` (saisi par l'owner) avec
+   * date = `dateSemis` du GeoJSON ou aujourd'hui par défaut.
+   */
+  private async seedRetroactiveSemis(
+    parcelleId: string,
+    geom: GeoJsonGeometry,
+    surfaceM2: number,
+    culture: ImportedCultureInfo,
+  ): Promise<void> {
+    const { tenantId } = this.tenantContext.get();
+    // Pour Intervention.geom (Polygon), on prend le premier ring du
+    // MultiPolygon — cas suffisant pour le MVP, l'agriculteur peut
+    // ensuite découper la zone en sub-zones via le draw côté carnet.
+    const polygonGeom: GeoJsonGeometry =
+      geom.type === "Polygon"
+        ? geom
+        : {
+            type: "Polygon",
+            coordinates: (geom.coordinates as number[][][][])[0] ?? [],
+          };
+
+    await this.prisma.$transaction(async (tx) => {
+      const cultureRow = await tx.culture.create({
+        data: {
+          tenantId,
+          parcelleId,
+          espece: culture.espece,
+          variete: culture.variete ?? null,
+          dateSemis: culture.dateSemis,
+          campagne: culture.dateSemis.getUTCFullYear(),
+        },
+        select: { id: true },
+      });
+      const intervention = await tx.intervention.create({
+        data: {
+          clientUuid: randomUUID(),
+          parcelleId,
+          ownerTenantId: tenantId,
+          authorTenantId: tenantId,
+          type: InterventionType.SEMIS,
+          dateOperation: culture.dateSemis,
+          surfaceTravailleeM2: surfaceM2,
+          cultureId: cultureRow.id,
+          validationStatus: ValidationStatus.SELF,
+          notes: "Importé depuis le GeoJSON parcelles (assolement rétroactif).",
+        },
+        select: { id: true },
+      });
+      await tx.$executeRawUnsafe(
+        `UPDATE interventions
+           SET geom = ST_GeomFromGeoJSON($1)::geometry(Polygon, 4326)
+         WHERE id = $2::uuid`,
+        JSON.stringify(polygonGeom),
+        intervention.id,
+      );
+    });
+  }
 }
 
 interface ParsedFeature {
@@ -213,13 +299,16 @@ interface ParsedFeature {
 
 /**
  * Extrait un CreateParcelleDto depuis une feature GeoJSON en testant
- * plusieurs noms de properties usuels (Acorda, GELAN, OFAG, etc.).
+ * plusieurs noms de properties usuels (Acorda, GELAN, OFAG, etc.). Si
+ * la feature porte aussi une property `culture` (et optionnellement
+ * `dateSemis` + `variete`), on retourne en plus une `ImportedCultureInfo`
+ * pour création rétroactive d'un SEMIS.
  */
 function extractFromFeature(
   feature: ParsedFeature | undefined,
   defaultZone: ZoneAgricole,
   index: number,
-): CreateParcelleDto {
+): { data: CreateParcelleDto; culture?: ImportedCultureInfo } {
   if (!feature || feature.type !== "Feature") {
     throw new Error(`Feature #${index + 1} : format invalide`);
   }
@@ -270,7 +359,52 @@ function extractFromFeature(
   if (identifiantCadastral) {
     data.identifiantCadastral = identifiantCadastral.slice(0, 50);
   }
-  return data;
+
+  const culture = extractCultureInfo(props);
+  return culture ? { data, culture } : { data };
+}
+
+/**
+ * Cherche une espèce / variété / date de semis dans les properties d'une
+ * feature. Synonymes acceptés (CSV exports cantonaux variés). Si
+ * `dateSemis` absente, on prend le 1er mars de l'année courante (default
+ * cohérent avec la majorité des grandes cultures de printemps suisses).
+ */
+function extractCultureInfo(props: Record<string, unknown>): ImportedCultureInfo | undefined {
+  const espece = pickString(props, [
+    "culture",
+    "CULTURE",
+    "Culture",
+    "espece",
+    "ESPECE",
+    "crop",
+    "CROP",
+    "kultur",
+    "KULTUR",
+  ]);
+  if (!espece) return undefined;
+  const variete = pickString(props, ["variete", "VARIETE", "variety", "VARIETY", "sorte", "SORTE"]);
+  const dateSemisRaw = pickString(props, [
+    "dateSemis",
+    "date_semis",
+    "DATE_SEMIS",
+    "sowing_date",
+    "saatdatum",
+    "SAATDATUM",
+  ]);
+  let dateSemis: Date | undefined;
+  if (dateSemisRaw) {
+    const d = new Date(dateSemisRaw);
+    if (!Number.isNaN(d.getTime())) dateSemis = d;
+  }
+  if (!dateSemis) {
+    dateSemis = new Date(Date.UTC(new Date().getUTCFullYear(), 2, 1));
+  }
+  return {
+    espece: espece.slice(0, 80),
+    ...(variete ? { variete: variete.slice(0, 80) } : {}),
+    dateSemis,
+  };
 }
 
 function pickString(props: Record<string, unknown>, keys: string[]): string | undefined {

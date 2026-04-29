@@ -1,6 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -11,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   emojiType,
+  type InterventionGeoJsonPolygon,
   type InterventionType,
   libelleType,
   TECHNIQUE_LABEL,
@@ -19,8 +21,14 @@ import {
   TYPES_ORDER,
   useCreateIntervention,
 } from "@/lib/interventions";
-import { formatSurface, useParcelles } from "@/lib/parcelles";
+import { formatSurface, useParcelle, useParcelles } from "@/lib/parcelles";
 import { useCheckFumureOrganique } from "@/lib/per";
+
+// Leaflet a besoin de window — on dynamiquement charge sans SSR.
+const InterventionSubzoneDrawMap = dynamic(
+  () => import("@/components/maps/intervention-subzone-draw-map"),
+  { ssr: false, loading: () => <div className="h-[400px] animate-pulse rounded-xl bg-muted" /> },
+);
 import {
   type Produit,
   type ProduitCategorie,
@@ -170,8 +178,15 @@ export default function NewInterventionPage() {
 
   const [showNewProduit, setShowNewProduit] = useState(false);
   const [toutLeChamp, setToutLeChamp] = useState(true);
+  // Mode de saisie de la sous-zone : numérique (m² entré au clavier) ou
+  // dessiné sur carte (polygone clippé à la parcelle, surface auto).
+  const [modeSaisieZone, setModeSaisieZone] = useState<"numerique" | "dessin">("numerique");
+  const [sousZoneGeom, setSousZoneGeom] = useState<InterventionGeoJsonPolygon | null>(null);
+  const [sousZoneSurfaceM2, setSousZoneSurfaceM2] = useState<number | null>(null);
 
   const selectedParcelle = parcelles.data?.find((p) => p.id === selectedParcelleId);
+  // Le getById expose la geom — utile pour afficher le contour parent.
+  const parcelleDetail = useParcelle(selectedParcelleId || undefined);
   const surfaceParcelleM2 = selectedParcelle ? Number(selectedParcelle.surfaceM2) : 0;
   const peutSaisirSurfacePartielle = TYPES_AVEC_SURFACE_PARTIELLE.includes(selectedType);
 
@@ -179,12 +194,34 @@ export default function NewInterventionPage() {
   // on pré-remplit la surface (utile si l'utilisateur décoche).
   useEffect(() => {
     setToutLeChamp(true);
+    setSousZoneGeom(null);
+    setSousZoneSurfaceM2(null);
+    setModeSaisieZone("numerique");
     if (surfaceParcelleM2 > 0) {
       setValue("surfaceTravailleeM2", surfaceParcelleM2);
     }
   }, [selectedParcelleId, surfaceParcelleM2, setValue]);
 
   const onSubmit = (values: FormValues) => {
+    // Construction de la portion "surface" de la requête, par priorité :
+    //   1. toute la parcelle → on n'envoie ni surface ni geom.
+    //   2. sous-zone dessinée → on envoie geomGeoJson, le backend
+    //      recalcule la surface (la valeur saisie est ignorée).
+    //   3. sous-zone numérique → on envoie surfaceTravailleeM2.
+    const zoneFields: Pick<
+      Parameters<typeof createMutation.mutate>[0],
+      "surfaceTravailleeM2" | "geomGeoJson"
+    > = (() => {
+      if (toutLeChamp) return {};
+      if (modeSaisieZone === "dessin" && sousZoneGeom) {
+        return { geomGeoJson: sousZoneGeom };
+      }
+      if (values.surfaceTravailleeM2 && !Number.isNaN(values.surfaceTravailleeM2)) {
+        return { surfaceTravailleeM2: values.surfaceTravailleeM2 };
+      }
+      return {};
+    })();
+
     createMutation.mutate(
       {
         parcelleId: values.parcelleId,
@@ -197,9 +234,7 @@ export default function NewInterventionPage() {
         ...(values.techniqueEpandage
           ? { techniqueEpandage: values.techniqueEpandage as TechniqueEpandage }
           : {}),
-        ...(toutLeChamp || !values.surfaceTravailleeM2 || Number.isNaN(values.surfaceTravailleeM2)
-          ? {}
-          : { surfaceTravailleeM2: values.surfaceTravailleeM2 }),
+        ...zoneFields,
         ...(values.notes ? { notes: values.notes } : {}),
       },
       {
@@ -377,32 +412,92 @@ export default function NewInterventionPage() {
                       if (e.target.checked && surfaceParcelleM2 > 0) {
                         setValue("surfaceTravailleeM2", surfaceParcelleM2);
                       }
+                      if (e.target.checked) {
+                        setSousZoneGeom(null);
+                        setSousZoneSurfaceM2(null);
+                      }
                     }}
                     className="h-4 w-4"
                   />
                   <span>Toute la parcelle ({formatSurface(surfaceParcelleM2)})</span>
                 </label>
                 {!toutLeChamp && (
-                  <div className="flex items-center gap-2">
-                    <Input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      max={surfaceParcelleM2}
-                      placeholder={String(surfaceParcelleM2)}
-                      {...register("surfaceTravailleeM2")}
-                    />
-                    <span className="text-sm text-foreground/60">m²</span>
-                    <span className="text-xs text-foreground/50">
-                      / {formatSurface(surfaceParcelleM2)}
-                    </span>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setModeSaisieZone("numerique")}
+                      className={`rounded-lg border px-3 py-1.5 text-sm transition-colors ${
+                        modeSaisieZone === "numerique"
+                          ? "border-green bg-green text-white"
+                          : "border-border bg-background hover:bg-muted"
+                      }`}
+                    >
+                      Saisir une surface
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setModeSaisieZone("dessin")}
+                      className={`rounded-lg border px-3 py-1.5 text-sm transition-colors ${
+                        modeSaisieZone === "dessin"
+                          ? "border-green bg-green text-white"
+                          : "border-border bg-background hover:bg-muted"
+                      }`}
+                      disabled={!parcelleDetail.data?.geom}
+                      title={
+                        parcelleDetail.data?.geom
+                          ? "Dessine la zone exacte sur la carte (alimente le plan d'assolement)"
+                          : "Dessin indisponible : la parcelle n'a pas de géométrie"
+                      }
+                    >
+                      Dessiner sur la carte
+                    </button>
                   </div>
                 )}
-                {!toutLeChamp && (
-                  <p className="text-xs text-foreground/50">
-                    Saisis la surface réellement {libelleType(selectedType).toLowerCase()}e (ex.
-                    seulement la moitié sud de la parcelle).
-                  </p>
+                {!toutLeChamp && modeSaisieZone === "numerique" && (
+                  <>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        max={surfaceParcelleM2}
+                        placeholder={String(surfaceParcelleM2)}
+                        {...register("surfaceTravailleeM2")}
+                      />
+                      <span className="text-sm text-foreground/60">m²</span>
+                      <span className="text-xs text-foreground/50">
+                        / {formatSurface(surfaceParcelleM2)}
+                      </span>
+                    </div>
+                    <p className="text-xs text-foreground/50">
+                      Saisis la surface réellement {libelleType(selectedType).toLowerCase()}e (ex.
+                      seulement la moitié sud de la parcelle).
+                    </p>
+                  </>
+                )}
+                {!toutLeChamp && modeSaisieZone === "dessin" && parcelleDetail.data?.geom && (
+                  <>
+                    <InterventionSubzoneDrawMap
+                      parcelleGeom={parcelleDetail.data.geom}
+                      onPolygonChange={(geom, m2) => {
+                        setSousZoneGeom(geom);
+                        setSousZoneSurfaceM2(m2 > 0 ? m2 : null);
+                      }}
+                    />
+                    {sousZoneSurfaceM2 !== null &&
+                      sousZoneSurfaceM2 > surfaceParcelleM2 * 1.001 && (
+                        <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                          Attention, la zone tracée ({formatSurface(sousZoneSurfaceM2)}) dépasse la
+                          surface de la parcelle ({formatSurface(surfaceParcelleM2)}). Le serveur
+                          rejettera la sauvegarde.
+                        </p>
+                      )}
+                    <p className="text-xs text-foreground/50">
+                      Cette zone alimentera le plan d'assolement. Tu peux saisir plusieurs
+                      interventions SEMIS distinctes (une par culture) avec leur propre polygone
+                      pour découper la parcelle en zones.
+                    </p>
+                  </>
                 )}
               </div>
             </Field>

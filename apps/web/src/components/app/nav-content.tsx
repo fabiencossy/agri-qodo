@@ -5,9 +5,11 @@ import {
   Beef,
   BookOpen,
   ClipboardList,
+  Cog,
   FlaskConical,
   Handshake,
   Home,
+  Layers,
   LogOut,
   type LucideIcon,
   MapPin,
@@ -37,6 +39,7 @@ const NAVIGATION: NavLink[] = [
 ];
 
 const PILOTAGE: NavLink[] = [
+  { href: "/assolement", label: "Plan d'assolement", icon: Layers },
   { href: "/suisse-bilanz", label: "Suisse-Bilanz", icon: FlaskConical },
   { href: "/stats", label: "Statistiques", icon: BarChart3 },
   { href: "/veille", label: "Veille réglementaire", icon: BookOpen },
@@ -45,6 +48,7 @@ const PILOTAGE: NavLink[] = [
 const ADMINISTRATION: NavLink[] = [
   { href: "/utilisateurs", label: "Utilisateurs", icon: Users },
   { href: "/partenaires", label: "Partenaires", icon: Handshake },
+  { href: "/parametres", label: "Paramètres", icon: Cog },
 ];
 
 /**

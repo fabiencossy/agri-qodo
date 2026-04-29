@@ -5,7 +5,16 @@ import { IsEnum, IsObject, IsOptional } from "class-validator";
 export class ImportParcellesDto {
   @ApiProperty({
     description:
-      "GeoJSON FeatureCollection exporté depuis Acorda, GELAN, Agriportal ou autre portail SIG cantonal. Chaque feature doit avoir une géométrie Polygon ou MultiPolygon en WGS84 (EPSG:4326). Les properties sont mappées intelligemment : nom/name/NUMMER pour le nom, egrid/EGRID/EGRIS_EGRID pour l'identifiant cadastral, surface_m2/FLAECHE_M2 pour la surface, zone pour la zone agricole.",
+      "GeoJSON FeatureCollection exporté depuis Acorda, GELAN, Agriportal ou autre portail SIG cantonal. " +
+      "Chaque feature doit avoir une géométrie Polygon ou MultiPolygon en WGS84 (EPSG:4326). " +
+      "Properties mappées intelligemment :\n" +
+      "  · nom/name/NUMMER → nom de la parcelle\n" +
+      "  · egrid/EGRID/EGRIS_EGRID → identifiant cadastral\n" +
+      "  · surface_m2/FLAECHE_M2 → surface (sinon calculée géodésiquement)\n" +
+      "  · zone → zone agricole OPD\n" +
+      "  · culture/kultur/crop (optionnel) → crée une Culture + Intervention SEMIS rétroactive couvrant la parcelle, l'assolement est immédiatement à jour\n" +
+      "  · variete/sorte (optionnel) → variété de la culture\n" +
+      "  · dateSemis/saatdatum (optionnel, ISO 8601) → date du SEMIS rétroactif (default 1er mars année courante)",
   })
   @IsObject()
   featureCollection!: unknown;
@@ -23,5 +32,7 @@ export class ImportParcellesDto {
 export interface ImportResult {
   total: number;
   created: number;
+  /** Nombre de parcelles pour lesquelles un SEMIS rétroactif a été créé via la property `culture` du GeoJSON. */
+  cultures?: number;
   errors: Array<{ index: number; nom?: string; message: string }>;
 }
