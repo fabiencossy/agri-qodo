@@ -2,7 +2,7 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useMemo } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
@@ -55,6 +55,8 @@ const CATEGORIE_FOR_TYPE: Partial<Record<InterventionType, ProduitCategorie>> = 
 
 export default function NewInterventionPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const presetParcelleId = searchParams?.get("parcelleId") ?? "";
   const createMutation = useCreateIntervention();
   const parcelles = useParcelles();
   const produits = useProduits();
@@ -68,7 +70,7 @@ export default function NewInterventionPage() {
   } = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      parcelleId: "",
+      parcelleId: presetParcelleId,
       type: "SEMIS",
       dateOperation: today(),
       produitId: "",
