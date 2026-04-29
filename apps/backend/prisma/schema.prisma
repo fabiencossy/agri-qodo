@@ -241,7 +241,8 @@ model Culture {
   createdAt   DateTime  @default(now()) @map("created_at")
   updatedAt   DateTime  @updatedAt @map("updated_at")
 
-  parcelle Parcelle @relation(fields: [parcelleId], references: [id], onDelete: Cascade)
+  parcelle      Parcelle       @relation(fields: [parcelleId], references: [id], onDelete: Cascade)
+  interventions Intervention[]
 
   @@index([tenantId])
   @@index([parcelleId])
@@ -262,10 +263,16 @@ model Intervention {
   parcelleId       String           @map("parcelle_id")
   type             InterventionType
   dateOperation    DateTime         @map("date_operation")
-  produit          String? // libellé produit ou code OPPh
+  // Référence catalogue (recommandé pour SEMIS, FUMURE, PHYTO).
+  // Permet d'autopropulser : SEMIS+produit → Culture, FUMURE+produit → bilan N/P.
+  produitId        String?          @map("produit_id")
+  produit          String? // libellé libre, ou copie du libellé Produit pour traçabilité
   quantite         Decimal?         @db.Decimal(12, 3)
   unite            String? // "kg", "L", "t", "ha"
   notes            String?
+  // Si SEMIS a généré une Culture, on garde le lien pour pouvoir la
+  // ré-éditer / supprimer si l'intervention est modifiée.
+  cultureId        String?          @map("culture_id")
   validationStatus ValidationStatus @default(SELF) @map("validation_status")
   validatedAt      DateTime?        @map("validated_at")
   rejectedReason   String?          @map("rejected_reason")
@@ -274,12 +281,16 @@ model Intervention {
   ownerTenant  Exploitation @relation("InterventionOwner", fields: [ownerTenantId], references: [id], onDelete: Cascade)
   authorTenant Exploitation @relation("InterventionAuthor", fields: [authorTenantId], references: [id], onDelete: Cascade)
   parcelle     Parcelle     @relation(fields: [parcelleId], references: [id], onDelete: Cascade)
+  produitRef   Produit?     @relation(fields: [produitId], references: [id], onDelete: SetNull)
+  culture      Culture?     @relation(fields: [cultureId], references: [id], onDelete: SetNull)
 
   @@index([ownerTenantId])
   @@index([authorTenantId])
   @@index([parcelleId])
   @@index([dateOperation])
   @@index([validationStatus])
+  @@index([produitId])
+  @@index([cultureId])
   @@map("interventions")
 }
 
@@ -441,7 +452,8 @@ model Produit {
   createdAt   DateTime         @default(now()) @map("created_at")
   updatedAt   DateTime         @updatedAt @map("updated_at")
 
-  tenant Exploitation? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant        Exploitation?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  interventions Intervention[]
 
   @@index([tenantId])
   @@index([categorie])

@@ -24,10 +24,19 @@ export interface Intervention {
   authorTenantId: string;
   type: InterventionType;
   dateOperation: string;
+  produitId: string | null;
   produit: string | null;
+  produitRef: {
+    id: string;
+    libelle: string;
+    categorie: string;
+    especeCode: string | null;
+  } | null;
   quantite: string | null;
   unite: string | null;
   notes: string | null;
+  cultureId: string | null;
+  culture: { id: string; espece: string; variete: string | null; campagne: number } | null;
   validationStatus: ValidationStatus;
   createdAt: string;
 }
@@ -36,6 +45,7 @@ export interface CreateInterventionInput {
   parcelleId: string;
   type: InterventionType;
   dateOperation: string;
+  produitId?: string;
   produit?: string;
   quantite?: number;
   unite?: string;

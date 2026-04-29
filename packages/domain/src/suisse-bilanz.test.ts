@@ -175,4 +175,59 @@ describe("calculerBilan", () => {
     expect(calculerBilan(input, customConfig).besoinsN).toBe(200);
     expect(calculerBilan(input).besoinsN).toBe(140); // default
   });
+
+  it("apports localisés par parcelle dans le détail", () => {
+    // 2 parcelles : p1 reçoit 50N+20P, p2 reçoit 30N
+    const input: BilanInput = {
+      cultures: [
+        { parcelleId: "p1", parcelleNom: "A", surfaceHa: 1, espece: "ble_panifiable" },
+        { parcelleId: "p2", parcelleNom: "B", surfaceHa: 1, espece: "colza" },
+      ],
+      animaux: [],
+      apportsEngrais: [
+        { parcelleId: "p1", kgN: 50, kgP: 20 },
+        { parcelleId: "p2", kgN: 30, kgP: 0 },
+      ],
+    };
+    const r = calculerBilan(input);
+    const a = r.details.find((d) => d.parcelleId === "p1");
+    const b = r.details.find((d) => d.parcelleId === "p2");
+    expect(a?.apportsN).toBe(50);
+    expect(a?.apportsP).toBe(20);
+    expect(a?.soldeN).toBe(-90); // 50 - 140
+    expect(b?.apportsN).toBe(30);
+    expect(b?.soldeN).toBe(-100); // 30 - 130
+    // Global : 80 N total
+    expect(r.apportsN).toBe(80);
+  });
+
+  it("apport sur parcelle sans culture compte au global mais pas au détail", () => {
+    // p1 a une culture, p2 n'en a pas mais reçoit un apport orphelin
+    const input: BilanInput = {
+      cultures: [{ parcelleId: "p1", parcelleNom: "A", surfaceHa: 1, espece: "ble_panifiable" }],
+      animaux: [],
+      apportsEngrais: [
+        { parcelleId: "p1", kgN: 50, kgP: 20 },
+        { parcelleId: "p_inconnue", kgN: 100, kgP: 50 },
+      ],
+    };
+    const r = calculerBilan(input);
+    expect(r.details).toHaveLength(1);
+    expect(r.details[0]?.apportsN).toBe(50); // pas 150
+    expect(r.apportsN).toBe(150); // global compte tout
+  });
+
+  it("plusieurs apports sur la même parcelle s'agrègent dans le détail", () => {
+    const input: BilanInput = {
+      cultures: [{ parcelleId: "p1", parcelleNom: "A", surfaceHa: 1, espece: "ble_panifiable" }],
+      animaux: [],
+      apportsEngrais: [
+        { parcelleId: "p1", kgN: 30, kgP: 10 },
+        { parcelleId: "p1", kgN: 20, kgP: 5 },
+      ],
+    };
+    const r = calculerBilan(input);
+    expect(r.details[0]?.apportsN).toBe(50);
+    expect(r.details[0]?.apportsP).toBe(15);
+  });
 });

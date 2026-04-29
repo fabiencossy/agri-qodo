@@ -139,14 +139,25 @@ export default function ParcellesPage() {
             {parcelles.data.map((p) => (
               <article
                 key={p.id}
-                className="rounded-2xl border border-border bg-background p-5 transition-colors hover:border-green"
+                className="relative rounded-2xl border border-border bg-background p-5 transition-colors hover:border-green"
               >
                 <header className="mb-3 flex items-start justify-between">
-                  <h2 className="text-lg font-semibold">{p.nom}</h2>
+                  <h2 className="text-lg font-semibold">
+                    <Link
+                      href={`/parcelles/${p.id}`}
+                      className="after:absolute after:inset-0 after:content-[''] hover:underline"
+                    >
+                      {p.nom}
+                    </Link>
+                  </h2>
                   <button
-                    onClick={() => onDelete(p.id, p.nom)}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      onDelete(p.id, p.nom);
+                    }}
                     disabled={deleteMutation.isPending}
-                    className="rounded-md p-1.5 text-foreground/50 hover:bg-red-50 hover:text-red-600"
+                    className="relative z-10 rounded-md p-1.5 text-foreground/50 hover:bg-red-50 hover:text-red-600"
                     aria-label="Supprimer"
                   >
                     <Trash2 className="h-4 w-4" />

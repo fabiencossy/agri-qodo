@@ -41,7 +41,15 @@ export class CreateInterventionDto {
   dateOperation!: string;
 
   @ApiPropertyOptional({
-    description: "Libellé du produit ou code OPPh (pour phyto)",
+    description:
+      "ID Produit du catalogue. Recommandé pour SEMIS (déclenche création de Culture), FUMURE (alimente le bilan N/P) et PHYTO (n° OSAV).",
+  })
+  @IsOptional()
+  @IsUUID()
+  produitId?: string;
+
+  @ApiPropertyOptional({
+    description: "Libellé libre du produit (utilisé si produitId absent, ou en cohabitation)",
     example: "Roundup MAX 360",
   })
   @IsOptional()

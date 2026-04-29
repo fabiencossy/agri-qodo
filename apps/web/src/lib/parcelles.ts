@@ -48,6 +48,14 @@ export function useParcelles() {
   });
 }
 
+export function useParcelle(id: string | undefined) {
+  return useQuery({
+    queryKey: ["parcelles", id] as const,
+    queryFn: () => api<Parcelle>(`/api/parcelles/${id}`),
+    enabled: !!id,
+  });
+}
+
 export function useParcellesMap() {
   return useQuery({
     queryKey: MAP_QUERY_KEY,
@@ -60,7 +68,11 @@ export function useCreateParcelle() {
   return useMutation({
     mutationFn: (input: CreateParcelleInput) =>
       api<Parcelle>("/api/parcelles", { method: "POST", body: input }),
-    onSuccess: () => {
+    onSuccess: (created) => {
+      // Push optimiste : la liste est à jour immédiatement même si le
+      // composant est démonté pendant le redirect (staleTime=30s ne masque
+      // plus la nouvelle entrée).
+      qc.setQueryData<Parcelle[]>(QUERY_KEY, (old) => (old ? [...old, created] : [created]));
       void qc.invalidateQueries({ queryKey: QUERY_KEY });
       void qc.invalidateQueries({ queryKey: MAP_QUERY_KEY });
     },
@@ -71,7 +83,8 @@ export function useDeleteParcelle() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => api<void>(`/api/parcelles/${id}`, { method: "DELETE" }),
-    onSuccess: () => {
+    onSuccess: (_data, id) => {
+      qc.setQueryData<Parcelle[]>(QUERY_KEY, (old) => old?.filter((p) => p.id !== id));
       void qc.invalidateQueries({ queryKey: QUERY_KEY });
       void qc.invalidateQueries({ queryKey: MAP_QUERY_KEY });
     },
