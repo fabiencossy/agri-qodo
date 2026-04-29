@@ -21,6 +21,7 @@ import { JwtAuthGuard } from "@/modules/auth/guards/jwt-auth.guard";
 import { AnimauxService } from "./animaux.service";
 import { CreateAnimalDto } from "./dto/create-animal.dto";
 import { CreateAnimauxBatchDto } from "./dto/create-animaux-batch.dto";
+import { IdentifierAnimalDto } from "./dto/identifier-animal.dto";
 import { UpdateAnimalDto } from "./dto/update-animal.dto";
 
 @ApiTags("animaux")
@@ -31,9 +32,18 @@ export class AnimauxController {
   constructor(private readonly service: AnimauxService) {}
 
   @Get()
-  @ApiOperation({ summary: "Liste des animaux du tenant." })
-  list() {
-    return this.service.list();
+  @ApiOperation({
+    summary:
+      "Liste des animaux du tenant. Filtres : ?categorie=VACHE_LAITIERE&identified=true|false",
+  })
+  list(@Query("categorie") categorieRaw?: string, @Query("identified") identifiedRaw?: string) {
+    const options: { categorie?: AnimalCategorie; identified?: boolean } = {};
+    if (categorieRaw && Object.values(AnimalCategorie).includes(categorieRaw as AnimalCategorie)) {
+      options.categorie = categorieRaw as AnimalCategorie;
+    }
+    if (identifiedRaw === "true") options.identified = true;
+    else if (identifiedRaw === "false") options.identified = false;
+    return this.service.list(options);
   }
 
   @Get("summary")
@@ -67,6 +77,14 @@ export class AnimauxController {
   @ApiOperation({ summary: "Crée un animal individuel." })
   create(@Body() dto: CreateAnimalDto) {
     return this.service.create(dto);
+  }
+
+  @Post("identifier")
+  @ApiOperation({
+    summary: "Identifie un bovin par n° BDTA — promeut un anonyme de la catégorie ou en crée un.",
+  })
+  identifier(@Body() dto: IdentifierAnimalDto) {
+    return this.service.identifier(dto);
   }
 
   @Post("batch")

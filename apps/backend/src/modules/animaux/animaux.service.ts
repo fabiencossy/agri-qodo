@@ -9,7 +9,24 @@ import { PrismaService } from "@/common/prisma/prisma.service";
 import { TenantContextService } from "@/common/tenant/tenant-context.service";
 import type { CreateAnimalDto } from "./dto/create-animal.dto";
 import type { CreateAnimauxBatchDto } from "./dto/create-animaux-batch.dto";
+import type { IdentifierAnimalDto } from "./dto/identifier-animal.dto";
 import type { UpdateAnimalDto } from "./dto/update-animal.dto";
+
+/** Catégories pour lesquelles un n° de boucle BDTA a du sens (bovins). */
+const CATEGORIES_BOVINES: ReadonlySet<AnimalCategorie> = new Set([
+  "VACHE_LAITIERE",
+  "GENISSE",
+  "VEAU",
+  "TAUREAU",
+  "BOEUF",
+  "AUTRE_BOVIN",
+]);
+
+export interface ListAnimauxOptions {
+  categorie?: AnimalCategorie;
+  /** true = avec n° boucle ou nom ou date de naissance ; false = strictement anonymes. */
+  identified?: boolean;
+}
 
 @Injectable()
 export class AnimauxService {
@@ -18,9 +35,25 @@ export class AnimauxService {
     private readonly tenantContext: TenantContextService,
   ) {}
 
-  list() {
+  list(options: ListAnimauxOptions = {}) {
+    const where: Prisma.AnimalWhereInput = { isActive: true };
+    if (options.categorie) {
+      where.categorie = options.categorie;
+    }
+    if (options.identified === true) {
+      where.OR = [
+        { numeroBoucle: { not: null } },
+        { nom: { not: null } },
+        { dateNaissance: { not: null } },
+      ];
+    } else if (options.identified === false) {
+      where.numeroBoucle = null;
+      where.nom = null;
+      where.dateNaissance = null;
+    }
     return this.prisma.tenantAware.animal.findMany({
-      orderBy: [{ categorie: "asc" }, { createdAt: "asc" }],
+      where,
+      orderBy: [{ categorie: "asc" }, { numeroBoucle: "asc" }, { createdAt: "asc" }],
       take: 5000,
     });
   }
@@ -82,6 +115,54 @@ export class AnimauxService {
           dateNaissance: dto.dateNaissance ? new Date(dto.dateNaissance) : null,
           lotId: dto.lotId ?? null,
         },
+      });
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+        throw new ConflictException("Ce numéro de boucle BDTA existe déjà");
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * Identifie un bovin : promeut un row anonyme de la même catégorie
+   * (sans n° boucle ni nom ni date naissance) pour préserver l'effectif
+   * total. Si aucun anonyme, crée un nouveau row identifié (incrémente
+   * l'effectif). Refuse les catégories non bovines (porc, poulet…) :
+   * pas de n° BDTA pour celles-là.
+   */
+  async identifier(dto: IdentifierAnimalDto) {
+    if (!CATEGORIES_BOVINES.has(dto.categorie)) {
+      throw new ConflictException(
+        "Le n° de boucle BDTA n'est applicable qu'aux bovins (vache, génisse, veau, taureau, bœuf).",
+      );
+    }
+    const { tenantId } = this.tenantContext.get();
+    const dateNaissance = dto.dateNaissance ? new Date(dto.dateNaissance) : null;
+    const nom = dto.nom?.trim() || null;
+    const numeroBoucle = dto.numeroBoucle.trim();
+
+    // Cherche un anonyme à promouvoir.
+    const anonyme = await this.prisma.tenantAware.animal.findFirst({
+      where: {
+        categorie: dto.categorie,
+        isActive: true,
+        numeroBoucle: null,
+        nom: null,
+        dateNaissance: null,
+      },
+      orderBy: { createdAt: "asc" },
+    });
+
+    try {
+      if (anonyme) {
+        return await this.prisma.tenantAware.animal.update({
+          where: { id: anonyme.id },
+          data: { numeroBoucle, nom, dateNaissance },
+        });
+      }
+      return await this.prisma.tenantAware.animal.create({
+        data: { tenantId, categorie: dto.categorie, numeroBoucle, nom, dateNaissance },
       });
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
