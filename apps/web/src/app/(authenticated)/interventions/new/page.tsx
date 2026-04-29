@@ -3,13 +3,21 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Controller, useForm } from "react-hook-form";
+import { useMemo } from "react";
+import { Controller, useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import { Breadcrumb } from "@/components/app/breadcrumb";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { emojiType, libelleType, TYPES_ORDER, useCreateIntervention } from "@/lib/interventions";
+import {
+  emojiType,
+  type InterventionType,
+  libelleType,
+  TYPES_ORDER,
+  useCreateIntervention,
+} from "@/lib/interventions";
 import { useParcelles } from "@/lib/parcelles";
+import { type Produit, type ProduitCategorie, useProduits } from "@/lib/produits";
 
 const formSchema = z.object({
   parcelleId: z.string().uuid("Parcelle obligatoire"),
@@ -24,6 +32,7 @@ const formSchema = z.object({
     "AUTRE",
   ]),
   dateOperation: z.string().min(1, "Date obligatoire"),
+  produitId: z.string().uuid().optional().or(z.literal("")),
   produit: z.string().max(200).optional().or(z.literal("")),
   quantite: z.coerce.number().min(0).optional().or(z.literal(NaN)),
   unite: z.string().max(20).optional().or(z.literal("")),
@@ -34,22 +43,35 @@ type FormValues = z.infer<typeof formSchema>;
 
 const today = (): string => new Date().toISOString().slice(0, 10);
 
+// Mapping type d'intervention → catégorie de produit du catalogue.
+// Pour SEMIS le produit est obligatoire (déclenche la Culture). Pour les
+// autres types c'est facultatif (peut être un produit non catalogué).
+const CATEGORIE_FOR_TYPE: Partial<Record<InterventionType, ProduitCategorie>> = {
+  SEMIS: "SEMENCE",
+  FUMURE_ORGANIQUE: "ENGRAIS_ORGANIQUE",
+  FUMURE_MINERALE: "ENGRAIS_MINERAL",
+  PHYTO: "PHYTO",
+};
+
 export default function NewInterventionPage() {
   const router = useRouter();
   const createMutation = useCreateIntervention();
   const parcelles = useParcelles();
+  const produits = useProduits();
 
   const {
     register,
     handleSubmit,
     control,
+    setValue,
     formState: { errors },
   } = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
       parcelleId: "",
-      type: "PHYTO",
+      type: "SEMIS",
       dateOperation: today(),
+      produitId: "",
       produit: "",
       quantite: undefined,
       unite: "",
@@ -57,12 +79,27 @@ export default function NewInterventionPage() {
     },
   });
 
+  const selectedType = useWatch({ control, name: "type" });
+  const selectedProduitId = useWatch({ control, name: "produitId" });
+  const categorie = CATEGORIE_FOR_TYPE[selectedType];
+
+  const filteredProduits = useMemo<Produit[]>(() => {
+    if (!produits.data) return [];
+    if (!categorie) return [];
+    return produits.data
+      .filter((p) => p.categorie === categorie && p.actif)
+      .sort((a, b) => a.libelle.localeCompare(b.libelle, "fr"));
+  }, [produits.data, categorie]);
+
+  const selectedProduit = filteredProduits.find((p) => p.id === selectedProduitId);
+
   const onSubmit = (values: FormValues) => {
     createMutation.mutate(
       {
         parcelleId: values.parcelleId,
         type: values.type,
         dateOperation: values.dateOperation,
+        ...(values.produitId ? { produitId: values.produitId } : {}),
         ...(values.produit ? { produit: values.produit } : {}),
         ...(values.quantite && !Number.isNaN(values.quantite) ? { quantite: values.quantite } : {}),
         ...(values.unite ? { unite: values.unite } : {}),
@@ -75,6 +112,7 @@ export default function NewInterventionPage() {
   };
 
   const noParcelles = parcelles.data !== undefined && parcelles.data.length === 0;
+  const semisSansProduit = selectedType === "SEMIS" && !selectedProduitId;
 
   return (
     <>
@@ -126,7 +164,12 @@ export default function NewInterventionPage() {
                     <button
                       key={t}
                       type="button"
-                      onClick={() => onChange(t)}
+                      onClick={() => {
+                        onChange(t);
+                        // Reset produit quand on change de type pour
+                        // éviter d'envoyer un produit incompatible.
+                        setValue("produitId", "");
+                      }}
                       className={`flex flex-col items-center gap-1 rounded-lg border p-3 text-sm transition-colors ${
                         value === t
                           ? "border-green bg-green/10 font-medium text-green"
@@ -146,13 +189,58 @@ export default function NewInterventionPage() {
             <Input type="date" {...register("dateOperation")} />
           </Field>
 
-          <Field
-            label="Produit (optionnel)"
-            hint="Nom commercial ou code OPPh pour les phytos"
-            error={errors.produit?.message}
-          >
-            <Input placeholder="Roundup MAX 360" {...register("produit")} />
-          </Field>
+          {categorie ? (
+            <Field
+              label={
+                selectedType === "SEMIS"
+                  ? "Semence (obligatoire pour le SEMIS)"
+                  : "Produit catalogue"
+              }
+              hint={
+                produits.isLoading
+                  ? "Chargement du catalogue…"
+                  : filteredProduits.length === 0
+                    ? "Aucun produit dans cette catégorie."
+                    : selectedType === "SEMIS"
+                      ? "Sélectionner la semence créera automatiquement la culture sur la parcelle."
+                      : "Optionnel : sélectionner un produit du catalogue pour la traçabilité."
+              }
+              error={errors.produitId?.message}
+            >
+              <select
+                className="h-11 w-full rounded-lg border border-border bg-background px-3 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green"
+                {...register("produitId")}
+              >
+                <option value="">
+                  {selectedType === "SEMIS" ? "Sélectionner une semence…" : "Aucun (libellé libre)"}
+                </option>
+                {filteredProduits.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.libelle}
+                    {p.fournisseur ? ` — ${p.fournisseur}` : ""}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          ) : null}
+
+          {selectedType === "SEMIS" && selectedProduit?.especeCode ? (
+            <div className="rounded-lg bg-green/5 px-4 py-3 text-sm text-green-900">
+              <span className="font-medium">Culture qui sera créée :</span>{" "}
+              {selectedProduit.especeCode} — {selectedProduit.libelle}, campagne{" "}
+              {new Date().getUTCFullYear()}
+            </div>
+          ) : null}
+
+          {!categorie || selectedType === "AUTRE" ? (
+            <Field
+              label="Produit (libellé libre)"
+              hint="Nom commercial si pas dans le catalogue"
+              error={errors.produit?.message}
+            >
+              <Input placeholder="Roundup MAX 360" {...register("produit")} />
+            </Field>
+          ) : null}
 
           <div className="grid grid-cols-2 gap-3">
             <Field label="Quantité (optionnel)" error={errors.quantite?.message}>
@@ -188,7 +276,7 @@ export default function NewInterventionPage() {
               type="submit"
               size="lg"
               className="flex-1"
-              disabled={createMutation.isPending || noParcelles}
+              disabled={createMutation.isPending || noParcelles || semisSansProduit}
             >
               {createMutation.isPending ? "Enregistrement…" : "Enregistrer"}
             </Button>

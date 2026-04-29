@@ -93,6 +93,12 @@ export default function InterventionsPage() {
                           {iv.parcelle.nom} · {formatDateFr(iv.dateOperation)}
                           {quantite && ` · ${quantite}`}
                         </div>
+                        {iv.culture && (
+                          <div className="mt-1 inline-flex items-center gap-1 rounded-full bg-green/10 px-2 py-0.5 text-xs text-green">
+                            <Sprout className="h-3 w-3" />
+                            Culture {iv.culture.espece} · campagne {iv.culture.campagne}
+                          </div>
+                        )}
                         {iv.notes && <p className="mt-1 text-sm text-foreground/70">{iv.notes}</p>}
                       </div>
                     </div>
