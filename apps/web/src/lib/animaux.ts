@@ -46,13 +46,38 @@ export interface CreateBatchInput {
   nombre: number;
 }
 
+export interface IdentifierBovinInput {
+  categorie: AnimalCategorie;
+  numeroBoucle: string;
+  nom?: string;
+  dateNaissance?: string;
+}
+
+/** Catégories pour lesquelles le n° de boucle BDTA s'applique. */
+export const BOVIN_CATEGORIES: AnimalCategorie[] = [
+  "VACHE_LAITIERE",
+  "GENISSE",
+  "VEAU",
+  "TAUREAU",
+  "BOEUF",
+  "AUTRE_BOVIN",
+];
+export const isBovin = (c: AnimalCategorie): boolean => BOVIN_CATEGORIES.includes(c);
+
 const KEY_LIST = ["animaux"] as const;
 const KEY_SUMMARY = ["animaux", "summary"] as const;
 const KEY_CATEGORIES = ["animaux", "categories-actives"] as const;
 const KEY_UGB = ["animaux", "ugb"] as const;
 
-export function useAnimaux() {
-  return useQuery({ queryKey: KEY_LIST, queryFn: () => api<Animal[]>("/api/animaux") });
+export function useAnimaux(filters?: { categorie?: AnimalCategorie; identified?: boolean }) {
+  const qs = new URLSearchParams();
+  if (filters?.categorie) qs.set("categorie", filters.categorie);
+  if (filters?.identified !== undefined) qs.set("identified", String(filters.identified));
+  const url = qs.toString() ? `/api/animaux?${qs.toString()}` : "/api/animaux";
+  return useQuery({
+    queryKey: [...KEY_LIST, filters ?? {}] as const,
+    queryFn: () => api<Animal[]>(url),
+  });
 }
 
 export function useAnimauxSummary() {
@@ -88,6 +113,15 @@ export function useCreateAnimal() {
   return useMutation({
     mutationFn: (input: CreateAnimalInput) =>
       api<Animal>("/api/animaux", { method: "POST", body: input }),
+    onSuccess: () => invalidateAll(qc),
+  });
+}
+
+export function useIdentifierBovin() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: IdentifierBovinInput) =>
+      api<Animal>("/api/animaux/identifier", { method: "POST", body: input }),
     onSuccess: () => invalidateAll(qc),
   });
 }

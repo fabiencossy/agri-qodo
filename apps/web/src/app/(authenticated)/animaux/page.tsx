@@ -1,10 +1,11 @@
 "use client";
 
-import { Beef, Check, Minus, Plus } from "lucide-react";
+import { Beef, Check, Minus, Plus, Tag } from "lucide-react";
 import { useEffect, useState } from "react";
+import { IdentifierBovinDialog } from "@/components/animaux/identifier-bovin-dialog";
 import { Breadcrumb } from "@/components/app/breadcrumb";
 import { Button } from "@/components/ui/button";
-import { useAnimauxSummary, useSetEffectif, useUgb } from "@/lib/animaux";
+import { isBovin, useAnimauxSummary, useSetEffectif, useUgb } from "@/lib/animaux";
 import {
   type AnimalCategorie,
   CATEGORIES_ORDER,
@@ -92,7 +93,9 @@ function CategorieRow({
   coefMoyen: number | null;
 }) {
   const [target, setTarget] = useState<number>(current);
+  const [identifierOpen, setIdentifierOpen] = useState(false);
   const setEffectif = useSetEffectif();
+  const isBovinCat = isBovin(categorie);
 
   // Resync local input quand le serveur renvoie une nouvelle valeur (après mutation
   // ou après chargement initial). Évite de désynchroniser si l'utilisateur tape.
@@ -165,6 +168,24 @@ function CategorieRow({
         <Check className="mr-1 h-4 w-4" />
         Valider
       </Button>
+      {isBovinCat && current > 0 && (
+        <Button
+          variant="secondary"
+          onClick={() => setIdentifierOpen(true)}
+          aria-label="Identifier les bovins"
+        >
+          <Tag className="mr-1 h-4 w-4" />
+          Identifier
+        </Button>
+      )}
+      {isBovinCat && (
+        <IdentifierBovinDialog
+          categorie={categorie}
+          totalActifs={current}
+          open={identifierOpen}
+          onClose={() => setIdentifierOpen(false)}
+        />
+      )}
     </div>
   );
 }
