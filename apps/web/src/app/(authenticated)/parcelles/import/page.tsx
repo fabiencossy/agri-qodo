@@ -29,6 +29,8 @@ interface GeoFeature {
 interface ImportResult {
   total: number;
   created: number;
+  /** Parcelles avec un SEMIS rétroactif créé via la property `culture` du GeoJSON. */
+  cultures?: number;
   errors: Array<{ index: number; nom?: string; message: string }>;
 }
 
@@ -332,6 +334,17 @@ function ImportResultView({ result }: { result: ImportResult }) {
           <div className="text-sm text-foreground/60">
             sur {result.total} feature{result.total > 1 ? "s" : ""} dans le fichier
           </div>
+          {result.cultures !== undefined && result.cultures > 0 && (
+            <div className="mt-1 text-sm text-emerald-700">
+              ✓ {result.cultures} assolement{result.cultures > 1 ? "s" : ""} pré-rempli
+              {result.cultures > 1 ? "s" : ""} depuis la property{" "}
+              <code className="rounded bg-emerald-100 px-1">culture</code>. Visualise{" "}
+              <Link href="/assolement" className="underline">
+                le plan d'assolement
+              </Link>
+              .
+            </div>
+          )}
         </div>
       </div>
 
