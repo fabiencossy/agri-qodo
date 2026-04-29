@@ -1,7 +1,16 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { ZoneAgricole } from "@prisma/client";
 import { Type } from "class-transformer";
-import { IsEnum, IsNumber, IsObject, IsOptional, IsString, MaxLength, Min } from "class-validator";
+import {
+  IsEnum,
+  IsNumber,
+  IsObject,
+  IsOptional,
+  IsString,
+  Matches,
+  MaxLength,
+  Min,
+} from "class-validator";
 
 /**
  * Type minimal d'une géométrie GeoJSON acceptée par le backend.
@@ -39,6 +48,17 @@ export class CreateParcelleDto {
   @IsString()
   @MaxLength(50)
   identifiantCadastral?: string;
+
+  @ApiPropertyOptional({
+    description: "Couleur de surbrillance sur les cartes (#RRGGBB)",
+    example: "#4CAF50",
+  })
+  @IsOptional()
+  @IsString()
+  @Matches(/^#[0-9A-Fa-f]{6}$/, {
+    message: "couleurHex doit être au format hex #RRGGBB",
+  })
+  couleurHex?: string;
 
   @ApiPropertyOptional()
   @IsOptional()

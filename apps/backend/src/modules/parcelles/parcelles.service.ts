@@ -15,6 +15,7 @@ interface ParcelleMapRow {
   nom: string;
   surfaceM2: string;
   zone: string;
+  couleurHex: string | null;
   geom: string | null; // GeoJSON sérialisé par ST_AsGeoJSON
 }
 
@@ -23,6 +24,7 @@ export interface ParcelleMapItem {
   nom: string;
   surfaceM2: string;
   zone: string;
+  couleurHex: string | null;
   geom: GeoJsonGeometry | null;
 }
 
@@ -57,6 +59,7 @@ export class ParcellesService {
          nom,
          surface_m2::text AS "surfaceM2",
          zone::text AS zone,
+         couleur_hex AS "couleurHex",
          ST_AsGeoJSON(geom) AS geom
        FROM parcelles
        WHERE tenant_id::text = $1
@@ -68,6 +71,7 @@ export class ParcellesService {
       nom: r.nom,
       surfaceM2: r.surfaceM2,
       zone: r.zone,
+      couleurHex: r.couleurHex,
       geom: r.geom ? (JSON.parse(r.geom) as GeoJsonGeometry) : null,
     }));
   }
@@ -79,7 +83,19 @@ export class ParcellesService {
     if (!parcelle) {
       throw new NotFoundException("Parcelle introuvable");
     }
-    return parcelle;
+    // Récupère la geom en GeoJSON via PostGIS (Prisma ne supporte pas le
+    // type geometry). Filtre tenant déjà appliqué par le findFirst au-dessus,
+    // mais on le ré-applique côté raw pour la défense en profondeur.
+    const { tenantId } = this.tenantContext.get();
+    const rows = await this.prisma.$queryRawUnsafe<{ geom: string | null }[]>(
+      `SELECT ST_AsGeoJSON(geom) AS geom
+       FROM parcelles
+       WHERE id::text = $1 AND tenant_id::text = $2`,
+      id,
+      tenantId,
+    );
+    const geom = rows[0]?.geom ? (JSON.parse(rows[0].geom) as GeoJsonGeometry) : null;
+    return { ...parcelle, geom };
   }
 
   /**
