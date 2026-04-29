@@ -17,27 +17,49 @@ export class AuthService {
     private readonly config: ConfigService<Env, true>,
   ) {}
 
+  /**
+   * Login fédéré : on cherche TOUS les Users avec cet email, et on
+   * teste le mot de passe contre chacun. Tous les hashes qui matchent
+   * désignent des comptes "fédérés" (même personne, plusieurs
+   * exploitations). Le JWT inclut la liste de leurs tenantIds — le
+   * tenant switcher peut basculer entre eux sans nouveau login.
+   */
   async login(email: string, password: string): Promise<AuthTokens> {
-    const user = await this.prisma.user.findUnique({ where: { email } });
-    if (!user || !user.isActive) {
+    const candidates = await this.prisma.user.findMany({
+      where: { email, isActive: true },
+    });
+    const matched: typeof candidates = [];
+    for (const u of candidates) {
+      if (await bcrypt.compare(password, u.passwordHash)) {
+        matched.push(u);
+      }
+    }
+    if (matched.length === 0) {
       throw new UnauthorizedException("Identifiants invalides");
     }
 
-    const valid = await bcrypt.compare(password, user.passwordHash);
-    if (!valid) {
-      throw new UnauthorizedException("Identifiants invalides");
-    }
+    // Le compte "principal" pour le JWT : on prend le plus récemment
+    // utilisé (lastLoginAt desc) puis le plus ancien (createdAt asc).
+    matched.sort((a, b) => {
+      const al = a.lastLoginAt?.getTime() ?? 0;
+      const bl = b.lastLoginAt?.getTime() ?? 0;
+      if (al !== bl) return bl - al;
+      return a.createdAt.getTime() - b.createdAt.getTime();
+    });
+    const primary = matched[0]!;
+    const tenantIds = matched.map((u) => u.tenantId);
 
     await this.prisma.user.update({
-      where: { id: user.id },
+      where: { id: primary.id },
       data: { lastLoginAt: new Date() },
     });
 
     return this.issueTokens({
-      sub: user.id,
-      tenantId: user.tenantId,
-      email: user.email,
-      role: user.role,
+      sub: primary.id,
+      tenantId: primary.tenantId,
+      email: primary.email,
+      role: primary.role,
+      tenantIds,
     });
   }
 
@@ -73,11 +95,15 @@ export class AuthService {
       data: { revokedAt: new Date() },
     });
 
+    // Au refresh on n'a plus le mot de passe en clair → on ne peut
+    // pas re-tester la fédération. On retombe sur le tenant courant ;
+    // la fédération sera ré-établie au prochain login complet.
     return this.issueTokens({
       sub: stored.user.id,
       tenantId: stored.user.tenantId,
       email: stored.user.email,
       role: stored.user.role,
+      tenantIds: [stored.user.tenantId],
     });
   }
 

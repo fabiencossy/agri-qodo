@@ -19,7 +19,10 @@ export class AuthController {
 
   @Post("login")
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: "Connexion par email + mot de passe" })
+  @ApiOperation({
+    summary:
+      "Connexion par email + mot de passe. Le JWT inclut tous les tenants où ce couple matche (compte fédéré).",
+  })
   login(@Body() dto: LoginDto): Promise<AuthTokensDto> {
     return this.auth.login(dto.email, dto.password);
   }

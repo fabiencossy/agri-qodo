@@ -5,7 +5,6 @@ import { Fab } from "./fab";
 import { HamburgerDrawer } from "./hamburger-drawer";
 import { NavTabs } from "./nav-tabs";
 import { Sidebar } from "./sidebar";
-import { PartnerTenantBanner } from "./tenant-switcher";
 import { TopBar } from "./top-bar";
 
 /**
@@ -28,7 +27,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       <div className="flex min-w-0 flex-1 flex-col">
         <TopBar onMenuClick={openDrawer} />
-        <PartnerTenantBanner />
         <NavTabs />
         <main className="flex-1">{children}</main>
         <Fab />

@@ -1,17 +1,16 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
-import { Canton, type PartnerLinkLevel, PartnerLinkStatus } from "@prisma/client";
+import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
+import { Canton, Prisma } from "@prisma/client";
 import { randomBytes } from "node:crypto";
 import { PrismaService } from "@/common/prisma/prisma.service";
+import type { UpdateTenantDto } from "./dto/update-tenant.dto";
 
 export interface AccessibleTenant {
   id: string;
   nom: string;
   code: string;
   canton: string;
-  /** "home" pour mon exploitation, "partner" si lien partenaire actif. */
-  kind: "home" | "partner";
-  /** Niveau d'autorisation pour les tenants partenaires. */
-  niveau?: PartnerLinkLevel;
+  /** "home" : tenant accessible via compte fédéré (email+password commun). */
+  kind: "home";
 }
 
 @Injectable()
@@ -32,30 +31,44 @@ export class TenantsService {
   }
 
   /**
-   * Liste les tenants accessibles à l'utilisateur : son propre tenant +
-   * tous les tenants où il a un PartnerLink ACTIVE en tant que partner.
-   * Utilisé par le tenant switcher dans la topbar.
+   * Édition de l'exploitation par son owner. Le `numeroExploitant` mappe
+   * sur la colonne `code` (unique global) — clé d'identification du
+   * tenant pour le login et les liens partenaires.
    */
-  async listAccessible(homeTenantId: string): Promise<AccessibleTenant[]> {
-    const [home, links] = await Promise.all([
-      this.prisma.exploitation.findUnique({
-        where: { id: homeTenantId },
-        select: { id: true, nom: true, code: true, canton: true },
-      }),
-      this.prisma.partnerLink.findMany({
-        where: { partnerTenantId: homeTenantId, status: PartnerLinkStatus.ACTIVE },
-        include: {
-          ownerTenant: { select: { id: true, nom: true, code: true, canton: true } },
-        },
-      }),
-    ]);
-    if (!home) throw new NotFoundException("Exploitation introuvable");
-
-    const out: AccessibleTenant[] = [{ ...home, kind: "home" }];
-    for (const link of links) {
-      out.push({ ...link.ownerTenant, kind: "partner", niveau: link.niveau });
+  async updateMine(tenantId: string, dto: UpdateTenantDto) {
+    const data: Prisma.ExploitationUpdateInput = {};
+    if (dto.numeroExploitant !== undefined) {
+      data.code = dto.numeroExploitant.trim().toUpperCase();
     }
-    return out;
+    if (dto.nom !== undefined) data.nom = dto.nom.trim();
+    if (dto.numeroUfam !== undefined) data.numeroUfam = dto.numeroUfam.trim() || null;
+    if (dto.numeroBdta !== undefined) data.numeroBdta = dto.numeroBdta.trim() || null;
+    if (Object.keys(data).length === 0) return this.getMine(tenantId);
+    try {
+      return await this.prisma.exploitation.update({ where: { id: tenantId }, data });
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+        throw new ConflictException("Ce numéro d'exploitant est déjà utilisé");
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * Liste les tenants accessibles via compte fédéré : tous les tenants
+   * où l'utilisateur a un User avec le même email + password (la liste
+   * a été calculée au login et figée dans `tenantIds` du JWT). On ne
+   * retourne PAS les partenariats actifs : un PartnerLink autorise la
+   * saisie d'interventions sur les parcelles d'un client (cf module
+   * Prestations), pas la bascule de session.
+   */
+  async listAccessible(tenantIds: readonly string[]): Promise<AccessibleTenant[]> {
+    if (tenantIds.length === 0) return [];
+    const tenants = await this.prisma.exploitation.findMany({
+      where: { id: { in: [...tenantIds] } },
+      select: { id: true, nom: true, code: true, canton: true },
+    });
+    return tenants.map((t) => ({ ...t, kind: "home" as const }));
   }
 
   /**
