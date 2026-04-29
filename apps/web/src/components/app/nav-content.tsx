@@ -5,6 +5,7 @@ import {
   Beef,
   BookOpen,
   ClipboardList,
+  Cog,
   FlaskConical,
   Handshake,
   Home,
@@ -45,6 +46,7 @@ const PILOTAGE: NavLink[] = [
 const ADMINISTRATION: NavLink[] = [
   { href: "/utilisateurs", label: "Utilisateurs", icon: Users },
   { href: "/partenaires", label: "Partenaires", icon: Handshake },
+  { href: "/parametres", label: "Paramètres", icon: Cog },
 ];
 
 /**
