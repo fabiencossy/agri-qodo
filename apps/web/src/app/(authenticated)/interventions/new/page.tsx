@@ -10,6 +10,7 @@ import { z } from "zod";
 import { Breadcrumb } from "@/components/app/breadcrumb";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { ProduitSearchSelect } from "@/components/ui/produit-search-select";
 import {
   emojiType,
   type InterventionGeoJsonPolygon,
@@ -34,7 +35,6 @@ import {
   type ProduitCategorie,
   type ProduitUnite,
   UNITE_LABEL,
-  useCreateProduit,
   useProduits,
 } from "@/lib/produits";
 
@@ -176,7 +176,6 @@ export default function NewInterventionPage() {
     return TECHNIQUES_ORDER;
   }, [selectedProduit]);
 
-  const [showNewProduit, setShowNewProduit] = useState(false);
   const [toutLeChamp, setToutLeChamp] = useState(true);
   // Mode de saisie de la sous-zone : numérique (m² entré au clavier) ou
   // dessiné sur carte (polygone clippé à la parcelle, surface auto).
@@ -329,37 +328,29 @@ export default function NewInterventionPage() {
                   : "Produit catalogue"
               }
               hint={
-                produits.isLoading
-                  ? "Chargement du catalogue…"
-                  : filteredProduits.length === 0
-                    ? "Aucun produit dans cette catégorie."
-                    : selectedType === "SEMIS"
-                      ? "Sélectionner la semence créera automatiquement la culture sur la parcelle."
-                      : "Optionnel : sélectionner un produit du catalogue pour la traçabilité."
+                selectedType === "SEMIS"
+                  ? 'Sélectionner la semence créera automatiquement la culture sur la parcelle. Si la semence n\'existe pas, tape son nom et clique sur "Créer".'
+                  : "Optionnel : choisir un produit du catalogue, ou en créer un nouveau si pas trouvé."
               }
               error={errors.produitId?.message}
             >
-              <select
-                className="h-11 w-full rounded-lg border border-border bg-background px-3 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green"
-                {...register("produitId")}
-              >
-                <option value="">
-                  {selectedType === "SEMIS" ? "Sélectionner une semence…" : "Aucun (libellé libre)"}
-                </option>
-                {filteredProduits.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.libelle}
-                    {p.fournisseur ? ` — ${p.fournisseur}` : ""}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="button"
-                onClick={() => setShowNewProduit(true)}
-                className="mt-2 text-sm font-medium text-green hover:underline"
-              >
-                + Créer un nouveau produit
-              </button>
+              <Controller
+                control={control}
+                name="produitId"
+                render={({ field: { value, onChange } }) => (
+                  <ProduitSearchSelect
+                    categorie={categorie}
+                    value={value ?? ""}
+                    onChange={(id) => onChange(id)}
+                    placeholder={
+                      selectedType === "SEMIS"
+                        ? "Choisir une semence…"
+                        : "Choisir un produit du catalogue…"
+                    }
+                    required={selectedType === "SEMIS"}
+                  />
+                )}
+              />
             </Field>
           ) : null}
 
@@ -572,158 +563,7 @@ export default function NewInterventionPage() {
           </div>
         </form>
       </div>
-
-      {showNewProduit && categorie && (
-        <NewProduitDialog
-          categorie={categorie}
-          onClose={() => setShowNewProduit(false)}
-          onCreated={(p) => {
-            setValue("produitId", p.id);
-            setShowNewProduit(false);
-          }}
-        />
-      )}
     </>
-  );
-}
-
-function NewProduitDialog({
-  categorie,
-  onClose,
-  onCreated,
-}: {
-  categorie: ProduitCategorie;
-  onClose: () => void;
-  onCreated: (p: Produit) => void;
-}) {
-  const create = useCreateProduit();
-  const [libelle, setLibelle] = useState("");
-  const [fournisseur, setFournisseur] = useState("");
-  const [unite, setUnite] = useState<ProduitUnite>(categorie === "ENGRAIS_ORGANIQUE" ? "M3" : "KG");
-  const [especeCode, setEspeceCode] = useState("");
-  const [tauxN, setTauxN] = useState("");
-  const [tauxP, setTauxP] = useState("");
-
-  const isEngrais = categorie === "ENGRAIS_MINERAL" || categorie === "ENGRAIS_ORGANIQUE";
-  const isSemence = categorie === "SEMENCE";
-
-  const onSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    create.mutate(
-      {
-        categorie,
-        libelle,
-        unite,
-        ...(fournisseur ? { fournisseur } : {}),
-        ...(especeCode ? { especeCode } : {}),
-        ...(tauxN ? { tauxN: Number(tauxN) } : {}),
-        ...(tauxP ? { tauxP: Number(tauxP) } : {}),
-      },
-      { onSuccess: (p) => onCreated(p) },
-    );
-  };
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      onClick={onClose}
-    >
-      <div
-        className="w-full max-w-md rounded-2xl border border-border bg-background p-6 shadow-xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h2 className="mb-4 text-xl font-bold">Nouveau produit ({categorie.toLowerCase()})</h2>
-        <form onSubmit={onSubmit} className="space-y-3">
-          <label className="block text-sm">
-            <span className="mb-1 block font-medium">Libellé *</span>
-            <Input
-              required
-              value={libelle}
-              onChange={(e) => setLibelle(e.target.value)}
-              placeholder="Ex : Lisier ferme Dupont"
-            />
-          </label>
-          <label className="block text-sm">
-            <span className="mb-1 block font-medium">Fournisseur</span>
-            <Input
-              value={fournisseur}
-              onChange={(e) => setFournisseur(e.target.value)}
-              placeholder="Optionnel"
-            />
-          </label>
-          <label className="block text-sm">
-            <span className="mb-1 block font-medium">Unité</span>
-            <select
-              value={unite}
-              onChange={(e) => setUnite(e.target.value as ProduitUnite)}
-              className="h-11 w-full rounded-lg border border-border bg-background px-3 text-base"
-            >
-              <option value="KG">kg</option>
-              <option value="L">L (litre)</option>
-              <option value="T">t (tonne)</option>
-              <option value="M3">m³</option>
-              <option value="DOSE">doses</option>
-            </select>
-          </label>
-          {isSemence && (
-            <label className="block text-sm">
-              <span className="mb-1 block font-medium">Code espèce</span>
-              <Input
-                value={especeCode}
-                onChange={(e) => setEspeceCode(e.target.value)}
-                placeholder="ex: ble_panifiable, mais_grain, triticale"
-              />
-              <p className="mt-1 text-xs text-foreground/50">
-                Permet de créer auto la culture lors d'un SEMIS et de calculer le besoin N/P.
-              </p>
-            </label>
-          )}
-          {isEngrais && (
-            <div className="grid grid-cols-2 gap-3">
-              <label className="block text-sm">
-                <span className="mb-1 block font-medium">
-                  Taux N (kg / 100 {UNITE_LABEL[unite]})
-                </span>
-                <Input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={tauxN}
-                  onChange={(e) => setTauxN(e.target.value)}
-                  placeholder="46"
-                />
-              </label>
-              <label className="block text-sm">
-                <span className="mb-1 block font-medium">
-                  Taux P (kg / 100 {UNITE_LABEL[unite]})
-                </span>
-                <Input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={tauxP}
-                  onChange={(e) => setTauxP(e.target.value)}
-                  placeholder="0"
-                />
-              </label>
-            </div>
-          )}
-          {create.isError && (
-            <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
-              Création impossible. Vérifie les valeurs et réessaie.
-            </p>
-          )}
-          <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="ghost" onClick={onClose}>
-              Annuler
-            </Button>
-            <Button type="submit" disabled={create.isPending}>
-              {create.isPending ? "Création…" : "Créer et utiliser"}
-            </Button>
-          </div>
-        </form>
-      </div>
-    </div>
   );
 }
 
