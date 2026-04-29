@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { Fab } from "./fab";
 import { HamburgerDrawer } from "./hamburger-drawer";
 import { NavTabs } from "./nav-tabs";
@@ -15,13 +15,18 @@ import { TopBar } from "./top-bar";
  */
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
+  // useCallback obligatoire : HamburgerDrawer a un useEffect dépendant de
+  // onClose qui se ré-exécute à chaque render. Sans stabilité de la ref,
+  // le drawer se referme immédiatement après ouverture.
+  const closeDrawer = useCallback(() => setDrawerOpen(false), []);
+  const openDrawer = useCallback(() => setDrawerOpen(true), []);
   return (
     <div className="flex min-h-screen">
       <Sidebar />
-      <HamburgerDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} />
+      <HamburgerDrawer open={drawerOpen} onClose={closeDrawer} />
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <TopBar onMenuClick={() => setDrawerOpen(true)} />
+        <TopBar onMenuClick={openDrawer} />
         <NavTabs />
         <main className="flex-1">{children}</main>
         <Fab />
