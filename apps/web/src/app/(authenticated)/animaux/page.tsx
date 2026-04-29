@@ -1,8 +1,9 @@
 "use client";
 
-import { Beef, Check, Minus, Plus, Tag } from "lucide-react";
+import { Beef, Check, Minus, Plus, Tag, Upload } from "lucide-react";
 import { useEffect, useState } from "react";
 import { IdentifierBovinDialog } from "@/components/animaux/identifier-bovin-dialog";
+import { ImportBdtaDialog } from "@/components/animaux/import-bdta-dialog";
 import { Breadcrumb } from "@/components/app/breadcrumb";
 import { Button } from "@/components/ui/button";
 import { isBovin, useAnimauxSummary, useSetEffectif, useUgb } from "@/lib/animaux";
@@ -16,6 +17,7 @@ import {
 export default function AnimauxPage() {
   const summary = useAnimauxSummary();
   const ugb = useUgb();
+  const [importOpen, setImportOpen] = useState(false);
   const totalActifs = (summary.data ?? []).reduce((acc, s) => acc + s.nombreActifs, 0);
 
   return (
@@ -47,7 +49,12 @@ export default function AnimauxPage() {
               automatiquement quand la date de naissance d'un bovin est connue.
             </p>
           </div>
+          <Button variant="secondary" onClick={() => setImportOpen(true)}>
+            <Upload className="mr-1 h-4 w-4" />
+            Importer depuis BDTA
+          </Button>
         </div>
+        <ImportBdtaDialog open={importOpen} onClose={() => setImportOpen(false)} />
 
         {summary.isError && (
           <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">

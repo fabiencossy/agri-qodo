@@ -51,3 +51,15 @@ export {
   type UgbExploitationResult,
   type UgbParCategorie,
 } from "./ugb";
+
+export {
+  type BdtaImportError,
+  type BdtaImportResult,
+  type BdtaImportRow,
+  type ColonneBdta,
+  detecterSeparateur,
+  mapperCategorie,
+  parseBdtaCsv,
+  parseDateBdta,
+  parseSexe,
+} from "./bdta-import";

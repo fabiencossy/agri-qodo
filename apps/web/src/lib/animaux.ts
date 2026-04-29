@@ -53,6 +53,14 @@ export interface IdentifierBovinInput {
   dateNaissance?: string;
 }
 
+export interface ImportBdtaResult {
+  created: number;
+  updated: number;
+  promoted: number;
+  skipped: number;
+  errors: Array<{ ligne: number; raison: string }>;
+}
+
 /** Catégories pour lesquelles le n° de boucle BDTA s'applique. */
 export const BOVIN_CATEGORIES: AnimalCategorie[] = [
   "VACHE_LAITIERE",
@@ -122,6 +130,18 @@ export function useIdentifierBovin() {
   return useMutation({
     mutationFn: (input: IdentifierBovinInput) =>
       api<Animal>("/api/animaux/identifier", { method: "POST", body: input }),
+    onSuccess: () => invalidateAll(qc),
+  });
+}
+
+export function useImportBdta() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (csv: string) =>
+      api<ImportBdtaResult>("/api/animaux/import-bdta", {
+        method: "POST",
+        body: { csv },
+      }),
     onSuccess: () => invalidateAll(qc),
   });
 }
