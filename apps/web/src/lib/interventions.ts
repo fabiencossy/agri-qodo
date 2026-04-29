@@ -88,10 +88,12 @@ export interface CreateInterventionInput {
 export interface InterventionWithGeom {
   id: string;
   parcelleId: string;
+  parcelleNom: string;
   type: InterventionType;
   dateOperation: string;
   surfaceTravailleeM2: string | null;
   produit: string | null;
+  culture: { espece: string; variete: string | null; campagne: number } | null;
   geom: InterventionGeoJsonPolygon | null;
 }
 

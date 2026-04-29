@@ -8,6 +8,7 @@ import {
   FlaskConical,
   Handshake,
   Home,
+  Layers,
   LogOut,
   type LucideIcon,
   MapPin,
@@ -37,6 +38,7 @@ const NAVIGATION: NavLink[] = [
 ];
 
 const PILOTAGE: NavLink[] = [
+  { href: "/assolement", label: "Plan d'assolement", icon: Layers },
   { href: "/suisse-bilanz", label: "Suisse-Bilanz", icon: FlaskConical },
   { href: "/stats", label: "Statistiques", icon: BarChart3 },
   { href: "/veille", label: "Veille réglementaire", icon: BookOpen },
