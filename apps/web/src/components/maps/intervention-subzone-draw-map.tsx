@@ -3,15 +3,21 @@
 /**
  * Carte de dessin d'une sous-zone d'intervention.
  *
- * - Affiche le contour de la parcelle parente en read-only (vert clair)
- *   comme guide visuel.
- * - L'utilisateur dessine un Polygon (un seul) à l'intérieur du contour.
- * - Surface recalculée localement via @turf/area pour feedback immédiat.
- * - Le backend valide `ST_Within parcelle.geom` et rejette si débordement
- *   — pas de clipping strict côté client (UX volontairement permissive,
- *   l'erreur backend est suffisamment explicite).
+ * - Affiche le contour de la parcelle parente (vert pointillé) comme guide.
+ * - L'utilisateur dessine un polygone, qui est **automatiquement clippé**
+ *   aux limites de la parcelle via `@turf/intersect`. Pratique : on peut
+ *   tracer grossièrement en débordant, le polygone final colle au bord
+ *   officiel — pas de "petit bout oublié" sur la limite.
+ * - Snap aux sommets de la parcelle pendant le tracé : si le curseur passe
+ *   à moins de ~12 pixels d'un sommet du contour parcelle, on aimante.
+ * - Surface recalculée live via @turf/area (basée sur le polygone clippé,
+ *   pas sur le tracé brut).
+ * - Le backend re-valide ST_Within (défense en profondeur).
  */
 import area from "@turf/area";
+import booleanContains from "@turf/boolean-contains";
+import intersect from "@turf/intersect";
+import { featureCollection, polygon as turfPolygon } from "@turf/helpers";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import "leaflet-draw";
@@ -29,6 +35,8 @@ interface PolygonFeature {
   properties: Record<string, unknown>;
 }
 
+type ParcelleGeom = GeoJsonPolygon | { type: "MultiPolygon"; coordinates: number[][][][] };
+
 interface DrawCreatedEvent {
   layer: L.Layer & { toGeoJSON: () => PolygonFeature };
 }
@@ -41,18 +49,104 @@ const SWISSTOPO_ATTRIBUTION = '&copy; <a href="https://www.swisstopo.admin.ch">s
 
 const SUISSE_ROMANDE: L.LatLngTuple = [46.6, 6.55];
 
+/** Distance de snap en pixels entre le curseur et un sommet de la parcelle. */
+const SNAP_PIXEL_DISTANCE = 12;
+
+/**
+ * Découpe le polygone tracé pour qu'il rentre strictement dans la
+ * parcelle. Si la parcelle est un MultiPolygon, on intersecte avec
+ * chaque morceau et on garde le plus grand résultat (cas où
+ * l'utilisateur a tracé sur un ring particulier d'une parcelle disjointe).
+ *
+ * Retourne `null` si le polygone tracé est entièrement hors de la parcelle.
+ */
+function clipToParcelle(drawn: GeoJsonPolygon, parcelle: ParcelleGeom): GeoJsonPolygon | null {
+  const drawnFeature = turfPolygon(drawn.coordinates);
+
+  // Liste les Polygon individuels de la parcelle (1 si Polygon, N si MultiPolygon).
+  const parcellePolygons: GeoJsonPolygon[] =
+    parcelle.type === "Polygon"
+      ? [parcelle]
+      : (parcelle.coordinates as number[][][][]).map((ring) => ({
+          type: "Polygon" as const,
+          coordinates: ring,
+        }));
+
+  let bestClip: GeoJsonPolygon | null = null;
+  let bestArea = 0;
+
+  for (const part of parcellePolygons) {
+    const partFeature = turfPolygon(part.coordinates);
+    const result = intersect(featureCollection([drawnFeature, partFeature]));
+    if (!result || !result.geometry) continue;
+    // turf/intersect peut renvoyer un MultiPolygon si l'intersection a
+    // plusieurs morceaux. On prend le plus grand pour garder un Polygon.
+    if (result.geometry.type === "Polygon") {
+      const a = area(result);
+      if (a > bestArea) {
+        bestArea = a;
+        bestClip = result.geometry as GeoJsonPolygon;
+      }
+    } else if (result.geometry.type === "MultiPolygon") {
+      for (const ring of result.geometry.coordinates) {
+        const piece: GeoJsonPolygon = { type: "Polygon", coordinates: ring };
+        const a = area(turfPolygon(piece.coordinates));
+        if (a > bestArea) {
+          bestArea = a;
+          bestClip = piece;
+        }
+      }
+    }
+  }
+
+  return bestClip;
+}
+
+/**
+ * Vrai si `drawn` est entièrement contenu dans la parcelle (pas besoin
+ * de clipper). Évite de retailler inutilement quand l'utilisateur a déjà
+ * tracé proprement à l'intérieur.
+ */
+function isFullyContained(drawn: GeoJsonPolygon, parcelle: ParcelleGeom): boolean {
+  const drawnFeature = turfPolygon(drawn.coordinates);
+  if (parcelle.type === "Polygon") {
+    return booleanContains(turfPolygon(parcelle.coordinates), drawnFeature);
+  }
+  return (parcelle.coordinates as number[][][][]).some((ring) =>
+    booleanContains(turfPolygon(ring), drawnFeature),
+  );
+}
+
+/** Récupère la liste des sommets (LatLng) de la parcelle pour le snap. */
+function parcelleVertices(parcelle: ParcelleGeom): L.LatLng[] {
+  const out: L.LatLng[] = [];
+  const rings: number[][][][] =
+    parcelle.type === "Polygon" ? [parcelle.coordinates] : parcelle.coordinates;
+  for (const polygon of rings) {
+    for (const ring of polygon) {
+      for (const [lng, lat] of ring) {
+        if (typeof lat === "number" && typeof lng === "number") {
+          out.push(L.latLng(lat, lng));
+        }
+      }
+    }
+  }
+  return out;
+}
+
 export default function InterventionSubzoneDrawMap({
   parcelleGeom,
   initialGeom,
   onPolygonChange,
 }: {
   /** Contour de la parcelle parente (Polygon ou MultiPolygon GeoJSON). */
-  parcelleGeom: GeoJsonPolygon | { type: "MultiPolygon"; coordinates: number[][][][] } | null;
+  parcelleGeom: ParcelleGeom | null;
   initialGeom?: GeoJsonPolygon | null;
   onPolygonChange: (geom: GeoJsonPolygon | null, surfaceM2: number) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [surface, setSurface] = useState<number | null>(null);
+  const [clipped, setClipped] = useState(false);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -76,7 +170,6 @@ export default function InterventionSubzoneDrawMap({
       )
       .addTo(map);
 
-    // Contour de la parcelle parente : non éditable, juste pour repère.
     if (parcelleGeom) {
       const parcelleLayer = L.geoJSON(parcelleGeom, {
         style: {
@@ -122,18 +215,92 @@ export default function InterventionSubzoneDrawMap({
     });
     map.addControl(drawControl);
 
+    // ----- Snap aux sommets de la parcelle pendant le tracé -----
+    // leaflet-draw n'a pas de snap natif. On l'implémente à la main :
+    // chaque mousemove projette le curseur sur le pixel, on cherche le
+    // sommet de la parcelle le plus proche en pixels, si < SNAP_PIXEL_DISTANCE
+    // on déplace le marker temporaire de l'outil draw vers ce sommet.
+    const vertices = parcelleGeom ? parcelleVertices(parcelleGeom) : [];
+    const onMouseMove = (e: L.LeafletMouseEvent) => {
+      // L'API privée de leaflet-draw — `_markerGroup` contient les markers
+      // de saisie pendant le draw. Pas typé, cast explicite.
+      const handler = (
+        drawControl as unknown as {
+          _toolbars?: {
+            draw?: {
+              _activeMode?: {
+                handler?: {
+                  _markers?: L.Marker[];
+                  _poly?: L.Polyline;
+                  _markerGroup?: L.LayerGroup;
+                };
+              };
+            };
+          };
+        }
+      )._toolbars?.draw?._activeMode?.handler;
+      if (!handler || !vertices.length) return;
+      const cursorPx = map.latLngToLayerPoint(e.latlng);
+      let best: L.LatLng | null = null;
+      let bestDist = Infinity;
+      for (const v of vertices) {
+        const px = map.latLngToLayerPoint(v);
+        const dx = px.x - cursorPx.x;
+        const dy = px.y - cursorPx.y;
+        const d = Math.sqrt(dx * dx + dy * dy);
+        if (d < bestDist) {
+          bestDist = d;
+          best = v;
+        }
+      }
+      if (best && bestDist <= SNAP_PIXEL_DISTANCE) {
+        // Snap : déplacer le marker temporaire (le dernier point cliqué + 1)
+        // vers le sommet aimanté. On laisse leaflet-draw gérer le clic réel.
+        e.latlng.lat = best.lat;
+        e.latlng.lng = best.lng;
+      }
+    };
+    map.on("mousemove", onMouseMove);
+
     const updateFromLayers = () => {
       const layers = drawnItems.getLayers();
       const last = layers[layers.length - 1] as { toGeoJSON: () => PolygonFeature } | undefined;
       if (!last) {
         setSurface(null);
+        setClipped(false);
         onPolygonChange(null, 0);
         return;
       }
-      const feature = last.toGeoJSON();
-      const m2 = area(feature);
+      const drawnFeature = last.toGeoJSON();
+      let finalGeom: GeoJsonPolygon = drawnFeature.geometry;
+      let didClip = false;
+
+      // Clip auto si le polygone déborde de la parcelle.
+      if (parcelleGeom && !isFullyContained(finalGeom, parcelleGeom)) {
+        const clip = clipToParcelle(finalGeom, parcelleGeom);
+        if (clip) {
+          finalGeom = clip;
+          didClip = true;
+          // On remplace la layer par le résultat clippé pour que
+          // l'utilisateur voie la zone effective.
+          drawnItems.clearLayers();
+          L.geoJSON(finalGeom, {
+            style: { color: "#1565C0", weight: 3, fillColor: "#1565C0", fillOpacity: 0.3 },
+          }).eachLayer((l) => drawnItems.addLayer(l));
+        } else {
+          // Tracé entièrement hors parcelle — on retire et on alerte.
+          drawnItems.clearLayers();
+          setSurface(null);
+          setClipped(false);
+          onPolygonChange(null, 0);
+          return;
+        }
+      }
+
+      const m2 = area({ type: "Feature", geometry: finalGeom, properties: {} });
       setSurface(m2);
-      onPolygonChange(feature.geometry, m2);
+      setClipped(didClip);
+      onPolygonChange(finalGeom, m2);
     };
 
     map.on("draw:created", (e) => {
@@ -145,6 +312,7 @@ export default function InterventionSubzoneDrawMap({
     map.on("draw:deleted", () => updateFromLayers());
 
     return () => {
+      map.off("mousemove", onMouseMove);
       map.remove();
     };
     // dépendances volontairement vides : on monte la carte une fois ;
@@ -167,12 +335,17 @@ export default function InterventionSubzoneDrawMap({
                 ? `${(surface / 100).toFixed(2)} ares`
                 : `${surface.toFixed(0)} m²`}
           </span>
+          {clipped && (
+            <span className="rounded bg-emerald-100 px-2 py-0.5 text-xs text-emerald-800">
+              recadrée à la parcelle
+            </span>
+          )}
         </div>
       ) : (
         <p className="text-xs text-foreground/60">
-          Le contour vert pointillé délimite ta parcelle. Utilise l'outil polygone (en haut à
-          droite) pour tracer la zone réellement travaillée. Reste à l'intérieur du contour, sinon
-          le serveur refusera la sauvegarde.
+          Le contour vert pointillé délimite ta parcelle. Trace ton polygone même grossièrement — si
+          tu débordes, le résultat sera automatiquement recadré aux limites officielles. Le curseur
+          s'aimante aux sommets de la parcelle quand tu t'en approches.
         </p>
       )}
     </div>
