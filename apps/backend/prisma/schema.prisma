@@ -227,9 +227,10 @@ model Parcelle {
   createdAt            DateTime                                     @default(now()) @map("created_at")
   updatedAt            DateTime                                     @updatedAt @map("updated_at")
 
-  tenant        Exploitation   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant        Exploitation    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   cultures      Culture[]
   interventions Intervention[]
+  planApports   PlanApport[]
 
   @@index([tenantId])
   @@map("parcelles")
@@ -258,6 +259,44 @@ model Culture {
   @@index([parcelleId])
   @@index([campagne])
   @@map("cultures")
+}
+
+// ====================================================================
+// Plan de fumure prévisionnel (M3v5) — exigence PER : avant la saison,
+// l'agriculteur planifie ses apports d'engrais par parcelle pour la
+// campagne. Permet de comparer prévu vs réalisé via le carnet.
+// ====================================================================
+
+model PlanApport {
+  id             String             @id @default(uuid())
+  tenantId       String             @map("tenant_id")
+  parcelleId     String             @map("parcelle_id")
+  campagne       Int                // année de récolte de la culture concernée
+  datePrevue     DateTime?          @map("date_prevue")
+  // Référence catalogue (recommandé). Si null, libellé libre + N/P estimés.
+  produitId      String?            @map("produit_id")
+  produitLibre   String?            @map("produit_libre") // si pas de produit catalogue
+  quantitePrevue Decimal?           @map("quantite_prevue") @db.Decimal(12, 3)
+  unite          String?
+  // kgN / kgP estimés (calculés depuis produitId×quantite OU saisis manuellement)
+  kgNPrevu       Decimal?           @map("kg_n_prevu") @db.Decimal(10, 2)
+  kgPPrevu       Decimal?           @map("kg_p_prevu") @db.Decimal(10, 2)
+  technique      TechniqueEpandage?
+  notes          String?
+  // Si l'apport a été réalisé, on pointe vers l'intervention créée à
+  // partir de ce plan — relation 1-1.
+  interventionId String?            @unique @map("intervention_id")
+  createdAt      DateTime           @default(now()) @map("created_at")
+  updatedAt      DateTime           @updatedAt @map("updated_at")
+
+  parcelle     Parcelle      @relation(fields: [parcelleId], references: [id], onDelete: Cascade)
+  produitRef   Produit?      @relation(fields: [produitId], references: [id], onDelete: SetNull)
+  intervention Intervention? @relation(fields: [interventionId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([parcelleId])
+  @@index([campagne])
+  @@map("plan_apports")
 }
 
 // ====================================================================
@@ -296,6 +335,7 @@ model Intervention {
   parcelle     Parcelle     @relation(fields: [parcelleId], references: [id], onDelete: Cascade)
   produitRef   Produit?     @relation(fields: [produitId], references: [id], onDelete: SetNull)
   culture      Culture?     @relation(fields: [cultureId], references: [id], onDelete: SetNull)
+  planApport   PlanApport?  // 1-1 si réalisé depuis un plan
 
   @@index([ownerTenantId])
   @@index([authorTenantId])
@@ -467,6 +507,7 @@ model Produit {
 
   tenant        Exploitation?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   interventions Intervention[]
+  planApports   PlanApport[]
 
   @@index([tenantId])
   @@index([categorie])
