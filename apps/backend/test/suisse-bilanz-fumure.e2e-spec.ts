@@ -225,3 +225,149 @@ describe("Suisse-Bilanz M3v2 — FUMURE intégrée + détail par parcelle (e2e)"
     expect(body.warnings.some((w) => w.includes("sans quantité"))).toBe(true);
   });
 });
+
+describe("Suisse-Bilanz M3v4 — Pertes NH3 par technique d'épandage (e2e)", () => {
+  let app: INestApplication;
+  let prisma: PrismaService;
+  let token: string;
+  let parcelleId: string;
+  let tenantId: string;
+
+  const user = { email: "nh3@m3v4.test", password: "Password123!" };
+
+  beforeAll(async () => {
+    const moduleRef: TestingModule = await Test.createTestingModule({
+      imports: [AppModule],
+    }).compile();
+    app = moduleRef.createNestApplication();
+    configureApp(app);
+    await app.init();
+
+    prisma = app.get(PrismaService);
+    await prisma.truncateAll();
+
+    const passwordHash = await bcrypt.hash(user.password, 10);
+    const tenant = await prisma.exploitation.create({
+      data: { code: "AQ-VD-NH3", nom: "Ferme NH3", canton: Canton.VD },
+    });
+    tenantId = tenant.id;
+    await prisma.user.create({
+      data: { email: user.email, passwordHash, prenom: "U", nom: "N", tenantId },
+    });
+    const parcelle = await prisma.parcelle.create({
+      data: { tenantId, nom: "Parcelle NH3", surfaceM2: 10_000, zone: ZoneAgricole.ZA },
+    });
+    parcelleId = parcelle.id;
+    await prisma.culture.create({
+      data: { tenantId, parcelleId, espece: "ble_panifiable", campagne: 2026 },
+    });
+    // Lisier théorique : 4 kg N/m³ → tauxN = 0.4 (kg / 100 L) car unité L
+    await prisma.produit.create({
+      data: {
+        id: "44444444-4444-4444-4444-444444444444",
+        code: "test_lisier_4kgN",
+        categorie: ProduitCategorie.ENGRAIS_ORGANIQUE,
+        libelle: "Lisier bovin 4 kg N/m³",
+        tauxN: "0.4",
+        tauxP: "0.1",
+      },
+    });
+
+    const login = await request(app.getHttpServer()).post("/api/auth/login").send(user).expect(200);
+    token = (login.body as { accessToken: string }).accessToken;
+  });
+
+  afterAll(async () => {
+    await prisma.truncateAll();
+    await app.close();
+  });
+
+  it("FUMURE_ORGANIQUE sans technique → 30% pertes NH3 + warning", async () => {
+    // 10 000 L lisier × 0.4/100 = 40 kg N brut. Sans technique : -30% = 28 kg N
+    await prisma.intervention.create({
+      data: {
+        clientUuid: "fumure-org-sans-technique",
+        ownerTenantId: tenantId,
+        authorTenantId: tenantId,
+        parcelleId,
+        type: InterventionType.FUMURE_ORGANIQUE,
+        dateOperation: new Date("2026-04-15"),
+        produitId: "44444444-4444-4444-4444-444444444444",
+        quantite: "10000",
+        unite: "L",
+      },
+    });
+    const res = await request(app.getHttpServer())
+      .get("/api/suisse-bilanz/2026")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    const body = res.body as BilanResponse & {
+      origineApports: { engraisOrganiquesAchetesN: number };
+    };
+    // 40 × (1 - 0.3) = 28 kg N organique, + atmo 20 = 48
+    expect(body.origineApports.engraisOrganiquesAchetesN).toBe(28);
+    expect(body.warnings.some((w) => w.includes("sans technique d'épandage"))).toBe(true);
+  });
+
+  it("FUMURE_ORGANIQUE en INJECTION → 5% pertes seulement", async () => {
+    await prisma.intervention.create({
+      data: {
+        clientUuid: "fumure-org-injection",
+        ownerTenantId: tenantId,
+        authorTenantId: tenantId,
+        parcelleId,
+        type: InterventionType.FUMURE_ORGANIQUE,
+        dateOperation: new Date("2026-05-15"),
+        produitId: "44444444-4444-4444-4444-444444444444",
+        quantite: "10000",
+        unite: "L",
+        techniqueEpandage: "INJECTION",
+      },
+    });
+    const res = await request(app.getHttpServer())
+      .get("/api/suisse-bilanz/2026")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    const body = res.body as BilanResponse & {
+      origineApports: { engraisOrganiquesAchetesN: number };
+    };
+    // Apport 1 (sans technique, 30%) : 40 × 0.7 = 28
+    // Apport 2 (injection, 5%)      : 40 × 0.95 = 38
+    // Total organique : 28 + 38 = 66
+    expect(body.origineApports.engraisOrganiquesAchetesN).toBe(66);
+  });
+
+  it("FUMURE_MINERALE n'applique PAS de pertes NH3 (engrais minéraux non volatils dans ce contexte)", async () => {
+    // Note : techniquement l'urée volatilise, mais Agridea les compte au taux nominal
+    // car l'incorporation rapide est supposée. Pas de pertes appliquées sur FUMURE_MINERALE.
+    await prisma.produit.create({
+      data: {
+        id: "55555555-5555-5555-5555-555555555555",
+        code: "test_uree_min",
+        categorie: ProduitCategorie.ENGRAIS_MINERAL,
+        libelle: "Urée minérale",
+        tauxN: "46",
+      },
+    });
+    await prisma.intervention.create({
+      data: {
+        clientUuid: "fumure-min-no-perte",
+        ownerTenantId: tenantId,
+        authorTenantId: tenantId,
+        parcelleId,
+        type: InterventionType.FUMURE_MINERALE,
+        dateOperation: new Date("2026-06-15"),
+        produitId: "55555555-5555-5555-5555-555555555555",
+        quantite: "100",
+        unite: "kg",
+      },
+    });
+    const res = await request(app.getHttpServer())
+      .get("/api/suisse-bilanz/2026")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    const body = res.body as BilanResponse & { origineApports: { engraisMinerauxN: number } };
+    // 100 × 46 / 100 = 46 kg N (pas de pertes sur minéraux)
+    expect(body.origineApports.engraisMinerauxN).toBe(46);
+  });
+});

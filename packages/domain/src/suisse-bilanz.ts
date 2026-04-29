@@ -44,6 +44,12 @@ export interface SuisseBilanzConfig {
    * fixe l'azote dont elle a besoin). Source : Guide Agridea 1.18.
    */
   fixationLegumineuses: Record<string, number>;
+  /**
+   * Pertes NH3 à l'épandage par technique (taux 0-1).
+   * Source : Guide Agridea 1.18, table NH3-volatilisation.
+   * Ne s'applique qu'aux FUMURE_ORGANIQUE (lisier, fumier).
+   */
+  pertesNH3ParTechnique: Record<string, number>;
   /** Tolérance sur le solde (0.10 = 10%). */
   tolerance: number;
 }
@@ -127,6 +133,13 @@ export const DEFAULT_SUISSE_BILANZ_CONFIG: SuisseBilanzConfig = {
     feverole: 100,
     haricot: 60,
     prairie_legumineuse: 150,
+  },
+  pertesNH3ParTechnique: {
+    EPANDEUR_CLASSIQUE: 0.3,
+    RAMPE_PENDILLARDE: 0.15,
+    TRAINEE_SOUPLE: 0.1,
+    INJECTION: 0.05,
+    FUMIER_SOLIDE: 0.25,
   },
   tolerance: 0.1,
 };

@@ -13,6 +13,9 @@ import {
   emojiType,
   type InterventionType,
   libelleType,
+  TECHNIQUE_LABEL,
+  TECHNIQUES_ORDER,
+  type TechniqueEpandage,
   TYPES_ORDER,
   useCreateIntervention,
 } from "@/lib/interventions";
@@ -36,6 +39,16 @@ const formSchema = z.object({
   produit: z.string().max(200).optional().or(z.literal("")),
   quantite: z.coerce.number().min(0).optional().or(z.literal(NaN)),
   unite: z.string().max(20).optional().or(z.literal("")),
+  techniqueEpandage: z
+    .enum([
+      "EPANDEUR_CLASSIQUE",
+      "RAMPE_PENDILLARDE",
+      "TRAINEE_SOUPLE",
+      "INJECTION",
+      "FUMIER_SOLIDE",
+    ])
+    .optional()
+    .or(z.literal("")),
   notes: z.string().max(500).optional().or(z.literal("")),
 });
 
@@ -77,6 +90,7 @@ export default function NewInterventionPage() {
       produit: "",
       quantite: undefined,
       unite: "",
+      techniqueEpandage: "",
       notes: "",
     },
   });
@@ -105,6 +119,9 @@ export default function NewInterventionPage() {
         ...(values.produit ? { produit: values.produit } : {}),
         ...(values.quantite && !Number.isNaN(values.quantite) ? { quantite: values.quantite } : {}),
         ...(values.unite ? { unite: values.unite } : {}),
+        ...(values.techniqueEpandage
+          ? { techniqueEpandage: values.techniqueEpandage as TechniqueEpandage }
+          : {}),
         ...(values.notes ? { notes: values.notes } : {}),
       },
       {
@@ -258,6 +275,26 @@ export default function NewInterventionPage() {
               <Input placeholder="L, kg, t, ha…" {...register("unite")} />
             </Field>
           </div>
+
+          {selectedType === "FUMURE_ORGANIQUE" && (
+            <Field
+              label="Technique d'épandage"
+              hint="Détermine la perte d'azote par volatilisation NH3 dans le bilan PER. Sans précision, 30% sont déduits par défaut."
+              error={errors.techniqueEpandage?.message}
+            >
+              <select
+                className="h-11 w-full rounded-lg border border-border bg-background px-3 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green"
+                {...register("techniqueEpandage")}
+              >
+                <option value="">Non précisée (épandeur classique présumé)</option>
+                {TECHNIQUES_ORDER.map((t) => (
+                  <option key={t} value={t}>
+                    {TECHNIQUE_LABEL[t]}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          )}
 
           <Field label="Notes (optionnel)" error={errors.notes?.message}>
             <textarea

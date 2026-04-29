@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
-import { InterventionType } from "@prisma/client";
+import { InterventionType, TechniqueEpandage } from "@prisma/client";
 import { Type } from "class-transformer";
 import {
   IsDateString,
@@ -72,6 +72,14 @@ export class CreateInterventionDto {
   @IsString()
   @MaxLength(20)
   unite?: string;
+
+  @ApiPropertyOptional({
+    enum: TechniqueEpandage,
+    description: "Technique d'épandage pour FUMURE_ORGANIQUE — détermine la perte NH3 (5-30%).",
+  })
+  @IsOptional()
+  @IsEnum(TechniqueEpandage)
+  techniqueEpandage?: TechniqueEpandage;
 
   @ApiPropertyOptional()
   @IsOptional()
