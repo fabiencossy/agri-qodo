@@ -65,6 +65,17 @@ export class CreateInterventionDto {
   quantite?: number;
 
   @ApiPropertyOptional({
+    description:
+      "Surface réellement concernée en m². Omettre ou null = toute la parcelle. Utile pour TRAVAIL_DU_SOL, SEMIS, RECOLTE quand seule une portion est travaillée.",
+    example: 5000,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  surfaceTravailleeM2?: number;
+
+  @ApiPropertyOptional({
     description: "Unité libre : kg, L, t, ha, doses…",
     example: "L",
   })

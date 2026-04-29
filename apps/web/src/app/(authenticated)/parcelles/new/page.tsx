@@ -9,9 +9,15 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { Breadcrumb } from "@/components/app/breadcrumb";
+import { CouleurPicker } from "@/components/parcelles/couleur-picker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { type GeoJsonPolygon, useCreateParcelle, type ZoneAgricole } from "@/lib/parcelles";
+import {
+  COULEUR_PARCELLE_DEFAUT,
+  type GeoJsonPolygon,
+  useCreateParcelle,
+  type ZoneAgricole,
+} from "@/lib/parcelles";
 
 // Leaflet n'est chargé que côté client (window required).
 const ParcelleDrawMap = dynamic(() => import("@/components/maps/parcelle-draw-map"), {
@@ -51,6 +57,7 @@ export default function NewParcellePage() {
   const createMutation = useCreateParcelle();
   const [mode, setMode] = useState<Mode>("carte");
   const [geom, setGeom] = useState<GeoJsonPolygon | null>(null);
+  const [couleurHex, setCouleurHex] = useState<string>(COULEUR_PARCELLE_DEFAUT);
 
   const {
     register,
@@ -81,6 +88,7 @@ export default function NewParcellePage() {
         nom: values.nom,
         surfaceM2: values.surfaceM2,
         zone: values.zone,
+        couleurHex,
         ...(values.identifiantCadastral
           ? { identifiantCadastral: values.identifiantCadastral }
           : {}),
@@ -179,6 +187,10 @@ export default function NewParcellePage() {
             error={errors.identifiantCadastral?.message}
           >
             <Input placeholder="VD-1234-5678" {...register("identifiantCadastral")} />
+          </Field>
+
+          <Field label="Couleur sur la carte">
+            <CouleurPicker value={couleurHex} onChange={setCouleurHex} />
           </Field>
 
           <Field label="Notes (optionnel)" error={errors.notes?.message}>
