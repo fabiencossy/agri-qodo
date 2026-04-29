@@ -22,6 +22,18 @@ export interface AnimauxSummary {
   nombreActifs: number;
 }
 
+export interface UgbParCategorie {
+  categorie: AnimalCategorie;
+  nombreAnimaux: number;
+  coefMoyen: number;
+  ugbTotal: number;
+}
+
+export interface UgbExploitationResult {
+  total: number;
+  parCategorie: UgbParCategorie[];
+}
+
 export interface CreateAnimalInput {
   categorie: AnimalCategorie;
   nom?: string;
@@ -37,6 +49,7 @@ export interface CreateBatchInput {
 const KEY_LIST = ["animaux"] as const;
 const KEY_SUMMARY = ["animaux", "summary"] as const;
 const KEY_CATEGORIES = ["animaux", "categories-actives"] as const;
+const KEY_UGB = ["animaux", "ugb"] as const;
 
 export function useAnimaux() {
   return useQuery({ queryKey: KEY_LIST, queryFn: () => api<Animal[]>("/api/animaux") });
@@ -56,10 +69,18 @@ export function useCategoriesActives() {
   });
 }
 
+export function useUgb() {
+  return useQuery({
+    queryKey: KEY_UGB,
+    queryFn: () => api<UgbExploitationResult>("/api/animaux/ugb"),
+  });
+}
+
 function invalidateAll(qc: ReturnType<typeof useQueryClient>) {
   void qc.invalidateQueries({ queryKey: KEY_LIST });
   void qc.invalidateQueries({ queryKey: KEY_SUMMARY });
   void qc.invalidateQueries({ queryKey: KEY_CATEGORIES });
+  void qc.invalidateQueries({ queryKey: KEY_UGB });
 }
 
 export function useCreateAnimal() {

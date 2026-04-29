@@ -4,7 +4,7 @@ import { Beef, Check, Minus, Plus } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Breadcrumb } from "@/components/app/breadcrumb";
 import { Button } from "@/components/ui/button";
-import { useAnimauxSummary, useSetEffectif } from "@/lib/animaux";
+import { useAnimauxSummary, useSetEffectif, useUgb } from "@/lib/animaux";
 import {
   type AnimalCategorie,
   CATEGORIES_ORDER,
@@ -14,6 +14,7 @@ import {
 
 export default function AnimauxPage() {
   const summary = useAnimauxSummary();
+  const ugb = useUgb();
   const totalActifs = (summary.data ?? []).reduce((acc, s) => acc + s.nombreActifs, 0);
 
   return (
@@ -30,10 +31,19 @@ export default function AnimauxPage() {
               {summary.data
                 ? `${totalActifs} animau${totalActifs > 1 ? "x" : "l"} actif${totalActifs > 1 ? "s" : ""} sur l'exploitation`
                 : "Chargement…"}
+              {ugb.data && totalActifs > 0 && (
+                <>
+                  {" "}
+                  ·{" "}
+                  <span className="font-semibold tabular-nums text-foreground">
+                    {formatUgb(ugb.data.total)} UGB
+                  </span>
+                </>
+              )}
             </p>
             <p className="mt-1 text-xs text-foreground/50">
-              Saisis le total désiré par catégorie puis valide. À terme, les bovins seront tirés
-              automatiquement de la BDTA (Identitas).
+              UGB calculé selon Annexe 1 OPD (référentiel officiel CH). Le coefficient s'affine
+              automatiquement quand la date de naissance d'un bovin est connue.
             </p>
           </div>
         </div>
@@ -48,7 +58,16 @@ export default function AnimauxPage() {
           <div className="space-y-3">
             {CATEGORIES_ORDER.map((cat) => {
               const row = summary.data?.find((s) => s.categorie === cat);
-              return <CategorieRow key={cat} categorie={cat} current={row?.nombreActifs ?? 0} />;
+              const ugbRow = ugb.data?.parCategorie.find((p) => p.categorie === cat);
+              return (
+                <CategorieRow
+                  key={cat}
+                  categorie={cat}
+                  current={row?.nombreActifs ?? 0}
+                  ugbTotal={ugbRow?.ugbTotal ?? null}
+                  coefMoyen={ugbRow?.coefMoyen ?? null}
+                />
+              );
             })}
           </div>
         )}
@@ -57,7 +76,21 @@ export default function AnimauxPage() {
   );
 }
 
-function CategorieRow({ categorie, current }: { categorie: AnimalCategorie; current: number }) {
+function formatUgb(n: number): string {
+  return n.toLocaleString("fr-CH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function CategorieRow({
+  categorie,
+  current,
+  ugbTotal,
+  coefMoyen,
+}: {
+  categorie: AnimalCategorie;
+  current: number;
+  ugbTotal: number | null;
+  coefMoyen: number | null;
+}) {
   const [target, setTarget] = useState<number>(current);
   const setEffectif = useSetEffectif();
 
@@ -95,6 +128,12 @@ function CategorieRow({ categorie, current }: { categorie: AnimalCategorie; curr
         <div className="font-medium">{libelleCategorie(categorie)}</div>
         <div className="text-sm tabular-nums text-foreground/60">
           {current} actif{current > 1 ? "s" : ""}
+          {current > 0 && ugbTotal !== null && coefMoyen !== null && (
+            <span className="ml-2 text-foreground/50">
+              · {formatUgb(ugbTotal)} UGB{" "}
+              <span className="text-foreground/40">(× {coefMoyen})</span>
+            </span>
+          )}
         </div>
       </div>
 

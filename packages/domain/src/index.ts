@@ -41,3 +41,13 @@ export {
   type InterdictionsPerConfig,
   type PeriodeInterdite,
 } from "./interdictions-per";
+
+export {
+  type AnimalCategorie as UgbAnimalCategorie,
+  type AnimalUgbInput,
+  calculerUgbExploitation,
+  coefUgb,
+  DEFAULT_UGB_COEFFICIENTS,
+  type UgbExploitationResult,
+  type UgbParCategorie,
+} from "./ugb";
