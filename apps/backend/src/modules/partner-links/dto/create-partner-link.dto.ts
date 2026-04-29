@@ -42,13 +42,15 @@ export class PartnerLinkScopeDto {
 
 export class CreatePartnerLinkDto {
   @ApiProperty({
-    description: "Code Agri Qodo de l'exploitation partenaire (format AQ-{canton}-{ufam}-{token})",
-    example: "AQ-VD-1234-A1B2",
+    description:
+      "Numéro d'exploitant du partenaire ({canton}-{n° UFAM}, ex VD-1234567). Format hérité AQ-... aussi accepté.",
+    example: "VD-1234567",
   })
   @IsString()
   @MaxLength(40)
-  @Matches(/^AQ-[A-Z]{2}-[A-Z0-9]{2,8}-[A-Z0-9]{4}$/, {
-    message: "Code partenaire invalide (format attendu : AQ-{canton}-{ufam}-{token})",
+  @Matches(/^[A-Z]{2,3}-[A-Z0-9-]{1,30}$/i, {
+    message:
+      "Format invalide — attendu : {canton}-{numéro}, ex VD-1234567. Lettres, chiffres et tirets autorisés.",
   })
   partnerCode!: string;
 

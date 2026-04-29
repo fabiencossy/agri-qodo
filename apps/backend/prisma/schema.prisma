@@ -177,7 +177,7 @@ model Exploitation {
 
 model User {
   id           String    @id @default(uuid())
-  email        String    @unique
+  email        String
   passwordHash String    @map("password_hash")
   prenom       String
   nom          String
@@ -190,6 +190,11 @@ model User {
 
   tenant        Exploitation   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   refreshTokens RefreshToken[]
+
+  // Email partagé : un comptable / conseiller peut avoir un compte sur
+  // plusieurs exploitations. L'unicité est sur (email, tenantId).
+  @@unique([email, tenantId])
+  @@index([email])
 
   @@index([tenantId])
   @@map("users")

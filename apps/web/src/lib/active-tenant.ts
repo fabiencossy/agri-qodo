@@ -4,23 +4,21 @@
  * Storage minimal du tenant actif (localStorage). Volontairement sans
  * dépendance pour éviter les cycles avec api-client.ts qui le consomme.
  *
- * Quand l'utilisateur travaille sur le tenant d'un partenaire (lien M16
- * ACTIF), toutes les requêtes API joignent le header `X-Active-Tenant-Id`
- * pour basculer le contexte côté backend (cf JwtAuthGuard).
+ * Sert au compte fédéré : un même couple email+password peut ouvrir
+ * une session sur plusieurs exploitations. Le switcher bascule entre
+ * elles via le header `X-Active-Tenant-Id`. Le JwtAuthGuard valide que
+ * le tenantId demandé fait bien partie de la liste émise au login.
  */
 
 const KEY = "agriqodo.activeTenantId";
-
-export type AccessibleTenantKind = "home" | "partner";
-export type PartnerLinkLevel = "LECTURE" | "VALIDATION" | "DIRECT";
 
 export interface AccessibleTenant {
   id: string;
   nom: string;
   code: string;
   canton: string;
-  kind: AccessibleTenantKind;
-  niveau?: PartnerLinkLevel;
+  /** "home" : tenant accessible via compte fédéré. */
+  kind: "home";
 }
 
 export function getActiveTenantId(): string | null {
