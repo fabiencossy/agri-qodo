@@ -11,6 +11,7 @@ import { HealthModule } from "./modules/health/health.module";
 import { InterventionsModule } from "./modules/interventions/interventions.module";
 import { ParcellesModule } from "./modules/parcelles/parcelles.module";
 import { PartnerLinksModule } from "./modules/partner-links/partner-links.module";
+import { PlanFumureModule } from "./modules/plan-fumure/plan-fumure.module";
 import { ProduitsModule } from "./modules/produits/produits.module";
 import { SrpaModule } from "./modules/srpa/srpa.module";
 import { SuisseBilanzModule } from "./modules/suisse-bilanz/suisse-bilanz.module";
@@ -59,6 +60,7 @@ import { UsersModule } from "./modules/users/users.module";
     AnimauxModule,
     ProduitsModule,
     SuisseBilanzModule,
+    PlanFumureModule,
     PartnerLinksModule,
   ],
 })
