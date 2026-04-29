@@ -1,12 +1,13 @@
 "use client";
 
-import { Check, Copy, Handshake, Plus, X } from "lucide-react";
-import { useState } from "react";
+import { Check, Copy, Eye, EyeOff, Handshake, Plus, Search, X } from "lucide-react";
+import { useEffect, useState } from "react";
 import { Breadcrumb } from "@/components/app/breadcrumb";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useCurrentTenant } from "@/lib/auth";
 import {
+  type DirectoryHit,
   NIVEAU_LIBELLE,
   type PartnerLinkView,
   STATUS_LIBELLE,
@@ -15,13 +16,22 @@ import {
   useLookupTenant,
   usePartnerLinks,
   useRevokePartner,
+  useSearchDirectory,
 } from "@/lib/partner-links";
+import { useTenantDetail, useUpdateTenant } from "@/lib/tenants";
 
 export default function PartenairesPage() {
   const tenant = useCurrentTenant();
+  const detail = useTenantDetail();
+  const updateTenant = useUpdateTenant();
   const links = usePartnerLinks();
   const [inviteOpen, setInviteOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+
+  const visible = detail.data?.visibleInDirectory ?? false;
+  const toggleVisibility = () => {
+    updateTenant.mutate({ visibleInDirectory: !visible });
+  };
 
   const onCopyCode = () => {
     if (!tenant.data?.code) return;
@@ -59,27 +69,52 @@ export default function PartenairesPage() {
         </div>
 
         {tenant.data && (
-          <div className="mb-6 rounded-2xl border border-green/30 bg-green/5 p-4">
-            <p className="text-sm font-semibold">Mon code Agri Qodo</p>
-            <p className="mt-1 text-xs text-foreground/60">
-              Partage ce code à un partenaire pour qu'il puisse t'inviter.
-            </p>
-            <div className="mt-3 flex items-center gap-3">
-              <code className="flex-1 rounded-lg bg-background px-3 py-2 font-mono text-base">
-                {tenant.data.code}
-              </code>
-              <Button variant="secondary" onClick={onCopyCode}>
-                {copied ? (
-                  <>
-                    <Check className="mr-1 h-4 w-4" />
-                    Copié
-                  </>
+          <div className="mb-6 grid gap-3 lg:grid-cols-2">
+            <div className="rounded-2xl border border-green/30 bg-green/5 p-4">
+              <p className="text-sm font-semibold">Mon code Agri Qodo</p>
+              <p className="mt-1 text-xs text-foreground/60">
+                Partage ce code à un partenaire pour qu'il puisse t'inviter directement.
+              </p>
+              <div className="mt-3 flex items-center gap-3">
+                <code className="flex-1 rounded-lg bg-background px-3 py-2 font-mono text-base">
+                  {tenant.data.code}
+                </code>
+                <Button variant="secondary" onClick={onCopyCode}>
+                  {copied ? (
+                    <>
+                      <Check className="mr-1 h-4 w-4" />
+                      Copié
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="mr-1 h-4 w-4" />
+                      Copier
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+            <div className="rounded-2xl border border-border bg-background p-4">
+              <p className="flex items-center gap-2 text-sm font-semibold">
+                {visible ? (
+                  <Eye className="h-4 w-4 text-emerald-700" />
                 ) : (
-                  <>
-                    <Copy className="mr-1 h-4 w-4" />
-                    Copier
-                  </>
+                  <EyeOff className="h-4 w-4 text-foreground/50" />
                 )}
+                Visibilité dans l'annuaire
+              </p>
+              <p className="mt-1 text-xs text-foreground/60">
+                {visible
+                  ? "Tu apparais dans la recherche d'autres exploitations (nom + adresse). Désactive si tu ne veux plus recevoir d'invitations."
+                  : "Tu n'es pas trouvable par recherche. Active pour permettre à d'autres agriculteurs de t'inviter sans avoir à demander ton code."}
+              </p>
+              <Button
+                variant="secondary"
+                className="mt-3"
+                onClick={toggleVisibility}
+                disabled={updateTenant.isPending || !detail.data}
+              >
+                {visible ? "Me retirer de l'annuaire" : "M'ajouter à l'annuaire"}
               </Button>
             </div>
           </div>
@@ -193,29 +228,16 @@ function PartnerCard({ link, variant }: { link: PartnerLinkView; variant: CardVa
 }
 
 function InvitePartnerDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const [code, setCode] = useState("");
-  const [debouncedCode, setDebouncedCode] = useState("");
-  const lookup = useLookupTenant(debouncedCode, debouncedCode.length >= 8);
+  const [tab, setTab] = useState<"search" | "code">("search");
   const invite = useInvitePartner();
   const [error, setError] = useState<string | null>(null);
 
-  // Debounce simple : on relance le lookup quand l'utilisateur arrête de taper.
-  const onCodeChange = (value: string) => {
-    setCode(value.toUpperCase());
-    setError(null);
-    setTimeout(() => setDebouncedCode(value.toUpperCase()), 300);
-  };
-
-  const onInvite = () => {
+  const handleInvite = (partnerCode: string) => {
     setError(null);
     invite.mutate(
-      { partnerCode: code },
+      { partnerCode },
       {
-        onSuccess: () => {
-          setCode("");
-          setDebouncedCode("");
-          onClose();
-        },
+        onSuccess: () => onClose(),
         onError: (err: unknown) => {
           setError(err instanceof Error ? err.message : "Échec de l'invitation");
         },
@@ -231,7 +253,7 @@ function InvitePartnerDialog({ open, onClose }: { open: boolean; onClose: () => 
       onClick={onClose}
     >
       <div
-        className="w-full max-w-md rounded-2xl bg-background p-5 shadow-xl"
+        className="w-full max-w-lg rounded-2xl bg-background p-5 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between">
@@ -245,41 +267,193 @@ function InvitePartnerDialog({ open, onClose }: { open: boolean; onClose: () => 
             <X className="h-4 w-4" />
           </button>
         </div>
-        <p className="mt-2 text-sm text-foreground/70">
-          Saisis le code Agri Qodo de l'exploitation à inviter (format{" "}
-          <code className="font-mono text-xs">AQ-VD-1234-A1B2</code>).
-        </p>
-        <Input
-          className="mt-4 font-mono"
-          value={code}
-          onChange={(e) => onCodeChange(e.target.value)}
-          placeholder="AQ-XX-XXXX-XXXX"
-          maxLength={40}
-          autoFocus
-        />
-        {lookup.data && (
-          <div className="mt-3 rounded-lg bg-green/10 px-3 py-2 text-sm">
-            <p className="font-medium">{lookup.data.nom}</p>
-            <p className="text-xs text-foreground/60">{lookup.data.canton}</p>
-          </div>
+
+        <div className="mt-3 flex gap-1 rounded-lg bg-muted p-1 text-sm">
+          <button
+            type="button"
+            onClick={() => setTab("search")}
+            className={`flex-1 rounded-md px-3 py-1.5 transition-colors ${
+              tab === "search" ? "bg-background font-medium shadow-sm" : "text-foreground/70"
+            }`}
+          >
+            <Search className="mr-1 inline h-3.5 w-3.5" />
+            Rechercher
+          </button>
+          <button
+            type="button"
+            onClick={() => setTab("code")}
+            className={`flex-1 rounded-md px-3 py-1.5 transition-colors ${
+              tab === "code" ? "bg-background font-medium shadow-sm" : "text-foreground/70"
+            }`}
+          >
+            Code direct
+          </button>
+        </div>
+
+        {tab === "search" ? (
+          <DirectorySearch onInvite={handleInvite} inviting={invite.isPending} error={error} />
+        ) : (
+          <DirectCodeInvite onInvite={handleInvite} inviting={invite.isPending} error={error} />
         )}
-        {lookup.isError && debouncedCode && (
-          <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">
-            Aucune exploitation avec ce code (ou code invalide).
-          </p>
-        )}
-        {error && (
-          <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
-        )}
-        <div className="mt-5 flex justify-end gap-2">
+
+        <div className="mt-5 flex justify-end">
           <Button variant="ghost" onClick={onClose}>
-            Annuler
-          </Button>
-          <Button onClick={onInvite} disabled={invite.isPending || !lookup.data}>
-            {invite.isPending ? "…" : "Inviter"}
+            Fermer
           </Button>
         </div>
       </div>
     </div>
+  );
+}
+
+function DirectorySearch({
+  onInvite,
+  inviting,
+  error,
+}: {
+  onInvite: (code: string) => void;
+  inviting: boolean;
+  error: string | null;
+}) {
+  const [query, setQuery] = useState("");
+  const [debounced, setDebounced] = useState("");
+
+  useEffect(() => {
+    const handle = setTimeout(() => setDebounced(query.trim()), 250);
+    return () => clearTimeout(handle);
+  }, [query]);
+
+  const search = useSearchDirectory(debounced);
+
+  return (
+    <>
+      <p className="mt-3 text-sm text-foreground/70">
+        Tape le nom de l'exploitation ou de l'agriculteur, ou la localité. Seules les exploitations
+        qui ont accepté d'apparaître dans l'annuaire sont visibles.
+      </p>
+      <div className="relative mt-3">
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-foreground/40" />
+        <Input
+          className="pl-9"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Bob Rolet, Sévery, Ferme du Loup…"
+          autoFocus
+        />
+      </div>
+
+      {debounced.length >= 2 && (
+        <div className="mt-3 max-h-72 overflow-y-auto">
+          {search.isLoading ? (
+            <p className="text-sm text-foreground/50">Recherche…</p>
+          ) : (search.data?.length ?? 0) === 0 ? (
+            <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">
+              Aucune exploitation visible ne correspond. Demande à ton partenaire de coter
+              "M'ajouter à l'annuaire" dans sa page Partenaires, ou utilise l'onglet "Code direct".
+            </p>
+          ) : (
+            <ul className="space-y-2">
+              {search.data?.map((hit) => (
+                <DirectoryHitRow
+                  key={hit.id}
+                  hit={hit}
+                  onInvite={() => onInvite(hit.code)}
+                  inviting={inviting}
+                />
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+      {error && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+    </>
+  );
+}
+
+function DirectoryHitRow({
+  hit,
+  onInvite,
+  inviting,
+}: {
+  hit: DirectoryHit;
+  onInvite: () => void;
+  inviting: boolean;
+}) {
+  const ownerLabel =
+    hit.ownerPrenom || hit.ownerNom
+      ? `${hit.ownerPrenom ?? ""} ${hit.ownerNom ?? ""}`.trim()
+      : null;
+  const adresseLabel = [hit.adresse, [hit.npa, hit.localite].filter(Boolean).join(" ")]
+    .filter(Boolean)
+    .join(", ");
+  return (
+    <li className="flex items-start justify-between gap-3 rounded-lg border border-border bg-background p-3">
+      <div className="min-w-0 flex-1">
+        <p className="font-medium">
+          {hit.nom}
+          <span className="ml-2 text-xs text-foreground/50">({hit.canton})</span>
+        </p>
+        {ownerLabel && <p className="text-sm text-foreground/70">{ownerLabel}</p>}
+        {adresseLabel && <p className="text-xs text-foreground/60">{adresseLabel}</p>}
+        <p className="mt-0.5 font-mono text-[10px] text-foreground/40">{hit.code}</p>
+      </div>
+      <Button size="sm" onClick={onInvite} disabled={inviting}>
+        Inviter
+      </Button>
+    </li>
+  );
+}
+
+function DirectCodeInvite({
+  onInvite,
+  inviting,
+  error,
+}: {
+  onInvite: (code: string) => void;
+  inviting: boolean;
+  error: string | null;
+}) {
+  const [code, setCode] = useState("");
+  const [debouncedCode, setDebouncedCode] = useState("");
+  const lookup = useLookupTenant(debouncedCode, debouncedCode.length >= 8);
+
+  const onCodeChange = (value: string) => {
+    setCode(value.toUpperCase());
+    setTimeout(() => setDebouncedCode(value.toUpperCase()), 300);
+  };
+
+  return (
+    <>
+      <p className="mt-3 text-sm text-foreground/70">
+        Saisis le code Agri Qodo communiqué par ton partenaire (format{" "}
+        <code className="font-mono text-xs">AQ-VD-1234-A1B2</code> ou{" "}
+        <code className="font-mono text-xs">VD-1234567</code>).
+      </p>
+      <Input
+        className="mt-4 font-mono"
+        value={code}
+        onChange={(e) => onCodeChange(e.target.value)}
+        placeholder="AQ-XX-XXXX-XXXX"
+        maxLength={40}
+        autoFocus
+      />
+      {lookup.data && (
+        <div className="mt-3 rounded-lg bg-green/10 px-3 py-2 text-sm">
+          <p className="font-medium">{lookup.data.nom}</p>
+          <p className="text-xs text-foreground/60">{lookup.data.canton}</p>
+        </div>
+      )}
+      {lookup.isError && debouncedCode && (
+        <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          Aucune exploitation avec ce code.
+        </p>
+      )}
+      {error && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+      <div className="mt-4 flex justify-end">
+        <Button onClick={() => onInvite(code)} disabled={inviting || !lookup.data}>
+          {inviting ? "…" : "Inviter"}
+        </Button>
+      </div>
+    </>
   );
 }

@@ -43,6 +43,7 @@ export class TenantsService {
     if (dto.nom !== undefined) data.nom = dto.nom.trim();
     if (dto.numeroUfam !== undefined) data.numeroUfam = dto.numeroUfam.trim() || null;
     if (dto.numeroBdta !== undefined) data.numeroBdta = dto.numeroBdta.trim() || null;
+    if (dto.visibleInDirectory !== undefined) data.visibleInDirectory = dto.visibleInDirectory;
     if (Object.keys(data).length === 0) return this.getMine(tenantId);
     try {
       return await this.prisma.exploitation.update({ where: { id: tenantId }, data });

@@ -157,6 +157,12 @@ model Exploitation {
   localite     String?
   emailContact String?  @map("email_contact")
   telephone    String?
+
+  // Opt-in annuaire : si true, l'exploitation est trouvable par recherche
+  // nom/adresse depuis la page Partenaires d'autres tenants (cf §11 spec).
+  // Default false (sécurité + RGPD), basculé via /parametres/exploitation.
+  visibleInDirectory Boolean @default(false) @map("visible_in_directory")
+
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 

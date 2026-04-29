@@ -8,7 +8,7 @@ import {
   Query,
   UseGuards,
 } from "@nestjs/common";
-import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
+import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from "@nestjs/swagger";
 import { CurrentTenant } from "@/common/decorators/current-tenant.decorator";
 import { JwtAuthGuard } from "@/modules/auth/guards/jwt-auth.guard";
 import { CreatePartnerLinkDto } from "./dto/create-partner-link.dto";
@@ -33,6 +33,21 @@ export class PartnerLinksController {
   })
   lookup(@Query("code") code: string, @CurrentTenant() tenantId: string) {
     return this.links.lookupByCode(code, tenantId);
+  }
+
+  @Get("directory/search")
+  @ApiOperation({
+    summary:
+      "Annuaire — cherche une exploitation par nom, adresse ou localité (opt-in visibilité).",
+  })
+  @ApiQuery({ name: "q", required: true, description: "≥ 2 caractères" })
+  @ApiQuery({ name: "canton", required: false, description: "Filtre canton (ex VD)" })
+  searchDirectory(
+    @Query("q") q: string,
+    @CurrentTenant() tenantId: string,
+    @Query("canton") canton?: string,
+  ) {
+    return this.links.searchDirectory(q, tenantId, canton);
   }
 
   @Post()
