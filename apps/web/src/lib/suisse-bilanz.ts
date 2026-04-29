@@ -16,6 +16,17 @@ export interface DetailParcelle {
   soldeP: number;
 }
 
+export interface OrigineApports {
+  engraisMinerauxN: number;
+  engraisMinerauxP: number;
+  engraisOrganiquesAchetesN: number;
+  engraisOrganiquesAchetesP: number;
+  dejectionsCheptelN: number;
+  dejectionsCheptelP: number;
+  atmospheriqueN: number;
+  fixationLegumineusesN: number;
+}
+
 export interface BilanResponse {
   annee: number;
   apportsN: number;
@@ -27,6 +38,7 @@ export interface BilanResponse {
   conformeN: boolean;
   conformeP: boolean;
   details: DetailParcelle[];
+  origineApports: OrigineApports;
   culturesInconnues: string[];
   warnings: string[];
 }

@@ -96,6 +96,8 @@ export class SuisseBilanzService {
         parcelleId: iv.parcelleId,
         kgN: (qte * tauxN) / 100,
         kgP: (qte * tauxP) / 100,
+        categorie:
+          iv.type === InterventionType.FUMURE_ORGANIQUE ? "ENGRAIS_ORGANIQUE" : "ENGRAIS_MINERAL",
       });
     }
     if (fumuresSansProduit > 0) {
@@ -129,6 +131,8 @@ export class SuisseBilanzService {
       apportNParUgb,
       apportPParUgb,
       facteurUgb,
+      apportAtmospheriqueN,
+      fixationLegumineuses,
       tolerance,
     ] = await Promise.all([
       this.ruleEngine.get<Record<string, number>>(
@@ -152,6 +156,14 @@ export class SuisseBilanzService {
         DEFAULT_SUISSE_BILANZ_CONFIG.facteurUgb,
       ),
       this.ruleEngine.get<number>(
+        "suisse_bilanz.apport_atmospherique_n",
+        DEFAULT_SUISSE_BILANZ_CONFIG.apportAtmospheriqueN,
+      ),
+      this.ruleEngine.get<Record<string, number>>(
+        "suisse_bilanz.fixation_legumineuses",
+        DEFAULT_SUISSE_BILANZ_CONFIG.fixationLegumineuses,
+      ),
+      this.ruleEngine.get<number>(
         "suisse_bilanz.tolerance",
         DEFAULT_SUISSE_BILANZ_CONFIG.tolerance,
       ),
@@ -162,6 +174,8 @@ export class SuisseBilanzService {
       apportNParUgb,
       apportPParUgb,
       facteurUgb,
+      apportAtmospheriqueN,
+      fixationLegumineuses,
       tolerance,
     };
   }

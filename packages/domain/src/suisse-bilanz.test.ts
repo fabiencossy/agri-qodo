@@ -4,9 +4,10 @@ import { type BilanInput, calculerBilan, DEFAULT_SUISSE_BILANZ_CONFIG } from "./
 describe("calculerBilan", () => {
   it("ferme conforme : besoins compensés par apports modérés", () => {
     // 10 ha de blé panifiable → 10 × 140 = 1400 kg N besoin
-    // 5 vaches laitières (5 UGB) → 5 × 105 = 525 kg N apport
-    // 100 kg engrais minéral 30% N (= 30 kg N) → 30 kg N apport
-    // Total apports = 555, besoins = 1400 → solde = -845 (très conforme)
+    // 5 vaches laitières (5 UGB) → 5 × 105 = 525 kg N (déjections)
+    // 100 kg engrais minéral 30% N (= 30 kg N) → 30 kg N
+    // 10 ha × 20 kg N/ha (atmosphérique) → 200 kg N
+    // Total apports = 525 + 30 + 200 = 755, besoins = 1400 → solde = -645
     const input: BilanInput = {
       cultures: [
         {
@@ -21,9 +22,12 @@ describe("calculerBilan", () => {
     };
     const r = calculerBilan(input);
     expect(r.besoinsN).toBe(1400);
-    expect(r.apportsN).toBe(555);
-    expect(r.soldeN).toBe(-845);
+    expect(r.apportsN).toBe(755);
+    expect(r.soldeN).toBe(-645);
     expect(r.conformeN).toBe(true);
+    expect(r.origineApports.engraisMinerauxN).toBe(30);
+    expect(r.origineApports.dejectionsCheptelN).toBe(525);
+    expect(r.origineApports.atmospheriqueN).toBe(200);
   });
 
   it("ferme non conforme : surfertilisation azote", () => {
@@ -88,26 +92,29 @@ describe("calculerBilan", () => {
   });
 
   it("tolérance configurable : à 0% une ferme borderline devient non-conforme", () => {
-    // Besoin = 100, apport = 105 → solde = +5, tolérance par défaut 10% → seuil 10 → conforme
-    // Si tolérance 0% → seuil 0 → non-conforme
+    // 1 ha blé : besoin 140 N, atmo +20 N
+    // engrais 130 N → apport total = 130 + 20 = 150
+    // solde = 150 - 140 = +10
+    // tol 10% → seuil 14 → 10 ≤ 14 → conforme
+    // tol  0% → seuil  0 → 10 > 0 → non-conforme
     const input: BilanInput = {
       cultures: [
         {
           parcelleId: "p1",
           parcelleNom: "T",
           surfaceHa: 1,
-          espece: "ble_panifiable", // 140 N/ha
+          espece: "ble_panifiable",
         },
       ],
       animaux: [],
-      apportsEngrais: [{ parcelleId: "p1", kgN: 145, kgP: 35 }], // 145 = 140 + 5 (5 au-dessus)
+      apportsEngrais: [{ parcelleId: "p1", kgN: 130, kgP: 35 }],
     };
-    expect(calculerBilan(input).conformeN).toBe(true); // 5 ≤ 14 (10% de 140)
+    expect(calculerBilan(input).conformeN).toBe(true);
     const strict = calculerBilan(input, {
       ...DEFAULT_SUISSE_BILANZ_CONFIG,
       tolerance: 0,
     });
-    expect(strict.conformeN).toBe(false); // 5 > 0
+    expect(strict.conformeN).toBe(false);
   });
 
   it("plusieurs parcelles agrégées correctement", () => {
@@ -177,7 +184,8 @@ describe("calculerBilan", () => {
   });
 
   it("apports localisés par parcelle dans le détail", () => {
-    // 2 parcelles : p1 reçoit 50N+20P, p2 reçoit 30N
+    // 2 parcelles 1 ha chacune : p1 reçoit 50N+20P, p2 reçoit 30N
+    // Atmosphérique : 20 N × 2 ha = 40 N total
     const input: BilanInput = {
       cultures: [
         { parcelleId: "p1", parcelleNom: "A", surfaceHa: 1, espece: "ble_panifiable" },
@@ -192,17 +200,19 @@ describe("calculerBilan", () => {
     const r = calculerBilan(input);
     const a = r.details.find((d) => d.parcelleId === "p1");
     const b = r.details.find((d) => d.parcelleId === "p2");
+    // Le détail par parcelle ne compte que les apports saisis (atmo est globale)
     expect(a?.apportsN).toBe(50);
     expect(a?.apportsP).toBe(20);
-    expect(a?.soldeN).toBe(-90); // 50 - 140
+    expect(a?.soldeN).toBe(-90);
     expect(b?.apportsN).toBe(30);
-    expect(b?.soldeN).toBe(-100); // 30 - 130
-    // Global : 80 N total
-    expect(r.apportsN).toBe(80);
+    expect(b?.soldeN).toBe(-100);
+    // Global : 80 (engrais) + 40 (atmo) = 120
+    expect(r.apportsN).toBe(120);
   });
 
   it("apport sur parcelle sans culture compte au global mais pas au détail", () => {
-    // p1 a une culture, p2 n'en a pas mais reçoit un apport orphelin
+    // p1 a une culture (1 ha), p2 n'en a pas mais reçoit un apport orphelin
+    // Atmosphérique : 20 N × 1 ha = 20 N
     const input: BilanInput = {
       cultures: [{ parcelleId: "p1", parcelleNom: "A", surfaceHa: 1, espece: "ble_panifiable" }],
       animaux: [],
@@ -213,8 +223,9 @@ describe("calculerBilan", () => {
     };
     const r = calculerBilan(input);
     expect(r.details).toHaveLength(1);
-    expect(r.details[0]?.apportsN).toBe(50); // pas 150
-    expect(r.apportsN).toBe(150); // global compte tout
+    expect(r.details[0]?.apportsN).toBe(50);
+    // Global : 50 + 100 (engrais) + 20 (atmo) = 170
+    expect(r.apportsN).toBe(170);
   });
 
   it("plusieurs apports sur la même parcelle s'agrègent dans le détail", () => {
@@ -229,5 +240,52 @@ describe("calculerBilan", () => {
     const r = calculerBilan(input);
     expect(r.details[0]?.apportsN).toBe(50);
     expect(r.details[0]?.apportsP).toBe(15);
+  });
+
+  it("origine des apports : décomposition cheptel / engrais / atmo", () => {
+    const input: BilanInput = {
+      cultures: [{ parcelleId: "p1", parcelleNom: "A", surfaceHa: 5, espece: "ble_panifiable" }],
+      animaux: [{ categorie: "VACHE_LAITIERE", nombre: 10 }],
+      apportsEngrais: [
+        { parcelleId: "p1", kgN: 50, kgP: 20, categorie: "ENGRAIS_MINERAL" },
+        { parcelleId: "p1", kgN: 30, kgP: 10, categorie: "ENGRAIS_ORGANIQUE" },
+      ],
+    };
+    const r = calculerBilan(input);
+    expect(r.origineApports.engraisMinerauxN).toBe(50);
+    expect(r.origineApports.engraisMinerauxP).toBe(20);
+    expect(r.origineApports.engraisOrganiquesAchetesN).toBe(30);
+    expect(r.origineApports.engraisOrganiquesAchetesP).toBe(10);
+    expect(r.origineApports.dejectionsCheptelN).toBe(1050); // 10 × 1.0 × 105
+    expect(r.origineApports.dejectionsCheptelP).toBe(180); // 10 × 1.0 × 18
+    expect(r.origineApports.atmospheriqueN).toBe(100); // 20 × 5 ha
+    expect(r.origineApports.fixationLegumineusesN).toBe(0);
+    // apportsN total = 50 + 30 + 1050 + 100 = 1230
+    expect(r.apportsN).toBe(1230);
+  });
+
+  it("fixation symbiotique légumineuses : annule besoin et compte en apport N", () => {
+    // 5 ha de luzerne : config fixation = 250 kg N/ha → 1250 kg N total
+    const input: BilanInput = {
+      cultures: [{ parcelleId: "p1", parcelleNom: "L", surfaceHa: 5, espece: "luzerne" }],
+      animaux: [],
+      apportsEngrais: [],
+    };
+    const r = calculerBilan(input);
+    expect(r.origineApports.fixationLegumineusesN).toBe(1250);
+    // Atmo : 20 × 5 = 100
+    expect(r.apportsN).toBe(1350);
+  });
+
+  it("apport ENGRAIS_ORGANIQUE par défaut (sans categorie) → catégorisé minéral", () => {
+    // Backward-compat : si l'input ne précise pas categorie, on assume minéral
+    const input: BilanInput = {
+      cultures: [{ parcelleId: "p1", parcelleNom: "A", surfaceHa: 1, espece: "ble_panifiable" }],
+      animaux: [],
+      apportsEngrais: [{ parcelleId: "p1", kgN: 40, kgP: 10 }], // pas de categorie
+    };
+    const r = calculerBilan(input);
+    expect(r.origineApports.engraisMinerauxN).toBe(40);
+    expect(r.origineApports.engraisOrganiquesAchetesN).toBe(0);
   });
 });

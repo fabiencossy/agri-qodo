@@ -162,9 +162,10 @@ describe("Suisse-Bilanz M3 (e2e)", () => {
     const body = res.body as BilanResponse;
     // 10 ha × 140 kg N/ha = 1400 kg N besoin
     expect(body.besoinsN).toBe(1400);
-    // 5 vaches × 1.0 UGB × 105 kg N/UGB = 525 kg N apport
-    expect(body.apportsN).toBe(525);
-    expect(body.soldeN).toBe(-875);
+    // 5 vaches × 1.0 UGB × 105 kg N/UGB = 525 (déjections)
+    // + 10 ha × 20 kg N/ha (atmo) = 200 → total 725
+    expect(body.apportsN).toBe(725);
+    expect(body.soldeN).toBe(-675);
     expect(body.conformeN).toBe(true);
     expect(body.details).toHaveLength(1);
     expect(body.details[0]?.parcelleNom).toBe("Champ A1");
@@ -178,9 +179,9 @@ describe("Suisse-Bilanz M3 (e2e)", () => {
     const body = res.body as BilanResponse;
     // 1 ha × 130 kg N/ha = 130 kg N besoin
     expect(body.besoinsN).toBe(130);
-    // 100 porcs × 0.15 UGB × 90 kg N/UGB = 1350 kg N apport
-    expect(body.apportsN).toBe(1350);
-    expect(body.soldeN).toBe(1220); // surfertilisation
+    // 100 porcs × 0.15 UGB × 90 kg N/UGB = 1350 + atmo (1 ha × 20) = 1370
+    expect(body.apportsN).toBe(1370);
+    expect(body.soldeN).toBe(1240); // surfertilisation
     expect(body.conformeN).toBe(false);
     expect(body.details).toHaveLength(1);
     expect(body.details[0]?.parcelleNom).toBe("Champ B1");
