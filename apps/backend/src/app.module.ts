@@ -18,6 +18,7 @@ import { SrpaModule } from "./modules/srpa/srpa.module";
 import { SuisseBilanzModule } from "./modules/suisse-bilanz/suisse-bilanz.module";
 import { TenantsModule } from "./modules/tenants/tenants.module";
 import { UsersModule } from "./modules/users/users.module";
+import { VeilleModule } from "./modules/veille/veille.module";
 
 @Module({
   imports: [
@@ -64,6 +65,7 @@ import { UsersModule } from "./modules/users/users.module";
     PlanFumureModule,
     PerModule,
     PartnerLinksModule,
+    VeilleModule,
   ],
 })
 export class AppModule {}

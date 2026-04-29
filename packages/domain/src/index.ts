@@ -63,3 +63,13 @@ export {
   parseDateBdta,
   parseSexe,
 } from "./bdta-import";
+
+export {
+  getVeilleArticle,
+  listVeilleCategories,
+  searchVeille,
+  type SearchOptions as VeilleSearchOptions,
+  VEILLE_ARTICLES,
+  type VeilleArticle,
+  type VeilleCategorie,
+} from "./veille";
