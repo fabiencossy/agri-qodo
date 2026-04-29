@@ -110,25 +110,51 @@ function BilanContent({ bilan }: { bilan: BilanResponse }) {
       {bilan.details.length > 0 && (
         <section>
           <h2 className="mb-3 text-lg font-semibold">Détail par parcelle</h2>
-          <div className="overflow-hidden rounded-xl border border-border bg-background">
+          <p className="mb-3 text-sm text-foreground/60">
+            Apports = engrais saisis sur la parcelle (les déjections animales sont comptées au
+            niveau global).
+          </p>
+          <div className="overflow-x-auto rounded-xl border border-border bg-background">
             <table className="w-full text-sm">
               <thead className="bg-foreground/5 text-left text-xs uppercase tracking-wide text-foreground/60">
                 <tr>
-                  <th className="px-4 py-2">Parcelle</th>
-                  <th className="px-4 py-2">Culture</th>
-                  <th className="px-4 py-2 text-right">Surface (ha)</th>
-                  <th className="px-4 py-2 text-right">Besoin N (kg)</th>
-                  <th className="px-4 py-2 text-right">Besoin P (kg)</th>
+                  <th className="px-3 py-2">Parcelle</th>
+                  <th className="px-3 py-2">Culture</th>
+                  <th className="px-3 py-2 text-right">Ha</th>
+                  <th className="px-3 py-2 text-right">Besoin N</th>
+                  <th className="px-3 py-2 text-right">Apport N</th>
+                  <th className="px-3 py-2 text-right">Solde N</th>
+                  <th className="px-3 py-2 text-right">Besoin P</th>
+                  <th className="px-3 py-2 text-right">Apport P</th>
+                  <th className="px-3 py-2 text-right">Solde P</th>
                 </tr>
               </thead>
               <tbody>
                 {bilan.details.map((d) => (
                   <tr key={d.parcelleId} className="border-t border-border">
-                    <td className="px-4 py-2 font-medium">{d.parcelleNom}</td>
-                    <td className="px-4 py-2 text-foreground/70">{d.espece}</td>
-                    <td className="px-4 py-2 text-right tabular-nums">{formatHa(d.surfaceHa)}</td>
-                    <td className="px-4 py-2 text-right tabular-nums">{formatKg(d.besoinN)}</td>
-                    <td className="px-4 py-2 text-right tabular-nums">{formatKg(d.besoinP)}</td>
+                    <td className="px-3 py-2 font-medium">{d.parcelleNom}</td>
+                    <td className="px-3 py-2 text-foreground/70">{d.espece}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{formatHa(d.surfaceHa)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{formatKg(d.besoinN)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{formatKg(d.apportsN)}</td>
+                    <td
+                      className={`px-3 py-2 text-right tabular-nums ${
+                        d.soldeN > 0 ? "font-medium text-red-600" : "text-foreground/70"
+                      }`}
+                    >
+                      {d.soldeN > 0 ? "+" : ""}
+                      {formatKg(d.soldeN)}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums">{formatKg(d.besoinP)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{formatKg(d.apportsP)}</td>
+                    <td
+                      className={`px-3 py-2 text-right tabular-nums ${
+                        d.soldeP > 0 ? "font-medium text-red-600" : "text-foreground/70"
+                      }`}
+                    >
+                      {d.soldeP > 0 ? "+" : ""}
+                      {formatKg(d.soldeP)}
+                    </td>
                   </tr>
                 ))}
               </tbody>

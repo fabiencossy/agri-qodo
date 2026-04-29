@@ -10,6 +10,10 @@ export interface DetailParcelle {
   espece: string;
   besoinN: number;
   besoinP: number;
+  apportsN: number;
+  apportsP: number;
+  soldeN: number;
+  soldeP: number;
 }
 
 export interface BilanResponse {

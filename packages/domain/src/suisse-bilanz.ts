@@ -149,6 +149,14 @@ export interface DetailParcelle {
   espece: string;
   besoinN: number;
   besoinP: number;
+  /** Apports d'engrais saisis sur la parcelle (kg N). */
+  apportsN: number;
+  /** Apports d'engrais saisis sur la parcelle (kg P). */
+  apportsP: number;
+  /** Solde N (apports - besoin) sur cette parcelle. */
+  soldeN: number;
+  /** Solde P (apports - besoin) sur cette parcelle. */
+  soldeP: number;
 }
 
 export interface BilanResult {
@@ -177,7 +185,16 @@ export function calculerBilan(
 ): BilanResult {
   const culturesInconnuesSet = new Set<string>();
 
-  // Besoins par parcelle (apport théorique nécessaire)
+  // Apports saisis localisés par parcelle (engrais minéraux + organiques).
+  const apportsParParcelle = new Map<string, { kgN: number; kgP: number }>();
+  for (const a of input.apportsEngrais) {
+    const cur = apportsParParcelle.get(a.parcelleId) ?? { kgN: 0, kgP: 0 };
+    cur.kgN += a.kgN;
+    cur.kgP += a.kgP;
+    apportsParParcelle.set(a.parcelleId, cur);
+  }
+
+  // Besoins + détail par parcelle (avec apports localisés).
   let besoinsN = 0;
   let besoinsP = 0;
   const details: DetailParcelle[] = [];
@@ -189,6 +206,7 @@ export function calculerBilan(
     }
     const besoinN = (bN ?? 0) * c.surfaceHa;
     const besoinP = (bP ?? 0) * c.surfaceHa;
+    const apport = apportsParParcelle.get(c.parcelleId) ?? { kgN: 0, kgP: 0 };
     besoinsN += besoinN;
     besoinsP += besoinP;
     details.push({
@@ -196,12 +214,17 @@ export function calculerBilan(
       parcelleNom: c.parcelleNom,
       surfaceHa: c.surfaceHa,
       espece: c.espece,
-      besoinN: Math.round(besoinN * 10) / 10,
-      besoinP: Math.round(besoinP * 10) / 10,
+      besoinN: round1(besoinN),
+      besoinP: round1(besoinP),
+      apportsN: round1(apport.kgN),
+      apportsP: round1(apport.kgP),
+      soldeN: round1(apport.kgN - besoinN),
+      soldeP: round1(apport.kgP - besoinP),
     });
   }
 
-  // Apports : engrais saisis + déjections animaux
+  // Apports globaux : engrais (TOUS, peu importe la parcelle) + déjections animaux.
+  // Les apports sur parcelles sans culture comptent quand même côté global.
   let apportsN = 0;
   let apportsP = 0;
   for (const a of input.apportsEngrais) {
@@ -221,15 +244,19 @@ export function calculerBilan(
   const seuilP = besoinsP * config.tolerance;
 
   return {
-    apportsN: Math.round(apportsN * 10) / 10,
-    apportsP: Math.round(apportsP * 10) / 10,
-    besoinsN: Math.round(besoinsN * 10) / 10,
-    besoinsP: Math.round(besoinsP * 10) / 10,
-    soldeN: Math.round(soldeN * 10) / 10,
-    soldeP: Math.round(soldeP * 10) / 10,
+    apportsN: round1(apportsN),
+    apportsP: round1(apportsP),
+    besoinsN: round1(besoinsN),
+    besoinsP: round1(besoinsP),
+    soldeN: round1(soldeN),
+    soldeP: round1(soldeP),
     conformeN: soldeN <= seuilN,
     conformeP: soldeP <= seuilP,
     details,
     culturesInconnues: [...culturesInconnuesSet],
   };
+}
+
+function round1(n: number): number {
+  return Math.round(n * 10) / 10;
 }

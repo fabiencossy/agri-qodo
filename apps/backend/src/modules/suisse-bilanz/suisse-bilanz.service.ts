@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable } from "@nestjs/common";
 import {
+  type ApportEngrais,
   type BilanInput,
   type BilanResult,
   calculerBilan,
@@ -57,10 +58,11 @@ export class SuisseBilanzService {
       nombre: g._count._all,
     }));
 
-    // Apports d'engrais V1 — non comptés (mapping produit → kg N/P en V2).
-    // On surface l'info dans warnings pour que l'utilisateur sache que les
-    // interventions de fumure saisies ne sont pas (encore) intégrées au calcul.
-    const interventionsFumure = await this.prisma.intervention.count({
+    // Apports d'engrais : on lit les interventions FUMURE de l'année qui ont
+    // un produitRef, et on calcule kgN/kgP via tauxN/tauxP × quantité.
+    // Les interventions sans produitRef sont ignorées (pas de référence
+    // pour calculer les nutriments) — surface en warning.
+    const interventionsFumure = await this.prisma.intervention.findMany({
       where: {
         ownerTenantId: tenantId,
         type: { in: [InterventionType.FUMURE_MINERALE, InterventionType.FUMURE_ORGANIQUE] },
@@ -69,18 +71,47 @@ export class SuisseBilanzService {
           lt: new Date(`${annee + 1}-01-01T00:00:00.000Z`),
         },
       },
+      include: {
+        produitRef: { select: { tauxN: true, tauxP: true, libelle: true } },
+      },
     });
-    if (interventionsFumure > 0) {
+
+    const apportsEngrais: ApportEngrais[] = [];
+    let fumuresSansProduit = 0;
+    let fumuresSansQuantite = 0;
+    for (const iv of interventionsFumure) {
+      if (!iv.produitRef) {
+        fumuresSansProduit++;
+        continue;
+      }
+      if (iv.quantite === null) {
+        fumuresSansQuantite++;
+        continue;
+      }
+      const qte = Number(iv.quantite);
+      const tauxN = iv.produitRef.tauxN !== null ? Number(iv.produitRef.tauxN) : 0;
+      const tauxP = iv.produitRef.tauxP !== null ? Number(iv.produitRef.tauxP) : 0;
+      // tauxN/tauxP exprimés en kg / 100 kg de produit (cf. Produit schema)
+      apportsEngrais.push({
+        parcelleId: iv.parcelleId,
+        kgN: (qte * tauxN) / 100,
+        kgP: (qte * tauxP) / 100,
+      });
+    }
+    if (fumuresSansProduit > 0) {
       warnings.push(
-        `${interventionsFumure} intervention(s) de fumure pour ${annee} non comptées : ` +
-          "le mapping produit → kg N/P arrive en V2.",
+        `${fumuresSansProduit} fumure(s) sans produit du catalogue ignorée(s) — ` +
+          "saisis le produit pour qu'elles comptent dans le bilan.",
       );
+    }
+    if (fumuresSansQuantite > 0) {
+      warnings.push(`${fumuresSansQuantite} fumure(s) sans quantité ignorée(s).`);
     }
 
     const input: BilanInput = {
       cultures: culturesInput,
       animaux: animauxInput,
-      apportsEngrais: [],
+      apportsEngrais,
     };
     const result = calculerBilan(input, config);
 

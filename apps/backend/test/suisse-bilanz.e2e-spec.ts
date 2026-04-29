@@ -26,6 +26,12 @@ interface BilanResponse {
     parcelleNom: string;
     espece: string;
     surfaceHa: number;
+    besoinN: number;
+    besoinP: number;
+    apportsN: number;
+    apportsP: number;
+    soldeN: number;
+    soldeP: number;
   }>;
   warnings: string[];
 }
