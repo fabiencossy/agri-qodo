@@ -20,6 +20,7 @@ import {
   useCreateIntervention,
 } from "@/lib/interventions";
 import { useParcelles } from "@/lib/parcelles";
+import { useCheckFumureOrganique } from "@/lib/per";
 import { type Produit, type ProduitCategorie, useProduits } from "@/lib/produits";
 
 const formSchema = z.object({
@@ -97,7 +98,15 @@ export default function NewInterventionPage() {
 
   const selectedType = useWatch({ control, name: "type" });
   const selectedProduitId = useWatch({ control, name: "produitId" });
+  const selectedParcelleId = useWatch({ control, name: "parcelleId" });
+  const selectedDate = useWatch({ control, name: "dateOperation" });
   const categorie = CATEGORIE_FOR_TYPE[selectedType];
+
+  // Check live ORRChim : si FUMURE_ORGANIQUE, vérifier si la date est interdite
+  const interdictionCheck = useCheckFumureOrganique(
+    selectedType === "FUMURE_ORGANIQUE" ? selectedParcelleId : undefined,
+    selectedType === "FUMURE_ORGANIQUE" ? selectedDate : undefined,
+  );
 
   const filteredProduits = useMemo<Produit[]>(() => {
     if (!produits.data) return [];
@@ -303,6 +312,24 @@ export default function NewInterventionPage() {
               {...register("notes")}
             />
           </Field>
+
+          {interdictionCheck.data?.interdit && (
+            <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+              <strong>⚠️ Période d'interdiction PER :</strong> {interdictionCheck.data.raison}
+              {interdictionCheck.data.prochaineFenetreOuverture && (
+                <>
+                  {" "}
+                  Prochaine fenêtre autorisée :{" "}
+                  <strong>{interdictionCheck.data.prochaineFenetreOuverture}</strong>.
+                </>
+              )}
+              <br />
+              <span className="text-xs">
+                La saisie reste possible (sols dégelés, exception cantonale…) mais sera signalée
+                dans le bilan PER.
+              </span>
+            </div>
+          )}
 
           {createMutation.isError && (
             <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
