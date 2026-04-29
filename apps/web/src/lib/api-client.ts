@@ -7,6 +7,7 @@
  *   - Si le refresh échoue → vide les tokens et throw `AuthError` (à
  *     intercepter pour redirect vers /login).
  */
+import { getActiveTenantId } from "./active-tenant";
 import {
   type AuthTokens,
   clearStoredTokens,
@@ -82,6 +83,8 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
   if (!skipAuth) {
     const tokens = getStoredTokens();
     if (tokens) headers.Authorization = `Bearer ${tokens.accessToken}`;
+    const activeTenantId = getActiveTenantId();
+    if (activeTenantId) headers["X-Active-Tenant-Id"] = activeTenantId;
   }
 
   const url = `${API_URL}${path}`;

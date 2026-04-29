@@ -1,19 +1,32 @@
 import { Injectable } from "@nestjs/common";
+import type { PartnerLinkLevel } from "@prisma/client";
 import { AsyncLocalStorage } from "node:async_hooks";
 
 /**
  * Stocké dans l'AsyncLocalStorage. Mutable volontairement : la requête
  * démarre avec un objet vide, le `JwtAuthGuard` y inscrit `tenantId` et
  * `userId` après authentification réussie.
+ *
+ * `homeTenantId` = le tenant du JWT (mon exploitation).
+ * `tenantId` = le tenant actif pour cette requête (peut être un partenaire
+ * via header `X-Active-Tenant-Id`).
+ * `partnerNiveau` = niveau d'autorisation si on travaille sur un partenaire.
  */
 interface TenantStore {
   tenantId?: string;
   userId?: string;
+  homeTenantId?: string;
+  partnerNiveau?: PartnerLinkLevel;
 }
 
 export interface TenantContext {
+  /** Tenant actif pour les requêtes Prisma (peut être un partenaire). */
   tenantId: string;
   userId: string;
+  /** Tenant d'origine de l'utilisateur (issu du JWT). */
+  homeTenantId: string;
+  /** Si défini, on travaille sur le tenant d'un partenaire avec ce niveau. */
+  partnerNiveau?: PartnerLinkLevel;
 }
 
 @Injectable()
@@ -34,7 +47,13 @@ export class TenantContextService {
    * complet déjà posé.
    */
   run<T>(ctx: TenantContext, fn: () => T | Promise<T>): T | Promise<T> {
-    return this.storage.run({ tenantId: ctx.tenantId, userId: ctx.userId }, fn);
+    const store: TenantStore = {
+      tenantId: ctx.tenantId,
+      userId: ctx.userId,
+      homeTenantId: ctx.homeTenantId,
+    };
+    if (ctx.partnerNiveau !== undefined) store.partnerNiveau = ctx.partnerNiveau;
+    return this.storage.run(store, fn);
   }
 
   /**
@@ -52,6 +71,12 @@ export class TenantContextService {
     }
     store.tenantId = ctx.tenantId;
     store.userId = ctx.userId;
+    store.homeTenantId = ctx.homeTenantId;
+    if (ctx.partnerNiveau !== undefined) {
+      store.partnerNiveau = ctx.partnerNiveau;
+    } else {
+      delete store.partnerNiveau;
+    }
   }
 
   /**
@@ -60,16 +85,28 @@ export class TenantContextService {
    */
   get(): TenantContext {
     const store = this.storage.getStore();
-    if (!store?.tenantId || !store.userId) {
+    if (!store?.tenantId || !store.userId || !store.homeTenantId) {
       throw new Error("TenantContext absent — appel hors d'une requête authentifiée ?");
     }
-    return { tenantId: store.tenantId, userId: store.userId };
+    const out: TenantContext = {
+      tenantId: store.tenantId,
+      userId: store.userId,
+      homeTenantId: store.homeTenantId,
+    };
+    if (store.partnerNiveau !== undefined) out.partnerNiveau = store.partnerNiveau;
+    return out;
   }
 
   /** Variante non-throw, utile pour les middlewares globaux (logs, Prisma). */
   tryGet(): TenantContext | undefined {
     const store = this.storage.getStore();
-    if (!store?.tenantId || !store.userId) return undefined;
-    return { tenantId: store.tenantId, userId: store.userId };
+    if (!store?.tenantId || !store.userId || !store.homeTenantId) return undefined;
+    const out: TenantContext = {
+      tenantId: store.tenantId,
+      userId: store.userId,
+      homeTenantId: store.homeTenantId,
+    };
+    if (store.partnerNiveau !== undefined) out.partnerNiveau = store.partnerNiveau;
+    return out;
   }
 }
