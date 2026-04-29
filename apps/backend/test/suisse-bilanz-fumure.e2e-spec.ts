@@ -137,12 +137,14 @@ describe("Suisse-Bilanz M3v2 — FUMURE intégrée + détail par parcelle (e2e)"
       .set("Authorization", `Bearer ${token}`)
       .expect(200);
     const body = res.body as BilanResponse;
-    expect(body.apportsN).toBe(46);
+    // 46 (urée) + 20 (atmo 1 ha) = 66
+    expect(body.apportsN).toBe(66);
     expect(body.besoinsN).toBe(140);
-    expect(body.soldeN).toBe(-94);
+    expect(body.soldeN).toBe(-74);
     const detail = body.details.find((d) => d.parcelleId === parcelleAId);
+    // Le détail parcelle ne compte que les apports saisis (pas l'atmo)
     expect(detail?.apportsN).toBe(46);
-    expect(detail?.soldeN).toBe(-94); // 46 - 140
+    expect(detail?.soldeN).toBe(-94);
   });
 
   it("Détail parcelle remonte besoinN+apportsN+soldeN après plusieurs FUMURE", async () => {
@@ -167,8 +169,9 @@ describe("Suisse-Bilanz M3v2 — FUMURE intégrée + détail par parcelle (e2e)"
       .set("Authorization", `Bearer ${token}`)
       .expect(200);
     const body = res.body as BilanResponse;
-    expect(body.apportsN).toBe(46); // urée seule
-    expect(body.apportsP).toBe(22.5); // triple super seul
+    // 46 (urée) + 20 (atmo) = 66
+    expect(body.apportsN).toBe(66);
+    expect(body.apportsP).toBe(22.5); // P pas d'atmo
     const detail = body.details.find((d) => d.parcelleId === parcelleAId);
     expect(detail?.apportsN).toBe(46);
     expect(detail?.apportsP).toBe(22.5);
@@ -196,8 +199,8 @@ describe("Suisse-Bilanz M3v2 — FUMURE intégrée + détail par parcelle (e2e)"
       .expect(200);
     const body = res.body as BilanResponse;
     expect(body.warnings.some((w) => w.includes("sans produit du catalogue"))).toBe(true);
-    // Apport reste à 46 (urée), la fumure orpheline n'est pas comptée
-    expect(body.apportsN).toBe(46);
+    // 46 (urée) + 20 (atmo) = 66, la fumure orpheline n'est pas comptée
+    expect(body.apportsN).toBe(66);
   });
 
   it("FUMURE avec produit mais quantité null → warning + non comptée", async () => {

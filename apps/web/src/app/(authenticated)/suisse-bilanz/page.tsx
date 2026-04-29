@@ -3,7 +3,13 @@
 import { AlertTriangle, CheckCircle2, FlaskConical, XCircle } from "lucide-react";
 import { useState } from "react";
 import { Breadcrumb } from "@/components/app/breadcrumb";
-import { type BilanResponse, formatHa, formatKg, useSuisseBilanz } from "@/lib/suisse-bilanz";
+import {
+  type BilanResponse,
+  formatHa,
+  formatKg,
+  type OrigineApports,
+  useSuisseBilanz,
+} from "@/lib/suisse-bilanz";
 
 const currentYear = new Date().getFullYear();
 const ANNEES = [currentYear, currentYear - 1, currentYear - 2, currentYear - 3];
@@ -92,6 +98,8 @@ function BilanContent({ bilan }: { bilan: BilanResponse }) {
           conforme={bilan.conformeP}
         />
       </div>
+
+      <OrigineApportsCard origine={bilan.origineApports} apportsTotalN={bilan.apportsN} />
 
       {bilan.warnings.length > 0 && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
@@ -196,6 +204,83 @@ function BilanCard({
         />
       </dl>
     </div>
+  );
+}
+
+function OrigineApportsCard({
+  origine,
+  apportsTotalN,
+}: {
+  origine: OrigineApports;
+  apportsTotalN: number;
+}) {
+  const lines: Array<{ label: string; valueN: number; valueP?: number; hint?: string }> = [
+    {
+      label: "Engrais minéraux",
+      valueN: origine.engraisMinerauxN,
+      valueP: origine.engraisMinerauxP,
+      hint: "FUMURE_MINERALE saisies (urée, NPK, etc.)",
+    },
+    {
+      label: "Engrais organiques achetés",
+      valueN: origine.engraisOrganiquesAchetesN,
+      valueP: origine.engraisOrganiquesAchetesP,
+      hint: "FUMURE_ORGANIQUE saisies (compost, lisier acheté)",
+    },
+    {
+      label: "Déjections cheptel",
+      valueN: origine.dejectionsCheptelN,
+      valueP: origine.dejectionsCheptelP,
+      hint: "Calculé à partir des UGB (coefficients Agridea, déjà nets des pertes étable)",
+    },
+    {
+      label: "Apport atmosphérique",
+      valueN: origine.atmospheriqueN,
+      hint: "20 kg N/ha forfaitaire (déposition azote OFAG)",
+    },
+    {
+      label: "Fixation légumineuses",
+      valueN: origine.fixationLegumineusesN,
+      hint: "Azote fixé par les cultures de légumineuses (luzerne, trèfle, soja…)",
+    },
+  ];
+  // Cache lignes à 0 pour éviter le bruit visuel
+  const visible = lines.filter((l) => l.valueN > 0 || (l.valueP ?? 0) > 0);
+  if (visible.length === 0) return null;
+
+  return (
+    <section className="rounded-2xl border border-border bg-background p-5">
+      <h2 className="mb-1 text-lg font-semibold">Origine des apports</h2>
+      <p className="mb-4 text-xs text-foreground/60">
+        Décomposition des {formatKg(apportsTotalN)} kg N apportés sur l'exploitation, selon la
+        méthode Suisse-Bilanz Agridea.
+      </p>
+      <div className="overflow-hidden rounded-lg border border-border">
+        <table className="w-full text-sm">
+          <thead className="bg-foreground/5 text-left text-xs uppercase tracking-wide text-foreground/60">
+            <tr>
+              <th className="px-3 py-2">Source</th>
+              <th className="px-3 py-2 text-right">kg N</th>
+              <th className="px-3 py-2 text-right">kg P</th>
+            </tr>
+          </thead>
+          <tbody>
+            {visible.map((l) => (
+              <tr key={l.label} className="border-t border-border align-top">
+                <td className="px-3 py-2">
+                  <div className="font-medium">{l.label}</div>
+                  {l.hint && <div className="text-xs text-foreground/50">{l.hint}</div>}
+                </td>
+                <td className="px-3 py-2 text-right tabular-nums">{formatKg(l.valueN)}</td>
+                <td className="px-3 py-2 text-right tabular-nums">
+                  {l.valueP === undefined ? "—" : formatKg(l.valueP)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }
 
