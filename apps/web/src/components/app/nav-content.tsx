@@ -12,6 +12,7 @@ import {
   MapPin,
   Package,
   Sprout,
+  Users,
 } from "lucide-react";
 import Link from "next/link";
 import type { Route } from "next";
@@ -39,6 +40,8 @@ const PILOTAGE: NavLink[] = [
   { href: "/veille", label: "Veille réglementaire", icon: BookOpen },
 ];
 
+const ADMINISTRATION: NavLink[] = [{ href: "/utilisateurs", label: "Utilisateurs", icon: Users }];
+
 /**
  * Contenu de navigation partagé entre la sidebar desktop (lg+) et le
  * drawer hamburger (mobile/tablet).
@@ -65,6 +68,11 @@ export function NavContent() {
         </NavSection>
         <NavSection title="Pilotage">
           {PILOTAGE.map((link) => (
+            <NavItem key={link.href} link={link} pathname={pathname} />
+          ))}
+        </NavSection>
+        <NavSection title="Administration">
+          {ADMINISTRATION.map((link) => (
             <NavItem key={link.href} link={link} pathname={pathname} />
           ))}
         </NavSection>
