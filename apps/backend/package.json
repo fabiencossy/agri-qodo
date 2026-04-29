@@ -53,6 +53,7 @@
     "rxjs": "^7.8.1",
     "zod": "^3.24.1",
     "@agri-qodo/domain": "workspace:*",
+    "@agri-qodo/odoo-client": "workspace:*",
     "tsx": "^4.19.2"
   },
   "devDependencies": {
