@@ -5,10 +5,14 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { InterventionType, type Prisma, ProduitCategorie, ValidationStatus } from "@prisma/client";
+import area from "@turf/area";
 import { randomUUID } from "node:crypto";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { TenantContextService } from "@/common/tenant/tenant-context.service";
-import type { CreateInterventionDto } from "./dto/create-intervention.dto";
+import type {
+  CreateInterventionDto,
+  InterventionGeoJsonGeometry,
+} from "./dto/create-intervention.dto";
 import type { UpdateInterventionDto } from "./dto/update-intervention.dto";
 
 @Injectable()
@@ -84,9 +88,15 @@ export class InterventionsService {
       throw new ForbiddenException("Parcelle introuvable ou hors de votre exploitation");
     }
 
-    // Si surface partielle saisie, on borne à la surface de la parcelle
-    // (l'agriculteur ne peut pas travailler 2 ha sur une parcelle de 1 ha).
-    if (
+    // Si une géom est fournie, elle est la source de vérité : on valide
+    // qu'elle est incluse dans la parcelle (ST_Within Postgres) et on
+    // recalcule la surface depuis le polygone — la valeur saisie par
+    // l'utilisateur est ignorée. Sinon, on borne la surface partielle
+    // saisie à la surface de la parcelle.
+    let surfaceFromGeom: number | undefined;
+    if (dto.geomGeoJson) {
+      surfaceFromGeom = await this.validateAndMeasureSubzone(dto.geomGeoJson, dto.parcelleId);
+    } else if (
       dto.surfaceTravailleeM2 !== undefined &&
       dto.surfaceTravailleeM2 > Number(parcelle.surfaceM2)
     ) {
@@ -147,7 +157,10 @@ export class InterventionsService {
         cultureId = created.id;
       }
 
-      return tx.intervention.create({
+      const surfaceFinale =
+        surfaceFromGeom !== undefined ? surfaceFromGeom : (dto.surfaceTravailleeM2 ?? null);
+
+      const created = await tx.intervention.create({
         data: {
           clientUuid: dto.clientUuid ?? randomUUID(),
           parcelleId: dto.parcelleId,
@@ -159,7 +172,7 @@ export class InterventionsService {
           produit: dto.produit ?? produit?.libelle ?? null,
           quantite: dto.quantite ?? null,
           unite: dto.unite ?? null,
-          surfaceTravailleeM2: dto.surfaceTravailleeM2 ?? null,
+          surfaceTravailleeM2: surfaceFinale,
           notes: dto.notes ?? null,
           techniqueEpandage: dto.techniqueEpandage ?? null,
           cultureId,
@@ -167,7 +180,60 @@ export class InterventionsService {
         },
         include: this.includeRelations,
       });
+
+      if (dto.geomGeoJson) {
+        await tx.$executeRawUnsafe(
+          `UPDATE interventions
+             SET geom = ST_GeomFromGeoJSON($1)::geometry(Polygon, 4326)
+           WHERE id = $2::uuid`,
+          JSON.stringify(dto.geomGeoJson),
+          created.id,
+        );
+      }
+
+      return created;
     });
+  }
+
+  /**
+   * Vérifie qu'un polygone est inclus dans la parcelle cible (ST_Within
+   * en CRS 4326) et retourne sa surface en m² (calculée via @turf/area
+   * sur l'ellipsoïde WGS84, cohérent avec le calcul des parcelles à
+   * l'import). Throw 400 si le polygone déborde ou si le GeoJSON est
+   * mal formé.
+   */
+  private async validateAndMeasureSubzone(
+    geom: InterventionGeoJsonGeometry,
+    parcelleId: string,
+  ): Promise<number> {
+    // class-validator ne vérifie que `IsObject` ; on contrôle ici le
+    // type GeoJSON exact pour rejeter MultiPolygon/Point/etc à runtime.
+    const runtimeType = (geom as { type?: unknown }).type;
+    if (runtimeType !== "Polygon") {
+      throw new BadRequestException("La sous-zone d'intervention doit être un Polygon GeoJSON");
+    }
+
+    const rows = await this.prisma.$queryRawUnsafe<{ within: boolean | null }[]>(
+      `SELECT ST_Within(
+                ST_GeomFromGeoJSON($1)::geometry(Polygon, 4326),
+                (SELECT geom FROM parcelles WHERE id = $2::uuid)
+              ) AS within`,
+      JSON.stringify(geom),
+      parcelleId,
+    );
+    const within = rows[0]?.within;
+    if (within === null) {
+      throw new BadRequestException(
+        "La parcelle n'a pas encore de géométrie — impossible de saisir une sous-zone, dessine d'abord la parcelle complète.",
+      );
+    }
+    if (within !== true) {
+      throw new BadRequestException(
+        "Le polygone d'intervention déborde de la parcelle — recadre la zone à l'intérieur des limites.",
+      );
+    }
+
+    return area({ type: "Feature", geometry: geom, properties: {} });
   }
 
   /**
@@ -184,13 +250,25 @@ export class InterventionsService {
     return this.prisma.$transaction(async (tx) => {
       const existing = await tx.intervention.findFirst({
         where: { id, ownerTenantId: tenantId },
-        select: { id: true, cultureId: true, dateOperation: true },
+        select: { id: true, cultureId: true, dateOperation: true, parcelleId: true },
       });
       if (!existing) {
         throw new NotFoundException("Intervention introuvable");
       }
 
       const newDate = dto.dateOperation ? new Date(dto.dateOperation) : null;
+
+      // Si geom fournie, on valide + recalcule la surface (la valeur
+      // saisie est ignorée comme à la création). Si geom passée à `null`
+      // explicitement, on retire la sous-zone (l'intervention couvre
+      // toute la parcelle à nouveau).
+      let surfaceFromGeom: number | undefined;
+      if (dto.geomGeoJson) {
+        surfaceFromGeom = await this.validateAndMeasureSubzone(
+          dto.geomGeoJson,
+          existing.parcelleId,
+        );
+      }
 
       await tx.intervention.update({
         where: { id },
@@ -199,15 +277,34 @@ export class InterventionsService {
           ...(dto.produit !== undefined ? { produit: dto.produit } : {}),
           ...(dto.quantite !== undefined ? { quantite: dto.quantite } : {}),
           ...(dto.unite !== undefined ? { unite: dto.unite } : {}),
-          ...(dto.surfaceTravailleeM2 !== undefined
-            ? { surfaceTravailleeM2: dto.surfaceTravailleeM2 }
-            : {}),
+          ...(surfaceFromGeom !== undefined
+            ? { surfaceTravailleeM2: surfaceFromGeom }
+            : dto.surfaceTravailleeM2 !== undefined
+              ? { surfaceTravailleeM2: dto.surfaceTravailleeM2 }
+              : {}),
           ...(dto.techniqueEpandage !== undefined
             ? { techniqueEpandage: dto.techniqueEpandage }
             : {}),
           ...(dto.notes !== undefined ? { notes: dto.notes } : {}),
         },
       });
+
+      if (dto.geomGeoJson !== undefined) {
+        if (dto.geomGeoJson === null) {
+          await tx.$executeRawUnsafe(
+            `UPDATE interventions SET geom = NULL WHERE id = $1::uuid`,
+            id,
+          );
+        } else {
+          await tx.$executeRawUnsafe(
+            `UPDATE interventions
+               SET geom = ST_GeomFromGeoJSON($1)::geometry(Polygon, 4326)
+             WHERE id = $2::uuid`,
+            JSON.stringify(dto.geomGeoJson),
+            id,
+          );
+        }
+      }
 
       if (existing.cultureId && newDate) {
         await tx.culture.update({
@@ -221,6 +318,77 @@ export class InterventionsService {
         include: this.includeRelations,
       });
     });
+  }
+
+  /**
+   * Récupère les interventions du tenant courant qui ont une sous-zone
+   * géométrique, avec leur Polygon en GeoJSON. Sert de base à la page
+   * Plan d'assolement (PR-2) — ici on l'expose dès maintenant pour que
+   * la PR fondation soit complètement testable bout-en-bout.
+   */
+  async listWithGeom(filters?: { campagne?: number; parcelleId?: string }) {
+    const { tenantId } = this.tenantContext.get();
+    const conditions: string[] = [
+      `(i.owner_tenant_id::text = $1 OR i.author_tenant_id::text = $1)`,
+    ];
+    const params: unknown[] = [tenantId];
+    if (filters?.campagne !== undefined) {
+      params.push(filters.campagne);
+      conditions.push(`EXTRACT(YEAR FROM i.date_operation) = $${params.length}`);
+    }
+    if (filters?.parcelleId) {
+      params.push(filters.parcelleId);
+      conditions.push(`i.parcelle_id::text = $${params.length}`);
+    }
+    const sql = `SELECT
+        i.id,
+        i.parcelle_id AS "parcelleId",
+        p.nom AS "parcelleNom",
+        i.type::text AS type,
+        i.date_operation AS "dateOperation",
+        i.surface_travaillee_m2::text AS "surfaceTravailleeM2",
+        i.produit,
+        c.espece AS "cultureEspece",
+        c.variete AS "cultureVariete",
+        c.campagne AS "cultureCampagne",
+        ST_AsGeoJSON(i.geom) AS geom
+      FROM interventions i
+      JOIN parcelles p ON p.id = i.parcelle_id
+      LEFT JOIN cultures c ON c.id = i.culture_id
+      WHERE ${conditions.join(" AND ")} AND i.geom IS NOT NULL
+      ORDER BY i.date_operation DESC`;
+    const rows = await this.prisma.$queryRawUnsafe<
+      {
+        id: string;
+        parcelleId: string;
+        parcelleNom: string;
+        type: string;
+        dateOperation: Date;
+        surfaceTravailleeM2: string | null;
+        produit: string | null;
+        cultureEspece: string | null;
+        cultureVariete: string | null;
+        cultureCampagne: number | null;
+        geom: string | null;
+      }[]
+    >(sql, ...params);
+    return rows.map((r) => ({
+      id: r.id,
+      parcelleId: r.parcelleId,
+      parcelleNom: r.parcelleNom,
+      type: r.type,
+      dateOperation: r.dateOperation,
+      surfaceTravailleeM2: r.surfaceTravailleeM2,
+      produit: r.produit,
+      culture: r.cultureEspece
+        ? {
+            espece: r.cultureEspece,
+            variete: r.cultureVariete,
+            campagne: r.cultureCampagne ?? 0,
+          }
+        : null,
+      geom: r.geom ? (JSON.parse(r.geom) as InterventionGeoJsonGeometry) : null,
+    }));
   }
 
   /**

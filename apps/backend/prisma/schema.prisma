@@ -325,35 +325,41 @@ model PlanApport {
 // ====================================================================
 
 model Intervention {
-  id                  String             @id @default(uuid())
+  id                  String                                  @id @default(uuid())
   // UUID généré côté client pour idempotence à la sync
-  clientUuid          String             @unique @map("client_uuid")
-  ownerTenantId       String             @map("owner_tenant_id")
-  authorTenantId      String             @map("author_tenant_id") // peut différer de owner si M16
-  parcelleId          String             @map("parcelle_id")
+  clientUuid          String                                  @unique @map("client_uuid")
+  ownerTenantId       String                                  @map("owner_tenant_id")
+  authorTenantId      String                                  @map("author_tenant_id") // peut différer de owner si M16
+  parcelleId          String                                  @map("parcelle_id")
   type                InterventionType
-  dateOperation       DateTime           @map("date_operation")
+  dateOperation       DateTime                                @map("date_operation")
   // Référence catalogue (recommandé pour SEMIS, FUMURE, PHYTO).
   // Permet d'autopropulser : SEMIS+produit → Culture, FUMURE+produit → bilan N/P.
-  produitId           String?            @map("produit_id")
+  produitId           String?                                 @map("produit_id")
   produit             String? // libellé libre, ou copie du libellé Produit pour traçabilité
-  quantite            Decimal?           @db.Decimal(12, 3)
+  quantite            Decimal?                                @db.Decimal(12, 3)
   // Surface réellement concernée par l'intervention en m². NULL = toute
-  // la parcelle (cas par défaut). Permet de saisir un travail/semis/récolte
-  // sur une portion (p.ex. 0.5 ha sur une parcelle de 1.2 ha).
-  surfaceTravailleeM2 Decimal?           @map("surface_travaillee_m2") @db.Decimal(12, 2)
+  // la parcelle (cas par défaut). Si `geom` est fournie, cette surface est
+  // recalculée automatiquement via ST_Area.
+  surfaceTravailleeM2 Decimal?                                @map("surface_travaillee_m2") @db.Decimal(12, 2)
+  // Géométrie de la sous-zone réellement travaillée — polygone WGS84
+  // (SRID 4326). NULL = toute la parcelle. Doit être ST_Within `parcelle.geom`
+  // (validé côté backend). Permet de représenter spatialement le plan
+  // d'assolement : un SEMIS de blé sur la moitié est + un SEMIS d'orge
+  // sur la moitié ouest = 2 zones distinctes sur la même parcelle.
+  geom                Unsupported("geometry(Polygon, 4326)")? @map("geom")
   unite               String? // "kg", "L", "t", "ha"
   notes               String?
   // Si SEMIS a généré une Culture, on garde le lien pour pouvoir la
   // ré-éditer / supprimer si l'intervention est modifiée.
-  cultureId           String?            @map("culture_id")
+  cultureId           String?                                 @map("culture_id")
   // Technique d'épandage pour FUMURE_ORGANIQUE — détermine la perte NH3
   // appliquée au calcul du bilan N (Guide Agridea 1.18).
-  techniqueEpandage   TechniqueEpandage? @map("technique_epandage")
-  validationStatus    ValidationStatus   @default(SELF) @map("validation_status")
-  validatedAt         DateTime?          @map("validated_at")
-  rejectedReason      String?            @map("rejected_reason")
-  createdAt           DateTime           @default(now()) @map("created_at")
+  techniqueEpandage   TechniqueEpandage?                      @map("technique_epandage")
+  validationStatus    ValidationStatus                        @default(SELF) @map("validation_status")
+  validatedAt         DateTime?                               @map("validated_at")
+  rejectedReason      String?                                 @map("rejected_reason")
+  createdAt           DateTime                                @default(now()) @map("created_at")
 
   ownerTenant  Exploitation @relation("InterventionOwner", fields: [ownerTenantId], references: [id], onDelete: Cascade)
   authorTenant Exploitation @relation("InterventionAuthor", fields: [authorTenantId], references: [id], onDelete: Cascade)

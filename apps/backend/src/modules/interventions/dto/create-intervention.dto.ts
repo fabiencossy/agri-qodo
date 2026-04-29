@@ -5,12 +5,20 @@ import {
   IsDateString,
   IsEnum,
   IsNumber,
+  IsObject,
   IsOptional,
   IsString,
   IsUUID,
   MaxLength,
   Min,
 } from "class-validator";
+import type { GeoJsonGeometry } from "@/modules/parcelles/dto/create-parcelle.dto";
+
+/**
+ * Géométrie d'une sous-zone d'intervention. Accepte uniquement Polygon
+ * (un seul morceau) — pour saisir 2 zones distinctes, créer 2 interventions.
+ */
+export type InterventionGeoJsonGeometry = Extract<GeoJsonGeometry, { type: "Polygon" }>;
 
 export class CreateInterventionDto {
   @ApiProperty({
@@ -66,7 +74,7 @@ export class CreateInterventionDto {
 
   @ApiPropertyOptional({
     description:
-      "Surface réellement concernée en m². Omettre ou null = toute la parcelle. Utile pour TRAVAIL_DU_SOL, SEMIS, RECOLTE quand seule une portion est travaillée.",
+      "Surface réellement concernée en m². Omettre ou null = toute la parcelle. Si `geomGeoJson` est fourni, cette valeur est ignorée et recalculée depuis le polygone.",
     example: 5000,
   })
   @IsOptional()
@@ -74,6 +82,17 @@ export class CreateInterventionDto {
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
   surfaceTravailleeM2?: number;
+
+  @ApiPropertyOptional({
+    description:
+      "Sous-zone géométrique réellement travaillée — Polygon GeoJSON WGS84 (EPSG:4326). " +
+      "Doit être inclus dans la parcelle (validation ST_Within). Si fourni, " +
+      "`surfaceTravailleeM2` est recalculée automatiquement depuis le polygone. " +
+      "Permet de représenter spatialement le plan d'assolement (blé sur la moitié est, orge sur la moitié ouest, …).",
+  })
+  @IsOptional()
+  @IsObject()
+  geomGeoJson?: InterventionGeoJsonGeometry;
 
   @ApiPropertyOptional({
     description: "Unité libre : kg, L, t, ha, doses…",
