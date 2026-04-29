@@ -3,7 +3,7 @@
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { useEffect, useRef } from "react";
-import type { ParcelleMapItem } from "@/lib/parcelles";
+import type { GeoJsonPolygon } from "@/lib/parcelles";
 
 const SUISSE_ROMANDE: L.LatLngTuple = [46.6, 6.55];
 
@@ -13,14 +13,21 @@ const SWISSTOPO_ORTHO =
   "https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissimage/default/current/3857/{z}/{x}/{y}.jpeg";
 const SWISSTOPO_ATTRIBUTION = '&copy; <a href="https://www.swisstopo.admin.ch">swisstopo</a>';
 
-export default function ParcellesMapView({ parcelles }: { parcelles: ParcelleMapItem[] }) {
+export default function ParcelleSingleMap({
+  geom,
+  couleurHex,
+  height = 320,
+}: {
+  geom: GeoJsonPolygon | null;
+  couleurHex?: string | null;
+  height?: number;
+}) {
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!containerRef.current) return;
 
     const map = L.map(containerRef.current).setView(SUISSE_ROMANDE, 11);
-
     const carte = L.tileLayer(SWISSTOPO_PIXELKARTE, {
       attribution: SWISSTOPO_ATTRIBUTION,
       maxZoom: 19,
@@ -31,59 +38,34 @@ export default function ParcellesMapView({ parcelles }: { parcelles: ParcelleMap
     });
 
     L.control
-      .layers(
-        { Carte: carte, "Vue satellite": ortho },
-        {},
-        { position: "topleft", collapsed: false },
-      )
+      .layers({ Carte: carte, Satellite: ortho }, {}, { position: "topleft", collapsed: true })
       .addTo(map);
 
-    const group = L.featureGroup();
-    parcelles.forEach((p) => {
-      if (!p.geom) return;
-      const fill = p.couleurHex || "#4CAF50";
+    if (geom) {
+      const fill = couleurHex || "#4CAF50";
       const stroke = darken(fill);
-      const layer = L.geoJSON(p.geom, {
-        style: {
-          color: stroke,
-          weight: 2,
-          fillColor: fill,
-          fillOpacity: 0.35,
-        },
-      });
-      layer.bindTooltip(`<strong>${p.nom}</strong><br/>${formatSurface(p.surfaceM2)} · ${p.zone}`, {
-        sticky: true,
-      });
-      layer.addTo(group);
-    });
-
-    if (group.getLayers().length > 0) {
-      group.addTo(map);
-      const bounds = group.getBounds();
-      if (bounds.isValid()) map.fitBounds(bounds, { padding: [40, 40] });
+      const layer = L.geoJSON(geom, {
+        style: { color: stroke, weight: 3, fillColor: fill, fillOpacity: 0.35 },
+      }).addTo(map);
+      const bounds = layer.getBounds();
+      if (bounds.isValid()) map.fitBounds(bounds, { padding: [30, 30] });
     }
 
     return () => {
       map.remove();
     };
-  }, [parcelles]);
+  }, [geom, couleurHex]);
 
   return (
     <div
       ref={containerRef}
-      className="h-[500px] w-full overflow-hidden rounded-xl border border-border"
+      className="w-full overflow-hidden rounded-xl border border-border"
+      style={{ height: `${height}px` }}
     />
   );
 }
 
-function formatSurface(m2: string): string {
-  const value = Number(m2);
-  if (Number.isNaN(value) || value < 0) return "—";
-  if (value >= 10000) return `${(value / 10000).toFixed(2)} ha`;
-  if (value >= 100) return `${(value / 100).toFixed(2)} a`;
-  return `${value.toFixed(0)} m²`;
-}
-
+// Assombrit une couleur hex (#RRGGBB) de ~25% pour le contour.
 function darken(hex: string): string {
   const m = /^#([0-9a-f]{6})$/i.exec(hex);
   if (!m) return hex;

@@ -57,6 +57,7 @@ export interface Intervention {
   } | null;
   quantite: string | null;
   unite: string | null;
+  surfaceTravailleeM2: string | null;
   notes: string | null;
   cultureId: string | null;
   culture: { id: string; espece: string; variete: string | null; campagne: number } | null;
@@ -72,6 +73,7 @@ export interface CreateInterventionInput {
   produit?: string;
   quantite?: number;
   unite?: string;
+  surfaceTravailleeM2?: number;
   techniqueEpandage?: TechniqueEpandage;
   notes?: string;
 }

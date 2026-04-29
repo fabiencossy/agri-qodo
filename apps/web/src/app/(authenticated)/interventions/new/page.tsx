@@ -19,7 +19,7 @@ import {
   TYPES_ORDER,
   useCreateIntervention,
 } from "@/lib/interventions";
-import { useParcelles } from "@/lib/parcelles";
+import { formatSurface, useParcelles } from "@/lib/parcelles";
 import { useCheckFumureOrganique } from "@/lib/per";
 import {
   type Produit,
@@ -57,8 +57,19 @@ const formSchema = z.object({
     ])
     .optional()
     .or(z.literal("")),
+  surfaceTravailleeM2: z.coerce.number().positive().optional().or(z.literal(NaN)),
   notes: z.string().max(500).optional().or(z.literal("")),
 });
+
+// Types d'intervention pour lesquels une saisie de surface partielle a du
+// sens : on ne travaille pas forcément toute la parcelle.
+const TYPES_AVEC_SURFACE_PARTIELLE: ReadonlyArray<InterventionType> = [
+  "TRAVAIL_DU_SOL",
+  "SEMIS",
+  "RECOLTE",
+  "PHYTO",
+  "IRRIGATION",
+];
 
 type FormValues = z.infer<typeof formSchema>;
 
@@ -108,6 +119,7 @@ export default function NewInterventionPage() {
       quantite: undefined,
       unite: "",
       techniqueEpandage: "",
+      surfaceTravailleeM2: undefined,
       notes: "",
     },
   });
@@ -157,6 +169,20 @@ export default function NewInterventionPage() {
   }, [selectedProduit]);
 
   const [showNewProduit, setShowNewProduit] = useState(false);
+  const [toutLeChamp, setToutLeChamp] = useState(true);
+
+  const selectedParcelle = parcelles.data?.find((p) => p.id === selectedParcelleId);
+  const surfaceParcelleM2 = selectedParcelle ? Number(selectedParcelle.surfaceM2) : 0;
+  const peutSaisirSurfacePartielle = TYPES_AVEC_SURFACE_PARTIELLE.includes(selectedType);
+
+  // Quand on change de parcelle, on revient à "toute la parcelle" et
+  // on pré-remplit la surface (utile si l'utilisateur décoche).
+  useEffect(() => {
+    setToutLeChamp(true);
+    if (surfaceParcelleM2 > 0) {
+      setValue("surfaceTravailleeM2", surfaceParcelleM2);
+    }
+  }, [selectedParcelleId, surfaceParcelleM2, setValue]);
 
   const onSubmit = (values: FormValues) => {
     createMutation.mutate(
@@ -171,6 +197,9 @@ export default function NewInterventionPage() {
         ...(values.techniqueEpandage
           ? { techniqueEpandage: values.techniqueEpandage as TechniqueEpandage }
           : {}),
+        ...(toutLeChamp || !values.surfaceTravailleeM2 || Number.isNaN(values.surfaceTravailleeM2)
+          ? {}
+          : { surfaceTravailleeM2: values.surfaceTravailleeM2 }),
         ...(values.notes ? { notes: values.notes } : {}),
       },
       {
@@ -335,6 +364,49 @@ export default function NewInterventionPage() {
               <Input placeholder="L, kg, t, ha…" {...register("unite")} />
             </Field>
           </div>
+
+          {peutSaisirSurfacePartielle && selectedParcelle && (
+            <Field label="Surface concernée">
+              <div className="space-y-2">
+                <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-sm hover:bg-muted">
+                  <input
+                    type="checkbox"
+                    checked={toutLeChamp}
+                    onChange={(e) => {
+                      setToutLeChamp(e.target.checked);
+                      if (e.target.checked && surfaceParcelleM2 > 0) {
+                        setValue("surfaceTravailleeM2", surfaceParcelleM2);
+                      }
+                    }}
+                    className="h-4 w-4"
+                  />
+                  <span>Toute la parcelle ({formatSurface(surfaceParcelleM2)})</span>
+                </label>
+                {!toutLeChamp && (
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      max={surfaceParcelleM2}
+                      placeholder={String(surfaceParcelleM2)}
+                      {...register("surfaceTravailleeM2")}
+                    />
+                    <span className="text-sm text-foreground/60">m²</span>
+                    <span className="text-xs text-foreground/50">
+                      / {formatSurface(surfaceParcelleM2)}
+                    </span>
+                  </div>
+                )}
+                {!toutLeChamp && (
+                  <p className="text-xs text-foreground/50">
+                    Saisis la surface réellement {libelleType(selectedType).toLowerCase()}e (ex.
+                    seulement la moitié sud de la parcelle).
+                  </p>
+                )}
+              </div>
+            </Field>
+          )}
 
           {selectedType === "FUMURE_ORGANIQUE" && (
             <Field

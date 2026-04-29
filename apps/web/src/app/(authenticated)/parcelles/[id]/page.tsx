@@ -1,6 +1,7 @@
 "use client";
 
-import { ArrowLeft, Calendar, Check, MapPin, Plus, Sprout, Trash2 } from "lucide-react";
+import { ArrowLeft, Calendar, Check, MapPin, Pencil, Plus, Sprout, Trash2 } from "lucide-react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -19,6 +20,15 @@ import {
   useInterventions,
 } from "@/lib/interventions";
 import { formatSurface, libelleZone, useParcelle } from "@/lib/parcelles";
+
+const ParcelleSingleMap = dynamic(() => import("@/components/maps/parcelle-single-map"), {
+  ssr: false,
+  loading: () => (
+    <div className="flex h-[320px] items-center justify-center rounded-xl border border-border bg-muted text-sm text-foreground/60">
+      Chargement de la carte…
+    </div>
+  ),
+});
 import {
   type PlanApport as PlanApportType,
   useCreatePlanApport,
@@ -92,7 +102,13 @@ export default function ParcelleDetailPage() {
                     : ""}
                 </p>
               </div>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
+                <Link href={`/parcelles/${parcelleId}/edit`}>
+                  <Button variant="ghost">
+                    <Pencil className="mr-2 h-4 w-4" />
+                    Modifier
+                  </Button>
+                </Link>
                 <Link href={`/interventions/new?parcelleId=${parcelleId}`}>
                   <Button>
                     <Sprout className="mr-2 h-4 w-4" />
@@ -107,6 +123,22 @@ export default function ParcelleDetailPage() {
                 {parcelle.data.notes}
               </p>
             )}
+
+            {/* Carte (si géométrie présente) */}
+            <section className="mb-6">
+              {parcelle.data.geom ? (
+                <ParcelleSingleMap
+                  geom={parcelle.data.geom}
+                  couleurHex={parcelle.data.couleurHex}
+                />
+              ) : (
+                <div className="rounded-xl border-2 border-dashed border-border bg-foreground/[.02] p-6 text-sm text-foreground/60">
+                  Cette parcelle n'a pas de tracé géographique. Clique sur{" "}
+                  <span className="font-medium">Modifier</span> pour la dessiner sur la carte
+                  swisstopo.
+                </div>
+              )}
+            </section>
 
             {/* Bilan N/P de la parcelle (campagne courante) */}
             <section className="mb-6">

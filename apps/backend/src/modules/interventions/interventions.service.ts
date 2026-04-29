@@ -78,10 +78,21 @@ export class InterventionsService {
 
     const parcelle = await this.prisma.parcelle.findFirst({
       where: { id: dto.parcelleId, tenantId },
-      select: { id: true, tenantId: true },
+      select: { id: true, tenantId: true, surfaceM2: true },
     });
     if (!parcelle) {
       throw new ForbiddenException("Parcelle introuvable ou hors de votre exploitation");
+    }
+
+    // Si surface partielle saisie, on borne à la surface de la parcelle
+    // (l'agriculteur ne peut pas travailler 2 ha sur une parcelle de 1 ha).
+    if (
+      dto.surfaceTravailleeM2 !== undefined &&
+      dto.surfaceTravailleeM2 > Number(parcelle.surfaceM2)
+    ) {
+      throw new BadRequestException(
+        `Surface travaillée (${dto.surfaceTravailleeM2} m²) supérieure à la surface de la parcelle (${Number(parcelle.surfaceM2)} m²)`,
+      );
     }
 
     const ownerTenantId = parcelle.tenantId;
@@ -148,6 +159,7 @@ export class InterventionsService {
           produit: dto.produit ?? produit?.libelle ?? null,
           quantite: dto.quantite ?? null,
           unite: dto.unite ?? null,
+          surfaceTravailleeM2: dto.surfaceTravailleeM2 ?? null,
           notes: dto.notes ?? null,
           techniqueEpandage: dto.techniqueEpandage ?? null,
           cultureId,
@@ -187,6 +199,9 @@ export class InterventionsService {
           ...(dto.produit !== undefined ? { produit: dto.produit } : {}),
           ...(dto.quantite !== undefined ? { quantite: dto.quantite } : {}),
           ...(dto.unite !== undefined ? { unite: dto.unite } : {}),
+          ...(dto.surfaceTravailleeM2 !== undefined
+            ? { surfaceTravailleeM2: dto.surfaceTravailleeM2 }
+            : {}),
           ...(dto.techniqueEpandage !== undefined
             ? { techniqueEpandage: dto.techniqueEpandage }
             : {}),
