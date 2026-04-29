@@ -3,7 +3,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import { Breadcrumb } from "@/components/app/breadcrumb";
@@ -21,7 +21,14 @@ import {
 } from "@/lib/interventions";
 import { useParcelles } from "@/lib/parcelles";
 import { useCheckFumureOrganique } from "@/lib/per";
-import { type Produit, type ProduitCategorie, useProduits } from "@/lib/produits";
+import {
+  type Produit,
+  type ProduitCategorie,
+  type ProduitUnite,
+  UNITE_LABEL,
+  useCreateProduit,
+  useProduits,
+} from "@/lib/produits";
 
 const formSchema = z.object({
   parcelleId: z.string().uuid("Parcelle obligatoire"),
@@ -66,6 +73,15 @@ const CATEGORIE_FOR_TYPE: Partial<Record<InterventionType, ProduitCategorie>> = 
   FUMURE_MINERALE: "ENGRAIS_MINERAL",
   PHYTO: "PHYTO",
 };
+
+// Forme physique du produit déduite de l'unité — détermine les techniques
+// d'épandage compatibles. Lisier en m³/L = liquide ; fumier en kg/t = solide ;
+// doses (semences) = autre.
+function formeProduit(unite: ProduitUnite): "liquide" | "solide" | "autre" {
+  if (unite === "L" || unite === "M3") return "liquide";
+  if (unite === "KG" || unite === "T") return "solide";
+  return "autre";
+}
 
 export default function NewInterventionPage() {
   const router = useRouter();
@@ -117,6 +133,30 @@ export default function NewInterventionPage() {
   }, [produits.data, categorie]);
 
   const selectedProduit = filteredProduits.find((p) => p.id === selectedProduitId);
+
+  // Auto-remplit l'unité du formulaire à partir de l'unité du produit choisi.
+  // L'agriculteur n'a plus à se demander si c'est kg, L, m³…
+  useEffect(() => {
+    if (selectedProduit) {
+      setValue("unite", UNITE_LABEL[selectedProduit.unite]);
+    }
+  }, [selectedProduit, setValue]);
+
+  // Filtrage des techniques d'épandage selon la forme du produit (déduite
+  // de l'unité). Lisier (L/M3) → techniques liquides ; fumier (KG/T) →
+  // techniques solides. Évite de proposer "pendillard" sur du fumier.
+  const techniquesAutorisees = useMemo(() => {
+    const forme = selectedProduit ? formeProduit(selectedProduit.unite) : null;
+    if (forme === "liquide") {
+      return ["RAMPE_PENDILLARDE", "TRAINEE_SOUPLE", "INJECTION", "EPANDEUR_CLASSIQUE"] as const;
+    }
+    if (forme === "solide") {
+      return ["FUMIER_SOLIDE", "EPANDEUR_CLASSIQUE"] as const;
+    }
+    return TECHNIQUES_ORDER;
+  }, [selectedProduit]);
+
+  const [showNewProduit, setShowNewProduit] = useState(false);
 
   const onSubmit = (values: FormValues) => {
     createMutation.mutate(
@@ -249,6 +289,13 @@ export default function NewInterventionPage() {
                   </option>
                 ))}
               </select>
+              <button
+                type="button"
+                onClick={() => setShowNewProduit(true)}
+                className="mt-2 text-sm font-medium text-green hover:underline"
+              >
+                + Créer un nouveau produit
+              </button>
             </Field>
           ) : null}
 
@@ -280,7 +327,11 @@ export default function NewInterventionPage() {
                 {...register("quantite")}
               />
             </Field>
-            <Field label="Unité (optionnel)" error={errors.unite?.message}>
+            <Field
+              label="Unité"
+              {...(selectedProduit ? { hint: "Auto-remplie depuis le produit catalogue." } : {})}
+              error={errors.unite?.message}
+            >
               <Input placeholder="L, kg, t, ha…" {...register("unite")} />
             </Field>
           </div>
@@ -296,7 +347,7 @@ export default function NewInterventionPage() {
                 {...register("techniqueEpandage")}
               >
                 <option value="">Non précisée (épandeur classique présumé)</option>
-                {TECHNIQUES_ORDER.map((t) => (
+                {techniquesAutorisees.map((t) => (
                   <option key={t} value={t}>
                     {TECHNIQUE_LABEL[t]}
                   </option>
@@ -354,7 +405,158 @@ export default function NewInterventionPage() {
           </div>
         </form>
       </div>
+
+      {showNewProduit && categorie && (
+        <NewProduitDialog
+          categorie={categorie}
+          onClose={() => setShowNewProduit(false)}
+          onCreated={(p) => {
+            setValue("produitId", p.id);
+            setShowNewProduit(false);
+          }}
+        />
+      )}
     </>
+  );
+}
+
+function NewProduitDialog({
+  categorie,
+  onClose,
+  onCreated,
+}: {
+  categorie: ProduitCategorie;
+  onClose: () => void;
+  onCreated: (p: Produit) => void;
+}) {
+  const create = useCreateProduit();
+  const [libelle, setLibelle] = useState("");
+  const [fournisseur, setFournisseur] = useState("");
+  const [unite, setUnite] = useState<ProduitUnite>(categorie === "ENGRAIS_ORGANIQUE" ? "M3" : "KG");
+  const [especeCode, setEspeceCode] = useState("");
+  const [tauxN, setTauxN] = useState("");
+  const [tauxP, setTauxP] = useState("");
+
+  const isEngrais = categorie === "ENGRAIS_MINERAL" || categorie === "ENGRAIS_ORGANIQUE";
+  const isSemence = categorie === "SEMENCE";
+
+  const onSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    create.mutate(
+      {
+        categorie,
+        libelle,
+        unite,
+        ...(fournisseur ? { fournisseur } : {}),
+        ...(especeCode ? { especeCode } : {}),
+        ...(tauxN ? { tauxN: Number(tauxN) } : {}),
+        ...(tauxP ? { tauxP: Number(tauxP) } : {}),
+      },
+      { onSuccess: (p) => onCreated(p) },
+    );
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-md rounded-2xl border border-border bg-background p-6 shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 className="mb-4 text-xl font-bold">Nouveau produit ({categorie.toLowerCase()})</h2>
+        <form onSubmit={onSubmit} className="space-y-3">
+          <label className="block text-sm">
+            <span className="mb-1 block font-medium">Libellé *</span>
+            <Input
+              required
+              value={libelle}
+              onChange={(e) => setLibelle(e.target.value)}
+              placeholder="Ex : Lisier ferme Dupont"
+            />
+          </label>
+          <label className="block text-sm">
+            <span className="mb-1 block font-medium">Fournisseur</span>
+            <Input
+              value={fournisseur}
+              onChange={(e) => setFournisseur(e.target.value)}
+              placeholder="Optionnel"
+            />
+          </label>
+          <label className="block text-sm">
+            <span className="mb-1 block font-medium">Unité</span>
+            <select
+              value={unite}
+              onChange={(e) => setUnite(e.target.value as ProduitUnite)}
+              className="h-11 w-full rounded-lg border border-border bg-background px-3 text-base"
+            >
+              <option value="KG">kg</option>
+              <option value="L">L (litre)</option>
+              <option value="T">t (tonne)</option>
+              <option value="M3">m³</option>
+              <option value="DOSE">doses</option>
+            </select>
+          </label>
+          {isSemence && (
+            <label className="block text-sm">
+              <span className="mb-1 block font-medium">Code espèce</span>
+              <Input
+                value={especeCode}
+                onChange={(e) => setEspeceCode(e.target.value)}
+                placeholder="ex: ble_panifiable, mais_grain, triticale"
+              />
+              <p className="mt-1 text-xs text-foreground/50">
+                Permet de créer auto la culture lors d'un SEMIS et de calculer le besoin N/P.
+              </p>
+            </label>
+          )}
+          {isEngrais && (
+            <div className="grid grid-cols-2 gap-3">
+              <label className="block text-sm">
+                <span className="mb-1 block font-medium">
+                  Taux N (kg / 100 {UNITE_LABEL[unite]})
+                </span>
+                <Input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={tauxN}
+                  onChange={(e) => setTauxN(e.target.value)}
+                  placeholder="46"
+                />
+              </label>
+              <label className="block text-sm">
+                <span className="mb-1 block font-medium">
+                  Taux P (kg / 100 {UNITE_LABEL[unite]})
+                </span>
+                <Input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={tauxP}
+                  onChange={(e) => setTauxP(e.target.value)}
+                  placeholder="0"
+                />
+              </label>
+            </div>
+          )}
+          {create.isError && (
+            <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+              Création impossible. Vérifie les valeurs et réessaie.
+            </p>
+          )}
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="ghost" onClick={onClose}>
+              Annuler
+            </Button>
+            <Button type="submit" disabled={create.isPending}>
+              {create.isPending ? "Création…" : "Créer et utiliser"}
+            </Button>
+          </div>
+        </form>
+      </div>
+    </div>
   );
 }
 

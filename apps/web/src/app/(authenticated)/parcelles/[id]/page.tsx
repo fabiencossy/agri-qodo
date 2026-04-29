@@ -3,7 +3,7 @@
 import { ArrowLeft, Calendar, Check, MapPin, Plus, Sprout, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Breadcrumb } from "@/components/app/breadcrumb";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,6 +20,7 @@ import {
 } from "@/lib/interventions";
 import { formatSurface, libelleZone, useParcelle } from "@/lib/parcelles";
 import {
+  type PlanApport as PlanApportType,
   useCreatePlanApport,
   useDeletePlanApport,
   usePlanFumure,
@@ -197,9 +198,9 @@ export default function ParcelleDetailPage() {
 
 function PlanFumureSection({ parcelleId, campagne }: { parcelleId: string; campagne: number }) {
   const plan = usePlanFumure({ parcelleId, campagne });
-  const realiser = useRealiserPlan();
   const remove = useDeletePlanApport();
   const [showAdd, setShowAdd] = useState(false);
+  const [confirmingPlan, setConfirmingPlan] = useState<PlanApportType | null>(null);
 
   const apports = plan.data ?? [];
   const prevu = apports.filter((a) => !a.interventionId);
@@ -278,10 +279,9 @@ function PlanFumureSection({ parcelleId, campagne }: { parcelleId: string; campa
                   <td className="px-3 py-2 text-right">
                     <div className="flex items-center justify-end gap-1">
                       <button
-                        onClick={() => realiser.mutate({ id: p.id })}
-                        disabled={realiser.isPending}
-                        title="Marquer comme réalisé (crée une intervention dans le carnet)"
-                        className="inline-flex items-center gap-1 rounded-md bg-green/10 px-2 py-1 text-xs text-green hover:bg-green/20 disabled:opacity-50"
+                        onClick={() => setConfirmingPlan(p)}
+                        title="Marquer comme réalisé (saisit la date et la quantité réelle)"
+                        className="inline-flex items-center gap-1 rounded-md bg-green/10 px-2 py-1 text-xs text-green hover:bg-green/20"
                       >
                         <Check className="h-3 w-3" />
                         Réaliser
@@ -332,6 +332,107 @@ function PlanFumureSection({ parcelleId, campagne }: { parcelleId: string; campa
           </ul>
         </details>
       )}
+
+      {confirmingPlan && (
+        <ConfirmRealiserDialog plan={confirmingPlan} onClose={() => setConfirmingPlan(null)} />
+      )}
+    </div>
+  );
+}
+
+function ConfirmRealiserDialog({ plan, onClose }: { plan: PlanApportType; onClose: () => void }) {
+  const realiser = useRealiserPlan();
+  const today = new Date().toISOString().slice(0, 10);
+  const [dateOperation, setDateOperation] = useState(
+    plan.datePrevue ? plan.datePrevue.slice(0, 10) : today,
+  );
+  const [quantite, setQuantite] = useState(plan.quantitePrevue ?? "");
+  const [technique, setTechnique] = useState<TechniqueEpandage | "">(plan.technique ?? "");
+
+  const isOrganique = plan.produitRef?.categorie === "ENGRAIS_ORGANIQUE";
+
+  const onSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    realiser.mutate(
+      {
+        id: plan.id,
+        dateOperation,
+        ...(quantite ? { quantite: Number(quantite) } : {}),
+        ...(technique ? { technique: technique as TechniqueEpandage } : {}),
+      },
+      { onSuccess: () => onClose() },
+    );
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-md rounded-2xl border border-border bg-background p-6 shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 className="mb-1 text-xl font-bold">Confirmer la réalisation</h2>
+        <p className="mb-4 text-sm text-foreground/60">
+          {plan.produitRef?.libelle ?? plan.produitLibre ?? "Apport"} sur {plan.parcelle.nom}.
+          Ajuste les valeurs réelles si elles diffèrent du prévisionnel.
+        </p>
+        <form onSubmit={onSubmit} className="space-y-3">
+          <label className="block text-sm">
+            <span className="mb-1 block font-medium">Date réelle de l'épandage</span>
+            <Input
+              type="date"
+              value={dateOperation}
+              onChange={(e) => setDateOperation(e.target.value)}
+              required
+            />
+          </label>
+          <label className="block text-sm">
+            <span className="mb-1 block font-medium">
+              Quantité réelle{plan.unite ? ` (${plan.unite})` : ""}
+            </span>
+            <Input
+              type="number"
+              step="0.1"
+              min="0"
+              value={String(quantite)}
+              onChange={(e) => setQuantite(e.target.value)}
+              placeholder={plan.quantitePrevue ? `Prévu : ${plan.quantitePrevue}` : ""}
+            />
+          </label>
+          {isOrganique && (
+            <label className="block text-sm">
+              <span className="mb-1 block font-medium">Technique d'épandage utilisée</span>
+              <select
+                value={technique}
+                onChange={(e) => setTechnique(e.target.value as TechniqueEpandage | "")}
+                className="h-11 w-full rounded-lg border border-border bg-background px-3 text-base"
+              >
+                <option value="">Non précisée</option>
+                {TECHNIQUES_ORDER.map((t) => (
+                  <option key={t} value={t}>
+                    {TECHNIQUE_LABEL[t]}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          {realiser.isError && (
+            <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+              Impossible de réaliser. Vérifie les valeurs et réessaie.
+            </p>
+          )}
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="ghost" onClick={onClose}>
+              Annuler
+            </Button>
+            <Button type="submit" disabled={realiser.isPending}>
+              {realiser.isPending ? "Enregistrement…" : "Confirmer la réalisation"}
+            </Button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }
@@ -366,6 +467,43 @@ function NewPlanApportForm({
 
   const selectedProduit = engrais.find((p) => p.id === produitId);
   const isOrganique = selectedProduit?.categorie === "ENGRAIS_ORGANIQUE";
+
+  // Auto-remplit l'unité quand le produit change
+  useEffect(() => {
+    if (selectedProduit) {
+      const map: Record<string, string> = { KG: "kg", L: "L", T: "t", M3: "m³", DOSE: "doses" };
+      setUnite(map[selectedProduit.unite] ?? "kg");
+      // Reset technique si elle n'est plus compatible avec la forme du produit
+      if (technique) {
+        const liquide = selectedProduit.unite === "L" || selectedProduit.unite === "M3";
+        const compatibleLiquide = (
+          [
+            "RAMPE_PENDILLARDE",
+            "TRAINEE_SOUPLE",
+            "INJECTION",
+            "EPANDEUR_CLASSIQUE",
+          ] as TechniqueEpandage[]
+        ).includes(technique);
+        const compatibleSolide = (
+          ["FUMIER_SOLIDE", "EPANDEUR_CLASSIQUE"] as TechniqueEpandage[]
+        ).includes(technique);
+        if ((liquide && !compatibleLiquide) || (!liquide && !compatibleSolide)) {
+          setTechnique("");
+        }
+      }
+    }
+  }, [selectedProduit, technique]);
+
+  const techniquesAutorisees = useMemo<readonly TechniqueEpandage[]>(() => {
+    if (!selectedProduit) return TECHNIQUES_ORDER;
+    if (selectedProduit.unite === "L" || selectedProduit.unite === "M3") {
+      return ["RAMPE_PENDILLARDE", "TRAINEE_SOUPLE", "INJECTION", "EPANDEUR_CLASSIQUE"];
+    }
+    if (selectedProduit.unite === "KG" || selectedProduit.unite === "T") {
+      return ["FUMIER_SOLIDE", "EPANDEUR_CLASSIQUE"];
+    }
+    return TECHNIQUES_ORDER;
+  }, [selectedProduit]);
 
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -431,12 +569,15 @@ function NewPlanApportForm({
             className="h-11 w-full rounded-lg border border-border bg-background px-3 text-base"
           >
             <option value="">Non précisée</option>
-            {TECHNIQUES_ORDER.map((t) => (
+            {techniquesAutorisees.map((t) => (
               <option key={t} value={t}>
                 {TECHNIQUE_LABEL[t]}
               </option>
             ))}
           </select>
+          <p className="mt-1 text-xs text-foreground/50">
+            Techniques filtrées selon la forme du produit (lisier ↔ solide).
+          </p>
         </label>
       )}
       <div className="flex justify-end gap-2 sm:col-span-2">
