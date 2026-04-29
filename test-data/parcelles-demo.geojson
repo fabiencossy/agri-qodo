@@ -11,7 +11,10 @@
       "properties": {
         "nom": "Champ du Loup",
         "zone": "ZA",
-        "EGRID": "CH771234567001"
+        "EGRID": "CH771234567001",
+        "culture": "Blé d'automne",
+        "variete": "Arina",
+        "dateSemis": "2025-10-15"
       },
       "geometry": {
         "type": "Polygon",
@@ -35,7 +38,9 @@
       "properties": {
         "nom": "Pré des Roses",
         "zone": "ZP",
-        "EGRID": "CH771234567002"
+        "EGRID": "CH771234567002",
+        "culture": "Prairie permanente",
+        "variete": "Mélange Mst 462"
       },
       "geometry": {
         "type": "Polygon",
@@ -58,7 +63,10 @@
       "properties": {
         "nom": "Grand Champ",
         "zone": "ZA",
-        "EGRID": "CH771234567003"
+        "EGRID": "CH771234567003",
+        "culture": "Maïs ensilage",
+        "variete": "P9610",
+        "dateSemis": "2026-04-20"
       },
       "geometry": {
         "type": "Polygon",
@@ -82,7 +90,9 @@
       "type": "Feature",
       "properties": {
         "nom": "Petit Pré derrière la grange",
-        "zone": "ZP"
+        "zone": "ZP",
+        "culture": "Prairie temporaire",
+        "variete": "Mélange Ms 200"
       },
       "geometry": {
         "type": "Polygon",
@@ -103,7 +113,9 @@
       "properties": {
         "nom": "Verger du Nord",
         "zone": "ZA",
-        "EGRID": "CH771234567005"
+        "EGRID": "CH771234567005",
+        "culture": "Verger haute-tige (pommes)",
+        "variete": "Boskoop, Gravenstein"
       },
       "geometry": {
         "type": "Polygon",
@@ -126,7 +138,9 @@
       "properties": {
         "nom": "Vigne du Coteau",
         "zone": "ZA",
-        "NUMMER": "Sévery-VD-1247-12"
+        "NUMMER": "Sévery-VD-1247-12",
+        "culture": "Vigne",
+        "variete": "Chasselas"
       },
       "geometry": {
         "type": "Polygon",
@@ -148,7 +162,8 @@
       "type": "Feature",
       "properties": {
         "nom": "Pré du Vieux Mouton",
-        "zone": "ZP"
+        "zone": "ZP",
+        "culture": "Pâturage extensif"
       },
       "geometry": {
         "type": "Polygon",
