@@ -6,12 +6,14 @@ import {
   HttpCode,
   HttpStatus,
   Param,
+  ParseIntPipe,
   ParseUUIDPipe,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from "@nestjs/common";
-import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
+import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from "@nestjs/swagger";
 import { JwtAuthGuard } from "@/modules/auth/guards/jwt-auth.guard";
 import { CreateInterventionDto } from "./dto/create-intervention.dto";
 import { UpdateInterventionDto } from "./dto/update-intervention.dto";
@@ -30,6 +32,23 @@ export class InterventionsController {
   })
   list() {
     return this.interventions.list();
+  }
+
+  @Get("with-geom")
+  @ApiOperation({
+    summary:
+      "Liste les interventions ayant une sous-zone géométrique (Polygon GeoJSON). Base de la vue Plan d'assolement.",
+  })
+  @ApiQuery({ name: "campagne", required: false, type: Number })
+  @ApiQuery({ name: "parcelleId", required: false, type: String })
+  listWithGeom(
+    @Query("campagne", new ParseIntPipe({ optional: true })) campagne?: number,
+    @Query("parcelleId") parcelleId?: string,
+  ) {
+    return this.interventions.listWithGeom({
+      ...(campagne !== undefined ? { campagne } : {}),
+      ...(parcelleId ? { parcelleId } : {}),
+    });
   }
 
   @Get(":id")
