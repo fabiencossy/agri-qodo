@@ -13,6 +13,29 @@ export type InterventionType =
   | "IRRIGATION"
   | "AUTRE";
 
+export type TechniqueEpandage =
+  | "EPANDEUR_CLASSIQUE"
+  | "RAMPE_PENDILLARDE"
+  | "TRAINEE_SOUPLE"
+  | "INJECTION"
+  | "FUMIER_SOLIDE";
+
+export const TECHNIQUE_LABEL: Record<TechniqueEpandage, string> = {
+  EPANDEUR_CLASSIQUE: "Épandeur classique (~30% pertes NH3)",
+  RAMPE_PENDILLARDE: "Rampe pendillarde (~15%)",
+  TRAINEE_SOUPLE: "Traînée souple / sabots (~10%)",
+  INJECTION: "Injection sol (~5%)",
+  FUMIER_SOLIDE: "Fumier solide, incorporé < 4h (~25%)",
+};
+
+export const TECHNIQUES_ORDER: TechniqueEpandage[] = [
+  "RAMPE_PENDILLARDE",
+  "TRAINEE_SOUPLE",
+  "INJECTION",
+  "FUMIER_SOLIDE",
+  "EPANDEUR_CLASSIQUE",
+];
+
 export type ValidationStatus = "SELF" | "PENDING" | "VALIDATED" | "REJECTED";
 
 export interface Intervention {
@@ -49,6 +72,7 @@ export interface CreateInterventionInput {
   produit?: string;
   quantite?: number;
   unite?: string;
+  techniqueEpandage?: TechniqueEpandage;
   notes?: string;
 }
 

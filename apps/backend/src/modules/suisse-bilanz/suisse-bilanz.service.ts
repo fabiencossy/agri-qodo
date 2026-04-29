@@ -79,6 +79,7 @@ export class SuisseBilanzService {
     const apportsEngrais: ApportEngrais[] = [];
     let fumuresSansProduit = 0;
     let fumuresSansQuantite = 0;
+    let fumuresOrgSansTechnique = 0;
     for (const iv of interventionsFumure) {
       if (!iv.produitRef) {
         fumuresSansProduit++;
@@ -92,10 +93,25 @@ export class SuisseBilanzService {
       const tauxN = iv.produitRef.tauxN !== null ? Number(iv.produitRef.tauxN) : 0;
       const tauxP = iv.produitRef.tauxP !== null ? Number(iv.produitRef.tauxP) : 0;
       // tauxN/tauxP exprimés en kg / 100 kg de produit (cf. Produit schema)
+      let kgN = (qte * tauxN) / 100;
+      const kgP = (qte * tauxP) / 100;
+
+      // Pertes NH3 par volatilisation pour FUMURE_ORGANIQUE.
+      // Si pas de technique saisie : on prend EPANDEUR_CLASSIQUE (30%) +
+      // warning pour inciter à préciser. P n'est pas volatil.
+      if (iv.type === InterventionType.FUMURE_ORGANIQUE) {
+        const technique = iv.techniqueEpandage ?? "EPANDEUR_CLASSIQUE";
+        const perte = config.pertesNH3ParTechnique[technique] ?? 0.3;
+        kgN = kgN * (1 - perte);
+        if (!iv.techniqueEpandage) {
+          fumuresOrgSansTechnique++;
+        }
+      }
+
       apportsEngrais.push({
         parcelleId: iv.parcelleId,
-        kgN: (qte * tauxN) / 100,
-        kgP: (qte * tauxP) / 100,
+        kgN,
+        kgP,
         categorie:
           iv.type === InterventionType.FUMURE_ORGANIQUE ? "ENGRAIS_ORGANIQUE" : "ENGRAIS_MINERAL",
       });
@@ -108,6 +124,12 @@ export class SuisseBilanzService {
     }
     if (fumuresSansQuantite > 0) {
       warnings.push(`${fumuresSansQuantite} fumure(s) sans quantité ignorée(s).`);
+    }
+    if (fumuresOrgSansTechnique > 0) {
+      warnings.push(
+        `${fumuresOrgSansTechnique} fumure(s) organique(s) sans technique d'épandage — ` +
+          "épandeur classique présumé (30% pertes NH3). Précise la technique pour un bilan plus juste.",
+      );
     }
 
     const input: BilanInput = {
@@ -133,6 +155,7 @@ export class SuisseBilanzService {
       facteurUgb,
       apportAtmospheriqueN,
       fixationLegumineuses,
+      pertesNH3ParTechnique,
       tolerance,
     ] = await Promise.all([
       this.ruleEngine.get<Record<string, number>>(
@@ -163,6 +186,10 @@ export class SuisseBilanzService {
         "suisse_bilanz.fixation_legumineuses",
         DEFAULT_SUISSE_BILANZ_CONFIG.fixationLegumineuses,
       ),
+      this.ruleEngine.get<Record<string, number>>(
+        "suisse_bilanz.pertes_nh3_par_technique",
+        DEFAULT_SUISSE_BILANZ_CONFIG.pertesNH3ParTechnique,
+      ),
       this.ruleEngine.get<number>(
         "suisse_bilanz.tolerance",
         DEFAULT_SUISSE_BILANZ_CONFIG.tolerance,
@@ -176,6 +203,7 @@ export class SuisseBilanzService {
       facteurUgb,
       apportAtmospheriqueN,
       fixationLegumineuses,
+      pertesNH3ParTechnique,
       tolerance,
     };
   }

@@ -77,6 +77,16 @@ enum ValidationStatus {
   REJECTED // Refusée par le propriétaire
 }
 
+// Technique d'épandage pour engrais organiques (lisier, fumier liquide).
+// Détermine la perte par volatilisation NH3, voir Guide Agridea 1.18.
+enum TechniqueEpandage {
+  EPANDEUR_CLASSIQUE // ~30% pertes NH3 — buse, palette, déflecteur
+  RAMPE_PENDILLARDE // ~15% — tuyaux pendants, dépose au sol
+  TRAINEE_SOUPLE // ~10% — sabots, sous le couvert végétal
+  INJECTION // ~5% — directement dans le sol
+  FUMIER_SOLIDE // ~25% — épandeur à fumier, incorporation < 4h
+}
+
 enum AnimalCategorie {
   VACHE_LAITIERE
   GENISSE
@@ -273,6 +283,9 @@ model Intervention {
   // Si SEMIS a généré une Culture, on garde le lien pour pouvoir la
   // ré-éditer / supprimer si l'intervention est modifiée.
   cultureId        String?          @map("culture_id")
+  // Technique d'épandage pour FUMURE_ORGANIQUE — détermine la perte NH3
+  // appliquée au calcul du bilan N (Guide Agridea 1.18).
+  techniqueEpandage TechniqueEpandage? @map("technique_epandage")
   validationStatus ValidationStatus @default(SELF) @map("validation_status")
   validatedAt      DateTime?        @map("validated_at")
   rejectedReason   String?          @map("rejected_reason")

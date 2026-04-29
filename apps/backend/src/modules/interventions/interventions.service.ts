@@ -149,6 +149,7 @@ export class InterventionsService {
           quantite: dto.quantite ?? null,
           unite: dto.unite ?? null,
           notes: dto.notes ?? null,
+          techniqueEpandage: dto.techniqueEpandage ?? null,
           cultureId,
           validationStatus,
         },
@@ -186,6 +187,9 @@ export class InterventionsService {
           ...(dto.produit !== undefined ? { produit: dto.produit } : {}),
           ...(dto.quantite !== undefined ? { quantite: dto.quantite } : {}),
           ...(dto.unite !== undefined ? { unite: dto.unite } : {}),
+          ...(dto.techniqueEpandage !== undefined
+            ? { techniqueEpandage: dto.techniqueEpandage }
+            : {}),
           ...(dto.notes !== undefined ? { notes: dto.notes } : {}),
         },
       });
