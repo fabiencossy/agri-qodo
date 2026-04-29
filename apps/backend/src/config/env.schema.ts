@@ -20,10 +20,13 @@ export const envSchema = z.object({
   CH_LOGIN_CLIENT_ID: z.string().optional(),
   CH_LOGIN_CLIENT_SECRET: z.string().optional(),
 
-  ODOO_URL: z.string().optional(),
-  ODOO_DB: z.string().optional(),
-  ODOO_USERNAME: z.string().optional(),
-  ODOO_PASSWORD: z.string().optional(),
+  // Clé maître pour chiffrer les API keys Odoo des tenants (AES-256-GCM).
+  // 32 bytes hex (64 caractères). Génération :
+  //   node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+  // Doit rester stable une fois en prod (sinon les API keys deviennent illisibles).
+  ODOO_CREDENTIALS_KEY: z
+    .string()
+    .regex(/^[0-9a-fA-F]{64}$/, "ODOO_CREDENTIALS_KEY doit être 64 caractères hex (32 bytes)"),
 
   OTEL_EXPORTER_OTLP_ENDPOINT: z.string().optional(),
   OTEL_SERVICE_NAME: z.string().default("agri-qodo-backend"),

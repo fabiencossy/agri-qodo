@@ -145,20 +145,34 @@ enum ProduitUnite {
 // ====================================================================
 
 model Exploitation {
-  id           String   @id @default(uuid())
+  id           String  @id @default(uuid())
   // Code unique format AQ-{canton}-{ufam}-{token4} — voir §6 spec
-  code         String   @unique
+  code         String  @unique
   nom          String
   canton       Canton
-  numeroUfam   String?  @map("numero_ufam") // n° canton/UFAM
-  numeroBdta   String?  @map("numero_bdta") // n° d'exploitation BDTA / Identitas
+  numeroUfam   String? @map("numero_ufam") // n° canton/UFAM
+  numeroBdta   String? @map("numero_bdta") // n° d'exploitation BDTA / Identitas
   adresse      String?
   npa          String?
   localite     String?
-  emailContact String?  @map("email_contact")
+  emailContact String? @map("email_contact")
   telephone    String?
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  // ----- Intégration Odoo Enterprise (M6) — config par exploitation -----
+  // Une exploitation = une base Odoo dédiée (Odoo.sh ou online.odoo.com).
+  // Multi-version simultanée v19+ : la version réelle est résolue à
+  // l'authentification via common.version() (cf packages/odoo-client).
+  odooUrl             String?   @map("odoo_url")
+  odooDb              String?   @map("odoo_db")
+  odooUsername        String?   @map("odoo_username")
+  // API key chiffrée AES-256-GCM (cf common/crypto). Format : base64url(iv|tag|ciphertext).
+  odooApiKeyEncrypted String?   @map("odoo_api_key_encrypted")
+  // Version Odoo détectée à la dernière connexion ("19.0+e", "20.0", …).
+  odooVersion         String?   @map("odoo_version")
+  odooConnectedAt     DateTime? @map("odoo_connected_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   users                 User[]
   parcelles             Parcelle[]
@@ -195,7 +209,6 @@ model User {
   // plusieurs exploitations. L'unicité est sur (email, tenantId).
   @@unique([email, tenantId])
   @@index([email])
-
   @@index([tenantId])
   @@map("users")
 }
@@ -235,7 +248,7 @@ model Parcelle {
   createdAt            DateTime                                     @default(now()) @map("created_at")
   updatedAt            DateTime                                     @updatedAt @map("updated_at")
 
-  tenant        Exploitation    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant        Exploitation   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   cultures      Culture[]
   interventions Intervention[]
   planApports   PlanApport[]
@@ -279,7 +292,7 @@ model PlanApport {
   id             String             @id @default(uuid())
   tenantId       String             @map("tenant_id")
   parcelleId     String             @map("parcelle_id")
-  campagne       Int                // année de récolte de la culture concernée
+  campagne       Int // année de récolte de la culture concernée
   datePrevue     DateTime?          @map("date_prevue")
   // Référence catalogue (recommandé). Si null, libellé libre + N/P estimés.
   produitId      String?            @map("produit_id")
@@ -312,42 +325,42 @@ model PlanApport {
 // ====================================================================
 
 model Intervention {
-  id               String           @id @default(uuid())
+  id                  String             @id @default(uuid())
   // UUID généré côté client pour idempotence à la sync
-  clientUuid       String           @unique @map("client_uuid")
-  ownerTenantId    String           @map("owner_tenant_id")
-  authorTenantId   String           @map("author_tenant_id") // peut différer de owner si M16
-  parcelleId       String           @map("parcelle_id")
-  type             InterventionType
-  dateOperation    DateTime         @map("date_operation")
+  clientUuid          String             @unique @map("client_uuid")
+  ownerTenantId       String             @map("owner_tenant_id")
+  authorTenantId      String             @map("author_tenant_id") // peut différer de owner si M16
+  parcelleId          String             @map("parcelle_id")
+  type                InterventionType
+  dateOperation       DateTime           @map("date_operation")
   // Référence catalogue (recommandé pour SEMIS, FUMURE, PHYTO).
   // Permet d'autopropulser : SEMIS+produit → Culture, FUMURE+produit → bilan N/P.
-  produitId        String?          @map("produit_id")
-  produit          String? // libellé libre, ou copie du libellé Produit pour traçabilité
-  quantite         Decimal?         @db.Decimal(12, 3)
+  produitId           String?            @map("produit_id")
+  produit             String? // libellé libre, ou copie du libellé Produit pour traçabilité
+  quantite            Decimal?           @db.Decimal(12, 3)
   // Surface réellement concernée par l'intervention en m². NULL = toute
   // la parcelle (cas par défaut). Permet de saisir un travail/semis/récolte
   // sur une portion (p.ex. 0.5 ha sur une parcelle de 1.2 ha).
-  surfaceTravailleeM2 Decimal?       @map("surface_travaillee_m2") @db.Decimal(12, 2)
-  unite            String? // "kg", "L", "t", "ha"
-  notes            String?
+  surfaceTravailleeM2 Decimal?           @map("surface_travaillee_m2") @db.Decimal(12, 2)
+  unite               String? // "kg", "L", "t", "ha"
+  notes               String?
   // Si SEMIS a généré une Culture, on garde le lien pour pouvoir la
   // ré-éditer / supprimer si l'intervention est modifiée.
-  cultureId        String?          @map("culture_id")
+  cultureId           String?            @map("culture_id")
   // Technique d'épandage pour FUMURE_ORGANIQUE — détermine la perte NH3
   // appliquée au calcul du bilan N (Guide Agridea 1.18).
-  techniqueEpandage TechniqueEpandage? @map("technique_epandage")
-  validationStatus ValidationStatus @default(SELF) @map("validation_status")
-  validatedAt      DateTime?        @map("validated_at")
-  rejectedReason   String?          @map("rejected_reason")
-  createdAt        DateTime         @default(now()) @map("created_at")
+  techniqueEpandage   TechniqueEpandage? @map("technique_epandage")
+  validationStatus    ValidationStatus   @default(SELF) @map("validation_status")
+  validatedAt         DateTime?          @map("validated_at")
+  rejectedReason      String?            @map("rejected_reason")
+  createdAt           DateTime           @default(now()) @map("created_at")
 
   ownerTenant  Exploitation @relation("InterventionOwner", fields: [ownerTenantId], references: [id], onDelete: Cascade)
   authorTenant Exploitation @relation("InterventionAuthor", fields: [authorTenantId], references: [id], onDelete: Cascade)
   parcelle     Parcelle     @relation(fields: [parcelleId], references: [id], onDelete: Cascade)
   produitRef   Produit?     @relation(fields: [produitId], references: [id], onDelete: SetNull)
   culture      Culture?     @relation(fields: [cultureId], references: [id], onDelete: SetNull)
-  planApport   PlanApport?  // 1-1 si réalisé depuis un plan
+  planApport   PlanApport? // 1-1 si réalisé depuis un plan
 
   @@index([ownerTenantId])
   @@index([authorTenantId])
@@ -487,35 +500,35 @@ model Rule {
 // ====================================================================
 
 model Produit {
-  id          String           @id @default(uuid())
-  tenantId    String?          @map("tenant_id") // null = produit global (read-only)
-  categorie   ProduitCategorie
-  code        String           @unique
-  libelle     String
-  fournisseur String?
-  marque      String?
+  id              String           @id @default(uuid())
+  tenantId        String?          @map("tenant_id") // null = produit global (read-only)
+  categorie       ProduitCategorie
+  code            String           @unique
+  libelle         String
+  fournisseur     String?
+  marque          String?
   // Numéro/code officiel (n° swissgranum, n° Mst Agroscope, n° W-OSAV pour
   // les phytos…). Permet la traçabilité réglementaire et la jointure avec
   // les listes officielles lors des futurs imports automatiques.
-  numeroOfficiel    String?    @map("numero_officiel")
+  numeroOfficiel  String?          @map("numero_officiel")
   // Source du référentiel (ex: "swissgranum 2025", "Agroscope eagff Mst 2025-28",
   // "OSAV PSM 15.04.2026"). Visible utilisateur — exigence OSAV.
-  sourceCatalogue   String?    @map("source_catalogue")
+  sourceCatalogue String?          @map("source_catalogue")
   // SEMENCE : code espèce qui matche les clés du rule engine
   // (suisse_bilanz.besoin_n_par_culture). Permet à un SEMIS de créer
   // automatiquement la Culture sur la parcelle.
-  especeCode  String?          @map("espece_code")
+  especeCode      String?          @map("espece_code")
   // ENGRAIS : teneurs N/P/K en kg/100kg de produit (ou kg/100L liquide).
   // Pour les engrais organiques (lisier 4 kg N/m³), utiliser unite = M3
   // ou L et exprimer le taux en kg/100L cohérent (× 1000 pour le m³).
-  tauxN       Decimal?         @map("taux_n") @db.Decimal(8, 3)
-  tauxP       Decimal?         @map("taux_p") @db.Decimal(8, 3)
-  tauxK       Decimal?         @map("taux_k") @db.Decimal(8, 3)
-  unite       ProduitUnite     @default(KG)
-  notes       String?
-  actif       Boolean          @default(true)
-  createdAt   DateTime         @default(now()) @map("created_at")
-  updatedAt   DateTime         @updatedAt @map("updated_at")
+  tauxN           Decimal?         @map("taux_n") @db.Decimal(8, 3)
+  tauxP           Decimal?         @map("taux_p") @db.Decimal(8, 3)
+  tauxK           Decimal?         @map("taux_k") @db.Decimal(8, 3)
+  unite           ProduitUnite     @default(KG)
+  notes           String?
+  actif           Boolean          @default(true)
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
 
   tenant        Exploitation?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   interventions Intervention[]
