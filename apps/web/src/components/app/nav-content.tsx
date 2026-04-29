@@ -19,6 +19,7 @@ import Link from "next/link";
 import type { Route } from "next";
 import { usePathname } from "next/navigation";
 import { useCurrentTenant, useLogout } from "@/lib/auth";
+import { TenantSwitcher } from "./tenant-switcher";
 
 interface NavLink {
   href: Route;
@@ -57,12 +58,12 @@ export function NavContent() {
 
   return (
     <>
-      {tenant.data && (
-        <div className="border-b border-border px-4 py-3">
-          <div className="text-sm font-medium">{tenant.data.nom}</div>
-          <div className="font-mono text-xs text-foreground/50">{tenant.data.code}</div>
-        </div>
-      )}
+      <div className="border-b border-border p-3">
+        <TenantSwitcher />
+        {tenant.data && (
+          <div className="mt-1.5 px-2 font-mono text-xs text-foreground/50">{tenant.data.code}</div>
+        )}
+      </div>
 
       <nav className="flex-1 overflow-y-auto p-3">
         <NavSection title="Navigation">
