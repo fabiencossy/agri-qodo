@@ -49,6 +49,37 @@ export function useLookupTenant(code: string, enabled: boolean) {
   });
 }
 
+export interface DirectoryHit {
+  id: string;
+  nom: string;
+  code: string;
+  canton: string;
+  adresse: string | null;
+  npa: string | null;
+  localite: string | null;
+  ownerPrenom: string | null;
+  ownerNom: string | null;
+}
+
+/**
+ * Recherche annuaire — déclenchée à partir de 2 caractères, debounce
+ * conseillé côté UI. N'inclut que les exploitations qui ont opté pour la
+ * visibilité publique. Endpoint : GET /partner-links/directory/search
+ */
+export function useSearchDirectory(query: string, canton?: string) {
+  const trimmed = query.trim();
+  return useQuery({
+    queryKey: ["partner-links", "directory", trimmed, canton ?? ""] as const,
+    queryFn: () => {
+      const params = new URLSearchParams({ q: trimmed });
+      if (canton) params.set("canton", canton);
+      return api<DirectoryHit[]>(`/api/partner-links/directory/search?${params}`);
+    },
+    enabled: trimmed.length >= 2,
+    retry: false,
+  });
+}
+
 export interface InvitePartnerInput {
   partnerCode: string;
   scope?: PartnerLinkScope;

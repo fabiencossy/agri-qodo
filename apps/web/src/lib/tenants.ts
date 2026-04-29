@@ -16,6 +16,7 @@ export interface TenantDetail {
   localite: string | null;
   emailContact: string | null;
   telephone: string | null;
+  visibleInDirectory: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -25,6 +26,7 @@ export interface UpdateTenantInput {
   nom?: string;
   numeroUfam?: string;
   numeroBdta?: string;
+  visibleInDirectory?: boolean;
 }
 
 export function useAccessibleTenants() {

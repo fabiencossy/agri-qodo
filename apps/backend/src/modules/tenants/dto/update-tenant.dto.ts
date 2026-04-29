@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from "@nestjs/swagger";
-import { IsOptional, IsString, Matches, MaxLength, MinLength } from "class-validator";
+import { IsBoolean, IsOptional, IsString, Matches, MaxLength, MinLength } from "class-validator";
 
 /**
  * Édition partielle de l'exploitation par son OWNER. Le `numeroExploitant`
@@ -40,4 +40,12 @@ export class UpdateTenantDto {
   @IsString()
   @MaxLength(20)
   numeroBdta?: string;
+
+  @ApiPropertyOptional({
+    description:
+      "Visibilité dans l'annuaire de recherche partenaires. Quand true, les autres exploitations peuvent te trouver via la search bar Partenaires (nom, adresse, localité).",
+  })
+  @IsOptional()
+  @IsBoolean()
+  visibleInDirectory?: boolean;
 }

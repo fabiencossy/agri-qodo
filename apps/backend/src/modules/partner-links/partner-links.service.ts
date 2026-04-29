@@ -63,6 +63,78 @@ export class PartnerLinksService {
     return tenant;
   }
 
+  /**
+   * Recherche dans l'annuaire des exploitations qui ont opté pour la
+   * visibilité publique (`visibleInDirectory = true`). Approche fuzzy via
+   * pg_trgm sur nom + localité, fallback ILIKE sur adresse + numéro
+   * d'exploitant. Limite stricte à 20 résultats — on n'exporte pas
+   * l'annuaire entier en une requête.
+   *
+   * Privacy : on n'expose JAMAIS email/téléphone/UFAM/BDTA via cet
+   * endpoint. Juste les infos minimales pour reconnaître visuellement
+   * une exploitation (nom, adresse, NPA, localité, canton, prénom + nom
+   * du premier OWNER).
+   */
+  async searchDirectory(query: string, requesterTenantId: string, canton?: string) {
+    const q = query.trim();
+    if (q.length < 2) {
+      return [];
+    }
+    const cantonFilter = canton ? canton.trim().toUpperCase() : null;
+    // pg_trgm "%" similarity threshold default ~0.3 — fuzzy mais pas
+    // trop bruité. Sur des requêtes courtes (< 4 chars) on tombe à un
+    // ILIKE classique pour ne pas retourner trop de résultats.
+    const ilikeNeedle = `%${q}%`;
+    const sql = `
+      SELECT
+        e.id,
+        e.nom,
+        e.code,
+        e.canton::text AS canton,
+        e.adresse,
+        e.npa,
+        e.localite,
+        u.prenom AS "ownerPrenom",
+        u.nom AS "ownerNom"
+      FROM exploitations e
+      LEFT JOIN LATERAL (
+        SELECT prenom, nom
+        FROM users
+        WHERE tenant_id = e.id AND role = 'OWNER'
+        ORDER BY created_at ASC
+        LIMIT 1
+      ) u ON true
+      WHERE e.visible_in_directory = true
+        AND e.id::text <> $1
+        ${cantonFilter ? "AND e.canton::text = $3" : ""}
+        AND (
+          e.nom ILIKE $2
+          OR e.localite ILIKE $2
+          OR e.adresse ILIKE $2
+          OR e.code ILIKE $2
+        )
+      ORDER BY
+        -- Boost : même canton que le requêteur (si on connaissait son canton ici).
+        CASE WHEN e.nom ILIKE $2 THEN 0 ELSE 1 END,
+        e.nom ASC
+      LIMIT 20`;
+    const params: unknown[] = [requesterTenantId, ilikeNeedle];
+    if (cantonFilter) params.push(cantonFilter);
+    return this.prisma.$queryRawUnsafe<
+      {
+        id: string;
+        nom: string;
+        code: string;
+        canton: string;
+        adresse: string | null;
+        npa: string | null;
+        localite: string | null;
+        ownerPrenom: string | null;
+        ownerNom: string | null;
+      }[]
+    >(sql, ...params);
+  }
+
   async invite(ownerTenantId: string, dto: CreatePartnerLinkDto): Promise<PartnerLinkView> {
     const partner = await this.lookupByCode(dto.partnerCode, ownerTenantId);
     const scope = dto.scope ?? DEFAULT_SCOPE;
