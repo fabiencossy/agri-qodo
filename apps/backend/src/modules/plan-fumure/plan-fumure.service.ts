@@ -154,10 +154,18 @@ export class PlanFumureService {
 
   /**
    * Réalise un plan : crée une Intervention FUMURE (organique ou minérale
-   * selon la catégorie du produit) liée au plan. Si le plan n'a pas de
-   * produitId, on essaie d'utiliser produitLibre.
+   * selon la catégorie du produit) liée au plan. Les valeurs réelles
+   * (date, quantité, technique) peuvent différer du prévisionnel — c'est
+   * justement le sens du "réalisé vs prévu".
    */
-  async realiser(id: string, dateOperation?: string) {
+  async realiser(
+    id: string,
+    overrides: {
+      dateOperation?: string;
+      quantite?: number;
+      technique?: import("@prisma/client").TechniqueEpandage;
+    } = {},
+  ) {
     const { tenantId } = this.tenantContext.get();
     const plan = await this.prisma.planApport.findFirst({
       where: { id, tenantId },
@@ -169,13 +177,17 @@ export class PlanFumureService {
     }
 
     // Détermine le type d'intervention selon la catégorie du produit.
-    // Par défaut FUMURE_MINERALE (c'est le cas le plus courant).
     const type =
       plan.produitRef?.categorie === "ENGRAIS_ORGANIQUE"
         ? InterventionType.FUMURE_ORGANIQUE
         : InterventionType.FUMURE_MINERALE;
 
-    const date = dateOperation ? new Date(dateOperation) : (plan.datePrevue ?? new Date());
+    const date = overrides.dateOperation
+      ? new Date(overrides.dateOperation)
+      : (plan.datePrevue ?? new Date());
+    const quantite =
+      overrides.quantite ?? (plan.quantitePrevue ? Number(plan.quantitePrevue) : null);
+    const technique = overrides.technique ?? plan.technique;
 
     return this.prisma.$transaction(async (tx) => {
       const intervention = await tx.intervention.create({
@@ -188,9 +200,9 @@ export class PlanFumureService {
           dateOperation: date,
           produitId: plan.produitId,
           produit: plan.produitRef?.libelle ?? plan.produitLibre ?? null,
-          quantite: plan.quantitePrevue,
+          quantite,
           unite: plan.unite,
-          techniqueEpandage: plan.technique,
+          techniqueEpandage: technique,
           notes: plan.notes
             ? `Réalisé depuis plan : ${plan.notes}`
             : "Réalisé depuis le plan de fumure",

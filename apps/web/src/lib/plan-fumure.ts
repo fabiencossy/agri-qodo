@@ -87,10 +87,20 @@ export function useDeletePlanApport() {
 export function useRealiserPlan() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, dateOperation }: { id: string; dateOperation?: string }) =>
+    mutationFn: ({
+      id,
+      dateOperation,
+      quantite,
+      technique,
+    }: {
+      id: string;
+      dateOperation?: string;
+      quantite?: number;
+      technique?: TechniqueEpandage;
+    }) =>
       api<PlanApport>(`/api/plan-fumure/${id}/realiser`, {
         method: "POST",
-        body: { dateOperation },
+        body: { dateOperation, quantite, technique },
       }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: KEY });

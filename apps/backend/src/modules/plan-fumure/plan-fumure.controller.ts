@@ -14,6 +14,7 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from "@nestjs/swagger";
+import { TechniqueEpandage } from "@prisma/client";
 import { JwtAuthGuard } from "@/modules/auth/guards/jwt-auth.guard";
 import { CreatePlanApportDto } from "./dto/create-plan-apport.dto";
 import { UpdatePlanApportDto } from "./dto/update-plan-apport.dto";
@@ -65,9 +66,17 @@ export class PlanFumureController {
   @Post(":id/realiser")
   @ApiOperation({
     summary:
-      "Crée une Intervention FUMURE depuis ce plan et lie l'apport prévu à l'intervention réalisée.",
+      "Crée une Intervention FUMURE depuis ce plan et lie l'apport prévu à l'intervention réalisée. Les valeurs réelles peuvent override le prévisionnel.",
   })
-  realiser(@Param("id", ParseUUIDPipe) id: string, @Body() body: { dateOperation?: string } = {}) {
-    return this.service.realiser(id, body.dateOperation);
+  realiser(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body()
+    body: {
+      dateOperation?: string;
+      quantite?: number;
+      technique?: TechniqueEpandage;
+    } = {},
+  ) {
+    return this.service.realiser(id, body);
   }
 }
