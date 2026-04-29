@@ -6,6 +6,7 @@ import {
   BookOpen,
   ClipboardList,
   FlaskConical,
+  Handshake,
   Home,
   LogOut,
   type LucideIcon,
@@ -40,7 +41,10 @@ const PILOTAGE: NavLink[] = [
   { href: "/veille", label: "Veille réglementaire", icon: BookOpen },
 ];
 
-const ADMINISTRATION: NavLink[] = [{ href: "/utilisateurs", label: "Utilisateurs", icon: Users }];
+const ADMINISTRATION: NavLink[] = [
+  { href: "/utilisateurs", label: "Utilisateurs", icon: Users },
+  { href: "/partenaires", label: "Partenaires", icon: Handshake },
+];
 
 /**
  * Contenu de navigation partagé entre la sidebar desktop (lg+) et le
