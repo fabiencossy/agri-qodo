@@ -9,6 +9,7 @@
  */
 import { Beef, Upload } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { ImportBdtaDialog } from "@/components/animaux/import-bdta-dialog";
 import { Breadcrumb } from "@/components/app/breadcrumb";
@@ -22,8 +23,11 @@ import {
 import {
   type Animal,
   type AnimalFamille,
+  bvdBadge,
   FAMILLE_BY_CATEGORIE,
   isBovin,
+  libelleLabel,
+  libelleUsage,
   useAnimaux,
   useUgb,
 } from "@/lib/animaux";
@@ -73,6 +77,7 @@ function formatUgb(n: number): string {
 }
 
 export default function CheptelPage() {
+  const router = useRouter();
   const animauxQuery = useAnimaux();
   const ugb = useUgb();
   const [importOpen, setImportOpen] = useState(false);
@@ -83,6 +88,8 @@ export default function CheptelPage() {
       { key: "identified", label: "Identifiés (n° boucle)", predicate: (a) => !!a.numeroBoucle },
       { key: "non-identified", label: "Sans identification", predicate: (a) => !a.numeroBoucle },
       { key: "with-name", label: "Avec un nom", predicate: (a) => !!a.nom },
+      { key: "alive", label: "Vivants", predicate: (a) => !a.dateMort },
+      { key: "dead", label: "Morts", predicate: (a) => !!a.dateMort },
       {
         key: "young",
         label: "Jeunes (< 1 an)",
@@ -100,6 +107,13 @@ export default function CheptelPage() {
         },
       },
       { key: "bovin", label: "Bovins uniquement", predicate: (a) => isBovin(a.categorie) },
+      { key: "bvd-frei", label: "BVD-frei", predicate: (a) => a.statutBvd === "frei" },
+      {
+        key: "bvd-suspect",
+        label: "BVD à surveiller (suspect/positif)",
+        predicate: (a) => a.statutBvd === "suspect" || a.statutBvd === "positif",
+      },
+      { key: "bio", label: "Label Bio", predicate: (a) => a.secteurLabel === "bio" },
     ],
     [],
   );
@@ -122,11 +136,36 @@ export default function CheptelPage() {
         order: FAMILLE_ORDER as string[],
       },
       {
+        key: "usage",
+        label: "Usage",
+        groupKey: (a) => a.usage ?? "non-spécifié",
+        groupLabel: (k) => (k === "non-spécifié" ? "Non spécifié" : libelleUsage(k)),
+      },
+      {
+        key: "secteur-label",
+        label: "Secteur / Label",
+        groupKey: (a) => a.secteurLabel ?? "non-spécifié",
+        groupLabel: (k) => (k === "non-spécifié" ? "Non spécifié" : libelleLabel(k)),
+      },
+      {
+        key: "bvd",
+        label: "Statut BVD",
+        groupKey: (a) => a.statutBvd ?? "non-spécifié",
+        groupLabel: (k) => (k === "non-spécifié" ? "BVD non renseigné" : (bvdBadge(k)?.label ?? k)),
+      },
+      {
         key: "identification",
         label: "État d'identification",
         groupKey: (a) => (a.numeroBoucle ? "Identifiés" : "À identifier"),
         groupLabel: (k) => k,
         order: ["Identifiés", "À identifier"],
+      },
+      {
+        key: "vivant-mort",
+        label: "Vivant / Mort",
+        groupKey: (a) => (a.dateMort ? "Morts" : "Vivants"),
+        groupLabel: (k) => k,
+        order: ["Vivants", "Morts"],
       },
     ],
     [],
@@ -168,10 +207,51 @@ export default function CheptelPage() {
         hideBelow: "md",
       },
       {
+        key: "usage",
+        header: "Usage",
+        cell: (a) =>
+          a.usage ? (
+            <span className="text-xs">{libelleUsage(a.usage)}</span>
+          ) : (
+            <span className="text-foreground/30">—</span>
+          ),
+        hideBelow: "lg",
+      },
+      {
+        key: "label",
+        header: "Label",
+        cell: (a) =>
+          a.secteurLabel ? (
+            <span className="text-xs">{libelleLabel(a.secteurLabel)}</span>
+          ) : (
+            <span className="text-foreground/30">—</span>
+          ),
+        hideBelow: "lg",
+      },
+      {
+        key: "bvd",
+        header: "BVD",
+        cell: (a) => {
+          const b = bvdBadge(a.statutBvd);
+          if (!b) return <span className="text-foreground/30">—</span>;
+          return (
+            <span className={`rounded px-2 py-0.5 text-xs font-medium ${b.color}`}>{b.label}</span>
+          );
+        },
+        hideBelow: "md",
+      },
+      {
         key: "statut",
         header: "Statut",
-        cell: (a) =>
-          a.isActive ? (
+        cell: (a) => {
+          if (a.dateMort) {
+            return (
+              <span className="rounded bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800">
+                Mort
+              </span>
+            );
+          }
+          return a.isActive ? (
             <span className="rounded bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800">
               Actif
             </span>
@@ -179,7 +259,8 @@ export default function CheptelPage() {
             <span className="rounded bg-foreground/10 px-2 py-0.5 text-xs text-foreground/60">
               Inactif
             </span>
-          ),
+          );
+        },
         hideBelow: "sm",
       },
     ],
@@ -272,11 +353,15 @@ export default function CheptelPage() {
               a.numeroBoucle ?? "",
               libelleCategorie(a.categorie),
               FAMILLE_BY_CATEGORIE[a.categorie],
+              a.usage ?? "",
+              a.secteurLabel ?? "",
+              a.statutBvd ?? "",
             ].join(" ")
           }
-          searchPlaceholder="Rechercher par nom, n° boucle, catégorie…"
+          searchPlaceholder="Rechercher par nom, n° boucle, catégorie, usage, label…"
           filters={filters}
           groupBys={groupBys}
+          onItemClick={(a) => router.push(`/animaux/${a.id}` as never)}
           emptyState={
             <div>
               <p className="mb-3 text-sm text-foreground/60">

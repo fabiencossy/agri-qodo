@@ -10,11 +10,61 @@ export interface Animal {
   categorie: AnimalCategorie;
   nom: string | null;
   numeroBoucle: string | null;
+  sexe: "M" | "F" | null;
   dateNaissance: string | null;
+  dateMort: string | null;
+  usage: string | null;
+  secteurLabel: string | null;
+  statutBvd: string | null;
   lotId: string | null;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
+}
+
+export const USAGES: { value: string; label: string }[] = [
+  { value: "laitiere", label: "Laitière" },
+  { value: "allaitante", label: "Allaitante" },
+  { value: "engraissement", label: "Engraissement" },
+  { value: "reproduction", label: "Reproduction" },
+  { value: "jeune", label: "Jeune" },
+  { value: "trait", label: "Trait" },
+  { value: "loisir", label: "Loisir" },
+  { value: "autre", label: "Autre" },
+];
+
+export const LABELS: { value: string; label: string }[] = [
+  { value: "bio", label: "Bio Suisse / Bourgeon" },
+  { value: "ips", label: "IP-Suisse" },
+  { value: "per", label: "PER" },
+  { value: "suisse-garantie", label: "Suisse Garantie" },
+  { value: "conventionnel", label: "Conventionnel" },
+  { value: "autre", label: "Autre" },
+];
+
+export const STATUTS_BVD: { value: string; label: string; color: string }[] = [
+  { value: "frei", label: "BVD-frei", color: "bg-emerald-100 text-emerald-800" },
+  { value: "vaccine", label: "Vacciné", color: "bg-blue-100 text-blue-800" },
+  { value: "exempt", label: "Exempt", color: "bg-emerald-100 text-emerald-800" },
+  { value: "suspect", label: "Suspect", color: "bg-amber-100 text-amber-800" },
+  { value: "positif", label: "Positif", color: "bg-red-100 text-red-800" },
+];
+
+export function libelleUsage(v: string | null): string {
+  if (!v) return "—";
+  return USAGES.find((u) => u.value === v)?.label ?? v;
+}
+
+export function libelleLabel(v: string | null): string {
+  if (!v) return "—";
+  return LABELS.find((l) => l.value === v)?.label ?? v;
+}
+
+export function bvdBadge(v: string | null): { label: string; color: string } | null {
+  if (!v) return null;
+  const found = STATUTS_BVD.find((s) => s.value === v);
+  if (found) return { label: found.label, color: found.color };
+  return { label: v, color: "bg-foreground/10 text-foreground/70" };
 }
 
 export interface AnimauxSummary {
@@ -38,8 +88,15 @@ export interface CreateAnimalInput {
   categorie: AnimalCategorie;
   nom?: string;
   numeroBoucle?: string;
+  sexe?: "M" | "F";
   dateNaissance?: string;
+  dateMort?: string;
+  usage?: string;
+  secteurLabel?: string;
+  statutBvd?: string;
 }
+
+export type UpdateAnimalInput = Partial<CreateAnimalInput> & { isActive?: boolean };
 
 export interface CreateBatchInput {
   categorie: AnimalCategorie;
@@ -240,5 +297,25 @@ export function useDeleteAnimal() {
   return useMutation({
     mutationFn: (id: string) => api<void>(`/api/animaux/${id}`, { method: "DELETE" }),
     onSuccess: () => invalidateAll(qc),
+  });
+}
+
+export function useAnimal(id: string | undefined) {
+  return useQuery({
+    queryKey: ["animaux", id] as const,
+    queryFn: () => api<Animal>(`/api/animaux/${id}`),
+    enabled: !!id,
+  });
+}
+
+export function useUpdateAnimal() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...input }: UpdateAnimalInput & { id: string }) =>
+      api<Animal>(`/api/animaux/${id}`, { method: "PATCH", body: input }),
+    onSuccess: (a) => {
+      invalidateAll(qc);
+      void qc.invalidateQueries({ queryKey: ["animaux", a.id] });
+    },
   });
 }

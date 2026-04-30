@@ -115,7 +115,12 @@ export class AnimauxService {
           categorie: dto.categorie,
           nom: dto.nom ?? null,
           numeroBoucle: dto.numeroBoucle ?? null,
+          sexe: dto.sexe ?? null,
           dateNaissance: dto.dateNaissance ? new Date(dto.dateNaissance) : null,
+          dateMort: dto.dateMort ? new Date(dto.dateMort) : null,
+          usage: dto.usage ?? null,
+          secteurLabel: dto.secteurLabel ?? null,
+          statutBvd: dto.statutBvd ?? null,
           lotId: dto.lotId ?? null,
         },
       });
@@ -306,9 +311,16 @@ export class AnimauxService {
         ...(dto.categorie !== undefined ? { categorie: dto.categorie } : {}),
         ...(dto.nom !== undefined ? { nom: dto.nom } : {}),
         ...(dto.numeroBoucle !== undefined ? { numeroBoucle: dto.numeroBoucle } : {}),
+        ...(dto.sexe !== undefined ? { sexe: dto.sexe } : {}),
         ...(dto.dateNaissance !== undefined
           ? { dateNaissance: dto.dateNaissance ? new Date(dto.dateNaissance) : null }
           : {}),
+        ...(dto.dateMort !== undefined
+          ? { dateMort: dto.dateMort ? new Date(dto.dateMort) : null }
+          : {}),
+        ...(dto.usage !== undefined ? { usage: dto.usage } : {}),
+        ...(dto.secteurLabel !== undefined ? { secteurLabel: dto.secteurLabel } : {}),
+        ...(dto.statutBvd !== undefined ? { statutBvd: dto.statutBvd } : {}),
         ...(dto.lotId !== undefined ? { lotId: dto.lotId } : {}),
         ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
       },
