@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import type { PartnerLinkLevel } from "@prisma/client";
+import type { PartnerLinkLevel, UserRole } from "@prisma/client";
 import { AsyncLocalStorage } from "node:async_hooks";
 
 /**
@@ -11,11 +11,13 @@ import { AsyncLocalStorage } from "node:async_hooks";
  * `tenantId` = le tenant actif pour cette requête (peut être un partenaire
  * via header `X-Active-Tenant-Id`).
  * `partnerNiveau` = niveau d'autorisation si on travaille sur un partenaire.
+ * `role` = rôle de l'utilisateur sur son home tenant (issu du JWT).
  */
 interface TenantStore {
   tenantId?: string;
   userId?: string;
   homeTenantId?: string;
+  role?: UserRole;
   partnerNiveau?: PartnerLinkLevel;
 }
 
@@ -25,6 +27,8 @@ export interface TenantContext {
   userId: string;
   /** Tenant d'origine de l'utilisateur (issu du JWT). */
   homeTenantId: string;
+  /** Rôle de l'utilisateur (OWNER / EMPLOYE / COMPTABLE / CONSULTANT). */
+  role?: UserRole;
   /** Si défini, on travaille sur le tenant d'un partenaire avec ce niveau. */
   partnerNiveau?: PartnerLinkLevel;
 }
@@ -52,6 +56,7 @@ export class TenantContextService {
       userId: ctx.userId,
       homeTenantId: ctx.homeTenantId,
     };
+    if (ctx.role !== undefined) store.role = ctx.role;
     if (ctx.partnerNiveau !== undefined) store.partnerNiveau = ctx.partnerNiveau;
     return this.storage.run(store, fn);
   }
@@ -72,6 +77,8 @@ export class TenantContextService {
     store.tenantId = ctx.tenantId;
     store.userId = ctx.userId;
     store.homeTenantId = ctx.homeTenantId;
+    if (ctx.role !== undefined) store.role = ctx.role;
+    else delete store.role;
     if (ctx.partnerNiveau !== undefined) {
       store.partnerNiveau = ctx.partnerNiveau;
     } else {
@@ -93,6 +100,7 @@ export class TenantContextService {
       userId: store.userId,
       homeTenantId: store.homeTenantId,
     };
+    if (store.role !== undefined) out.role = store.role;
     if (store.partnerNiveau !== undefined) out.partnerNiveau = store.partnerNiveau;
     return out;
   }
@@ -106,6 +114,7 @@ export class TenantContextService {
       userId: store.userId,
       homeTenantId: store.homeTenantId,
     };
+    if (store.role !== undefined) out.role = store.role;
     if (store.partnerNiveau !== undefined) out.partnerNiveau = store.partnerNiveau;
     return out;
   }

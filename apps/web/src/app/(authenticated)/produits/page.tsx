@@ -4,6 +4,7 @@ import { Package, Plus, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Breadcrumb } from "@/components/app/breadcrumb";
 import { Button } from "@/components/ui/button";
+import { useCurrentUser } from "@/lib/auth";
 import {
   CATEGORIE_LABEL,
   CATEGORIES_ORDER,
@@ -15,11 +16,17 @@ import {
 } from "@/lib/produits";
 import { NewProduitDialog } from "./new-produit-dialog";
 
+function formatCHF(n: number): string {
+  return n.toLocaleString("fr-CH", { style: "currency", currency: "CHF" });
+}
+
 export default function ProduitsPage() {
   const [filtre, setFiltre] = useState<ProduitCategorie | "ALL">("ALL");
   const [dialogOpen, setDialogOpen] = useState(false);
   const produits = useProduits(filtre === "ALL" ? undefined : filtre);
   const deleteMut = useDeleteProduit();
+  const me = useCurrentUser();
+  const isAdmin = me.data?.role === "OWNER" || me.data?.role === "COMPTABLE";
 
   const grouped = useMemo(() => {
     const map = new Map<ProduitCategorie, Produit[]>();
@@ -97,6 +104,7 @@ export default function ProduitsPage() {
                       <th className="px-4 py-2">Fournisseur</th>
                       <th className="px-4 py-2">Espèce / Teneurs</th>
                       <th className="px-4 py-2">Unité</th>
+                      {isAdmin && <th className="px-4 py-2 text-right">Prix CHF/u</th>}
                       <th className="px-4 py-2 text-right">Source</th>
                     </tr>
                   </thead>
@@ -126,6 +134,15 @@ export default function ProduitsPage() {
                           )}
                         </td>
                         <td className="px-4 py-2 text-foreground/70">{UNITE_LABEL[p.unite]}</td>
+                        {isAdmin && (
+                          <td className="px-4 py-2 text-right font-mono text-xs tabular-nums">
+                            {p.prixVenteCHF ? (
+                              formatCHF(Number(p.prixVenteCHF))
+                            ) : (
+                              <span className="text-foreground/30">—</span>
+                            )}
+                          </td>
+                        )}
                         <td className="px-4 py-2 text-right">
                           {p.tenantId === null ? (
                             <span className="rounded-full bg-foreground/10 px-2 py-0.5 text-xs">

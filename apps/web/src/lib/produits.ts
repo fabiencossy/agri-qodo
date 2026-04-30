@@ -25,6 +25,8 @@ export interface Produit {
   tauxP: string | null;
   tauxK: string | null;
   unite: ProduitUnite;
+  /** Prix de vente catalogue CHF HT par unité — null si pas autorisé à le voir. */
+  prixVenteCHF: string | null;
   notes: string | null;
   actif: boolean;
 }
@@ -39,6 +41,7 @@ export interface CreateProduitInput {
   tauxP?: number;
   tauxK?: number;
   unite?: ProduitUnite;
+  prixVenteCHF?: number;
   notes?: string;
 }
 

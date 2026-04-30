@@ -575,6 +575,10 @@ model Produit {
   tauxP           Decimal?         @map("taux_p") @db.Decimal(8, 3)
   tauxK           Decimal?         @map("taux_k") @db.Decimal(8, 3)
   unite           ProduitUnite     @default(KG)
+  // Prix de vente CHF HT par unité — visible des admin uniquement (RBAC :
+  // OWNER / COMPTABLE). Les EMPLOYE saisissent le prix sur la ligne de
+  // travail si nécessaire, sans voir le prix catalogue ni les marges.
+  prixVenteCHF    Decimal?         @map("prix_vente_chf") @db.Decimal(12, 2)
   notes           String?
   actif           Boolean          @default(true)
   createdAt       DateTime         @default(now()) @map("created_at")
