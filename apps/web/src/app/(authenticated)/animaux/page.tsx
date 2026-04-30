@@ -1,6 +1,7 @@
 "use client";
 
-import { Beef, Check, Minus, Plus, Tag, Upload } from "lucide-react";
+import { Beef, Check, List, Minus, Plus, Tag, Upload } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { IdentifierBovinDialog } from "@/components/animaux/identifier-bovin-dialog";
 import { ImportBdtaDialog } from "@/components/animaux/import-bdta-dialog";
@@ -49,10 +50,18 @@ export default function AnimauxPage() {
               automatiquement quand la date de naissance d'un bovin est connue.
             </p>
           </div>
-          <Button variant="secondary" onClick={() => setImportOpen(true)}>
-            <Upload className="mr-1 h-4 w-4" />
-            Importer depuis BDTA
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Link href="/animaux/liste">
+              <Button variant="secondary">
+                <List className="mr-1 h-4 w-4" />
+                Vue détaillée
+              </Button>
+            </Link>
+            <Button variant="secondary" onClick={() => setImportOpen(true)}>
+              <Upload className="mr-1 h-4 w-4" />
+              Importer depuis BDTA
+            </Button>
+          </div>
         </div>
         <ImportBdtaDialog open={importOpen} onClose={() => setImportOpen(false)} />
 
