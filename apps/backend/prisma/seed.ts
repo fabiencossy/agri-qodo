@@ -385,10 +385,52 @@ function bdtaNumberFor(i: number): string {
 // à un ancien tenant fantôme.
 const PURGE_CODES = ["AQ-VD-DEMO-PUBLIC", "AQ-VD-ADMIN-PUBLIC", "AQ-VD-1247-DEMO"];
 
-async function purgeOldDemoTenants(): Promise<void> {
+/**
+ * Snapshot Odoo extrait avant purge — réinjecté à la création du
+ * nouveau tenant pour ne pas perdre la connexion API que l'admin a
+ * configurée manuellement.
+ */
+interface OdooSnapshot {
+  odooUrl: string | null;
+  odooDb: string | null;
+  odooUsername: string | null;
+  odooApiKeyEncrypted: string | null;
+  odooVersion: string | null;
+  odooConnectedAt: Date | null;
+}
+
+async function purgeOldDemoTenants(): Promise<OdooSnapshot | null> {
+  let preservedOdoo: OdooSnapshot | null = null;
   for (const code of PURGE_CODES) {
-    const existing = await prisma.exploitation.findUnique({ where: { code } });
+    const existing = await prisma.exploitation.findUnique({
+      where: { code },
+      select: {
+        id: true,
+        odooUrl: true,
+        odooDb: true,
+        odooUsername: true,
+        odooApiKeyEncrypted: true,
+        odooVersion: true,
+        odooConnectedAt: true,
+      },
+    });
     if (!existing) continue;
+
+    // Préserve la config Odoo du tenant principal (DEMO-PUBLIC) si elle
+    // a été renseignée par l'admin — sinon on perdrait la connexion API
+    // à chaque re-seed.
+    if (code === DEMO_CODE && existing.odooApiKeyEncrypted) {
+      preservedOdoo = {
+        odooUrl: existing.odooUrl,
+        odooDb: existing.odooDb,
+        odooUsername: existing.odooUsername,
+        odooApiKeyEncrypted: existing.odooApiKeyEncrypted,
+        odooVersion: existing.odooVersion,
+        odooConnectedAt: existing.odooConnectedAt,
+      };
+      console.log(`  ↳ config Odoo préservée pour ${code}`);
+    }
+
     await prisma.ligneTravailHeure.deleteMany({ where: { travail: { tenantId: existing.id } } });
     await prisma.ligneTravailProduit.deleteMany({ where: { travail: { tenantId: existing.id } } });
     await prisma.travail.deleteMany({ where: { tenantId: existing.id } });
@@ -402,10 +444,11 @@ async function purgeOldDemoTenants(): Promise<void> {
     await prisma.exploitation.delete({ where: { id: existing.id } });
     console.log(`✓ Ancien tenant purgé : ${code}`);
   }
+  return preservedOdoo;
 }
 
 async function seedDemoTenant(): Promise<void> {
-  await purgeOldDemoTenants();
+  const preservedOdoo = await purgeOldDemoTenants();
 
   const tenant = await prisma.exploitation.create({
     data: {
@@ -420,8 +463,22 @@ async function seedDemoTenant(): Promise<void> {
       emailContact: "demo@demo.ch",
       telephone: "+41 21 123 45 67",
       visibleInDirectory: true,
+      // Réinjecte la config Odoo préservée (l'admin l'avait renseignée).
+      ...(preservedOdoo
+        ? {
+            odooUrl: preservedOdoo.odooUrl,
+            odooDb: preservedOdoo.odooDb,
+            odooUsername: preservedOdoo.odooUsername,
+            odooApiKeyEncrypted: preservedOdoo.odooApiKeyEncrypted,
+            odooVersion: preservedOdoo.odooVersion,
+            odooConnectedAt: preservedOdoo.odooConnectedAt,
+          }
+        : {}),
     },
   });
+  if (preservedOdoo) {
+    console.log(`  ↳ config Odoo restaurée sur le nouveau tenant`);
+  }
 
   // ---- Users : OWNER + EMPLOYE sur le même tenant -----------------------
   const adminHash = await bcrypt.hash("admin", 10);
