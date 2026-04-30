@@ -60,13 +60,13 @@ export default function MaterielsPage() {
         />
 
         {isAdmin && odoo.connected && (
-          <div className="mb-4 flex flex-wrap items-center gap-3 rounded-2xl border border-violet-200 bg-violet-50 px-4 py-3 sm:px-5 dark:border-violet-800 dark:bg-violet-950/30">
-            <RefreshCw className="h-5 w-5 flex-shrink-0 text-violet-700 dark:text-violet-300" />
+          <div className="mb-4 flex flex-wrap items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 sm:px-5 dark:border-amber-800 dark:bg-amber-950/30">
+            <RefreshCw className="h-5 w-5 flex-shrink-0 text-amber-700 dark:text-amber-300" />
             <div className="flex-1 text-sm">
-              <p className="font-semibold text-violet-900 dark:text-violet-200">
+              <p className="font-semibold text-amber-900 dark:text-amber-200">
                 Synchronisation Odoo
               </p>
-              <p className="text-xs text-violet-700/80 dark:text-violet-300/80">
+              <p className="text-xs text-amber-700/80 dark:text-amber-300/80">
                 Importe tous les <code className="font-mono">product.product</code> de type{" "}
                 <code className="font-mono">service</code> depuis ton instance Odoo.
               </p>
@@ -75,7 +75,7 @@ export default function MaterielsPage() {
               onClick={handleSyncOdoo}
               disabled={syncOdoo.isPending}
               size="sm"
-              className="bg-violet-600 hover:bg-violet-700"
+              className="bg-amber-600 hover:bg-amber-700"
             >
               <RefreshCw className={`mr-1 h-4 w-4 ${syncOdoo.isPending ? "animate-spin" : ""}`} />
               {syncOdoo.isPending ? "Sync…" : "Synchroniser"}
@@ -175,7 +175,7 @@ export default function MaterielsPage() {
                         </td>
                         <td className="px-4 py-2 text-right">
                           {m.odooProductId ? (
-                            <span className="rounded-full bg-violet-100 px-2 py-0.5 text-xs text-violet-700 dark:bg-violet-950/40 dark:text-violet-300">
+                            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
                               #{m.odooProductId}
                             </span>
                           ) : (

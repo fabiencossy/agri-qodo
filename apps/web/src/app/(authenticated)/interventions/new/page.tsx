@@ -335,14 +335,14 @@ export default function NewInterventionPage() {
           </Field>
 
           {casB && proprietaireParcelle && (
-            <div className="flex items-start gap-3 rounded-2xl border-2 border-violet-300 bg-white p-4 text-sm dark:border-violet-800 dark:bg-zinc-900">
-              <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-violet-600 text-white">
+            <div className="flex items-start gap-3 rounded-2xl border-2 border-amber-300 bg-white p-4 text-sm dark:border-amber-800 dark:bg-zinc-900">
+              <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-amber-600 text-white">
                 <span className="text-base" aria-hidden>
                   💼
                 </span>
               </span>
               <div className="flex-1">
-                <p className="font-semibold text-violet-900 dark:text-violet-200">
+                <p className="font-semibold text-amber-900 dark:text-amber-200">
                   Prestation pour <strong>{proprietaireParcelle.nom}</strong>
                 </p>
                 <p className="mt-1 text-xs text-foreground/80">

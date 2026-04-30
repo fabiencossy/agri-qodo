@@ -114,7 +114,7 @@ export default function HomePage() {
             label="Travaux ce mois"
             value={nbTravaux30j.toString()}
             sub={nbTravaux30j === 0 ? "Aucun travail saisi" : "ce mois-ci"}
-            color="bg-violet-50 text-violet-700"
+            color="bg-amber-50 text-amber-700"
           />
           <StatCard
             href="/mes-heures"
@@ -195,7 +195,7 @@ export default function HomePage() {
             <ul className="divide-y divide-border">
               {travaux.data.slice(0, 4).map((t) => (
                 <li key={t.id} className="flex items-center gap-3 px-4 py-3">
-                  <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-violet-100 text-violet-700">
+                  <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-amber-100 text-amber-700">
                     <Briefcase className="h-4 w-4" />
                   </span>
                   <div className="min-w-0 flex-1">
