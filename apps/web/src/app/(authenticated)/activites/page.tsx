@@ -1,9 +1,11 @@
 "use client";
 
-import { Briefcase, ClipboardCheck, Clock, Sprout } from "lucide-react";
+import { Briefcase, ClipboardCheck, Clock, Sprout, Timer, TrendingUp } from "lucide-react";
 import Link from "next/link";
 import { Breadcrumb } from "@/components/app/breadcrumb";
-import { useInterventionsPending } from "@/lib/interventions";
+import { useInterventions, useInterventionsPending } from "@/lib/interventions";
+import { useCurrentPresence } from "@/lib/presences";
+import { useMesHeures, useTravaux } from "@/lib/travaux";
 
 /**
  * Page d'accueil du module **Activités** — point d'entrée unique pour les
@@ -19,9 +21,44 @@ import { useInterventionsPending } from "@/lib/interventions";
  * UX "gros doigts" : 2 cartes géantes, 1 décision visible, pas de menu
  * secondaire à parcourir.
  */
+/** Renvoie le lundi 00:00 et le dimanche 23:59 de la semaine courante. */
+function semaineCourante() {
+  const now = new Date();
+  const day = now.getDay() || 7;
+  const lundi = new Date(now);
+  lundi.setDate(now.getDate() - (day - 1));
+  lundi.setHours(0, 0, 0, 0);
+  const dimanche = new Date(lundi);
+  dimanche.setDate(lundi.getDate() + 6);
+  dimanche.setHours(23, 59, 59, 999);
+  return {
+    lundi,
+    dimanche,
+    lundiIso: lundi.toISOString().slice(0, 10),
+    dimancheIso: dimanche.toISOString().slice(0, 10),
+  };
+}
+
 export default function ActivitesPage() {
   const pending = useInterventionsPending();
   const pendingCount = pending.data?.length ?? 0;
+  const presenceCourante = useCurrentPresence();
+
+  const { lundi, dimanche, lundiIso, dimancheIso } = semaineCourante();
+  const interventions = useInterventions();
+  const travaux = useTravaux();
+  const heures = useMesHeures({ dateDebut: lundiIso, dateFin: dimancheIso });
+
+  const interventionsSemaine = (interventions.data ?? []).filter((i) => {
+    const d = new Date(i.dateOperation);
+    return d >= lundi && d <= dimanche;
+  });
+  const travauxSemaine = (travaux.data ?? []).filter((t) => {
+    const d = new Date(t.date);
+    return d >= lundi && d <= dimanche;
+  });
+  const minutesSemaine = (heures.data ?? []).reduce((sum, h) => sum + h.dureeMinutes, 0);
+  const heuresSemaineLabel = `${Math.floor(minutesSemaine / 60)}h${String(minutesSemaine % 60).padStart(2, "0")}`;
 
   return (
     <>
@@ -71,6 +108,75 @@ export default function ActivitesPage() {
             </span>
           </Link>
         </div>
+
+        {/* Présence en cours — bandeau rouge si pointage ouvert */}
+        {presenceCourante.data && (
+          <Link
+            href="/presences"
+            className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border-2 border-red-400 bg-red-50 p-4 text-sm transition-colors hover:border-red-600 hover:bg-red-100 active:scale-[0.99] dark:border-red-800 dark:bg-red-950/30"
+          >
+            <div className="flex items-center gap-3">
+              <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-red-600 text-white">
+                <Timer className="h-5 w-5" />
+              </span>
+              <div>
+                <p className="font-semibold text-red-900 dark:text-red-200">
+                  Présence en cours — {presenceCourante.data.type}
+                </p>
+                <p className="text-xs text-red-700/80 dark:text-red-300/80">
+                  Pointe ta sortie quand tu as terminé.
+                </p>
+              </div>
+            </div>
+            <span className="rounded-full bg-red-600 px-3 py-1 text-sm font-bold text-white">
+              ▶
+            </span>
+          </Link>
+        )}
+
+        {/* Résumé "Cette semaine" - 3 KPI cliquables */}
+        <section className="mt-6 rounded-2xl border border-border bg-background p-4 sm:p-5">
+          <header className="mb-4 flex items-center gap-2">
+            <TrendingUp className="h-5 w-5 text-foreground/60" />
+            <h2 className="text-base font-semibold">Cette semaine</h2>
+            <span className="text-xs text-foreground/50">
+              ({lundi.toLocaleDateString("fr-CH")} → {dimanche.toLocaleDateString("fr-CH")})
+            </span>
+          </header>
+          <div className="grid grid-cols-3 gap-3">
+            <Link
+              href="/interventions"
+              className="rounded-xl border border-border bg-green/5 p-3 text-center transition-colors hover:border-green/50 hover:bg-green/10"
+            >
+              <div className="text-2xl font-bold text-green-dark sm:text-3xl">
+                {interventionsSemaine.length}
+              </div>
+              <div className="mt-0.5 text-xs text-foreground/70">
+                intervention{interventionsSemaine.length > 1 ? "s" : ""}
+              </div>
+            </Link>
+            <Link
+              href="/travaux"
+              className="rounded-xl border border-border bg-violet-50 p-3 text-center transition-colors hover:border-violet-300 hover:bg-violet-100 dark:bg-violet-950/30 dark:hover:bg-violet-950/50"
+            >
+              <div className="text-2xl font-bold text-violet-700 sm:text-3xl dark:text-violet-300">
+                {travauxSemaine.length}
+              </div>
+              <div className="mt-0.5 text-xs text-foreground/70">
+                prestation{travauxSemaine.length > 1 ? "s" : ""}
+              </div>
+            </Link>
+            <Link
+              href="/mes-heures"
+              className="rounded-xl border border-border bg-muted/30 p-3 text-center transition-colors hover:border-foreground/20 hover:bg-muted/60"
+            >
+              <div className="font-mono text-2xl font-bold tabular-nums sm:text-3xl">
+                {heuresSemaineLabel}
+              </div>
+              <div className="mt-0.5 text-xs text-foreground/70">heures</div>
+            </Link>
+          </div>
+        </section>
 
         {pendingCount > 0 && (
           <Link

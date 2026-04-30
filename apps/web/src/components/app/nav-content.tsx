@@ -5,6 +5,7 @@ import {
   Beef,
   BookOpen,
   ClipboardList,
+  Clock,
   Cog,
   FlaskConical,
   Handshake,
@@ -15,6 +16,7 @@ import {
   MapPin,
   Package,
   Tractor,
+  Timer,
   Users,
   Wrench,
 } from "lucide-react";
@@ -37,6 +39,8 @@ const NAVIGATION: NavLink[] = [
   { href: "/app", label: "Accueil", icon: Home },
   { href: "/parcelles", label: "Parcelles", icon: MapPin },
   { href: "/activites", label: "Activités", icon: Tractor },
+  { href: "/presences", label: "Présences", icon: Timer },
+  { href: "/mes-heures", label: "Mes heures", icon: Clock },
   { href: "/animaux", label: "Cheptel", icon: Beef },
   { href: "/srpa", label: "SRPA — sorties pâturage", icon: ClipboardList },
 ];
