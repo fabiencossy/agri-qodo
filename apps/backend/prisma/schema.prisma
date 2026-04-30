@@ -251,6 +251,7 @@ model Exploitation {
   partnerLinksPartner   PartnerLink[]  @relation("PartnerLinkPartner")
   travaux               Travail[]      @relation("TravailTenant")
   travauxAsPartenaire   Travail[]      @relation("TravailPartenaire")
+  presences             Presence[]
 
   @@map("exploitations")
 }
@@ -271,6 +272,7 @@ model User {
   tenant        Exploitation        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   refreshTokens RefreshToken[]
   lignesHeure   LigneTravailHeure[]
+  presences     Presence[]
 
   // Email partagé : un comptable / conseiller peut avoir un compte sur
   // plusieurs exploitations. L'unicité est sur (email, tenantId).
@@ -417,6 +419,12 @@ model Intervention {
   // le prestataire pour porter le sale.order Odoo. Permet de re-pousser /
   // annuler / modifier en cascade. Null en cas A (parcelle perso).
   linkedTravailId     String?                                 @unique @map("linked_travail_id")
+  // Cas A (parcelle perso) : project.task Odoo créé automatiquement pour
+  // tracer l'intervention sans facturation. Null si Odoo non configuré
+  // ou push échoué (best-effort). En cas B, c'est `linkedTravail.odooSaleOrderId`
+  // qui prend le relais (vraie commande facturable).
+  odooTaskId          Int?                                    @map("odoo_task_id")
+  odooTaskPushedAt    DateTime?                               @map("odoo_task_pushed_at")
   quantite            Decimal?                                @db.Decimal(12, 3)
   // Surface réellement concernée par l'intervention en m². NULL = toute
   // la parcelle (cas par défaut). Si `geom` est fournie, cette surface est
@@ -763,6 +771,7 @@ model Travail {
 
   lignesProduit LigneTravailProduit[]
   lignesHeure   LigneTravailHeure[]
+  presences     Presence[]
 
   // Cas B : Intervention saisie chez le client à laquelle ce Travail
   // a été automatiquement rattaché (1-1). Permet de re-pousser le
@@ -817,10 +826,78 @@ model LigneTravailHeure {
   notes     String?
   createdAt DateTime @default(now()) @map("created_at")
 
-  travail Travail @relation(fields: [travailId], references: [id], onDelete: Cascade)
-  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  travail   Travail    @relation(fields: [travailId], references: [id], onDelete: Cascade)
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  presences Presence[] // 1-N : présences pointées qui ont généré cette ligne (cas Presence → Travail)
 
   @@index([travailId])
   @@index([userId])
   @@map("travail_lignes_heure")
+}
+
+// ====================================================================
+// Présences (pointage employé style qodo-clock)
+// ====================================================================
+//
+// Chaque journée d'un employé se découpe en N Presence (clock-in / clock-out).
+// Différentes "natures" couvrent le réel terrain : sur chantier, en
+// déplacement, en pause, à un repas extérieur, au bureau.
+//
+// Lien timesheet : à la fermeture (clockOut), l'employé peut associer la
+// Presence à un Travail facturable. Le système génère alors une
+// `LigneTravailHeure` rattachée à ce Travail (fini la double saisie heures).
+//
+// Mobile-first : 1 gros bouton "Pointer entrée" / "Pointer sortie" sur
+// /presences. Géolocalisation optionnelle pour traçabilité chantier.
+
+enum PresenceType {
+  CHANTIER // travail effectif sur une parcelle/un chantier client
+  DEPLACEMENT // route entre 2 chantiers, livraison
+  REPAS // pause repas (compté différemment selon convention)
+  PAUSE // pause courte (café, météo)
+  BUREAU // travail administratif, planification
+  AUTRE // formation, médecin, autre absence courte
+}
+
+model Presence {
+  id         String       @id @default(uuid())
+  tenantId   String       @map("tenant_id")
+  userId     String       @map("user_id")
+  type       PresenceType @default(CHANTIER)
+  // Clock-in : début de la présence (= moment du clic "Pointer entrée").
+  dateDebut  DateTime     @map("date_debut")
+  // Clock-out : null tant que la présence est ouverte. Mis à jour au
+  // clic "Pointer sortie" → permet de calculer la durée.
+  dateFin    DateTime?    @map("date_fin")
+  // Durée en minutes — recalculée par le service à la fermeture pour
+  // simplifier les requêtes d'agrégation (timesheet hebdo).
+  dureeMinutes Int?       @map("duree_minutes")
+  // Lien optionnel vers un Travail facturable. Si renseigné à la
+  // fermeture, on génère automatiquement une LigneTravailHeure (cf
+  // linkedLigneHeureId). Pour les présences internes (BUREAU, formation),
+  // on laisse null.
+  travailId  String?      @map("travail_id")
+  // LigneTravailHeure générée automatiquement. Null tant que la présence
+  // est ouverte ou non rattachée. SetNull si la ligne est supprimée
+  // côté Travail (la Presence reste comme historique brut).
+  linkedLigneHeureId String?  @unique @map("linked_ligne_heure_id")
+  // Géolocalisation optionnelle au clock-in (lat/lng WGS84). Sert à
+  // valider que l'employé était bien sur la parcelle. Saisie plus tard
+  // si l'app mobile la demande.
+  latitudeDebut  Decimal?  @map("latitude_debut") @db.Decimal(9, 6)
+  longitudeDebut Decimal?  @map("longitude_debut") @db.Decimal(9, 6)
+  notes      String?
+  createdAt  DateTime     @default(now()) @map("created_at")
+  updatedAt  DateTime     @updatedAt @map("updated_at")
+
+  tenant       Exploitation       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user         User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  travail      Travail?           @relation(fields: [travailId], references: [id], onDelete: SetNull)
+  ligneHeure   LigneTravailHeure? @relation(fields: [linkedLigneHeureId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([userId])
+  @@index([dateDebut])
+  @@index([travailId])
+  @@map("presences")
 }

@@ -51,12 +51,12 @@ export default function MaterielsPage() {
 
   return (
     <>
-      <Breadcrumb items={[{ label: "Accueil", href: "/app" }, { label: "Catalogue matériel" }]} />
+      <Breadcrumb items={[{ label: "Accueil", href: "/app" }, { label: "Prestations" }]} />
       <div className="mx-auto max-w-5xl px-2 py-4 sm:px-4 sm:py-8">
         <PageHeader
-          title="Catalogue matériel"
+          title="Prestations"
           icon={Wrench}
-          subtitle="Prestations facturables : labour, semis, ensilage, balles rondes… Tarifs Agridea modifiables. Mappés Odoo product.product type=service."
+          subtitle="Travaux facturables : labour, semis, ensilage, balles rondes… Tarifs Agridea modifiables. Mappés Odoo product.product type=service."
         />
 
         {isAdmin && odoo.connected && (

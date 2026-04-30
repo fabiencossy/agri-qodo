@@ -52,7 +52,7 @@ const ADMINISTRATION: NavLink[] = [
   { href: "/utilisateurs", label: "Utilisateurs", icon: Users },
   { href: "/partenaires", label: "Partenaires", icon: Handshake },
   { href: "/produits", label: "Catalogue produits", icon: Package },
-  { href: "/materiels", label: "Catalogue matériel", icon: Wrench },
+  { href: "/materiels", label: "Prestations", icon: Wrench },
   { href: "/parametres", label: "Paramètres", icon: Cog },
 ];
 

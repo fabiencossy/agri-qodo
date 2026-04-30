@@ -47,6 +47,11 @@ export class OdooPushService {
   // résolu/créé par tenant. Évite d'aller le rechercher à chaque push.
   private readonly hourProductCache = new Map<string, number>();
 
+  // Cache mémoire du project.project "Agri Qodo — Carnet des champs"
+  // résolu/créé par tenant. Sert de container aux project.task créées
+  // pour les interventions cas A (perso, sans facturation).
+  private readonly carnetProjectCache = new Map<string, number>();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly tenantContext: TenantContextService,
@@ -354,5 +359,94 @@ export class OdooPushService {
       );
       return { confirmed: false, odooSaleOrderId: travail.odooSaleOrderId };
     }
+  }
+
+  /**
+   * Push best-effort d'une intervention cas A (parcelle perso) vers
+   * Odoo en tant que `project.task`. Pas de facturation (≠ cas B qui
+   * fait sale.order). Sert juste à tracer l'activité côté Odoo pour
+   * les rapports d'exploitation.
+   *
+   * Le projet container est créé/réutilisé une fois par tenant
+   * ("Agri Qodo — Carnet des champs"). Idempotent : si l'intervention
+   * a déjà un `odooTaskId`, on skip.
+   */
+  async tryPushInterventionTask(interventionId: string): Promise<{ taskId: number } | null> {
+    const { tenantId } = this.tenantContext.get();
+    try {
+      const intervention = await this.prisma.intervention.findFirst({
+        where: { id: interventionId, ownerTenantId: tenantId },
+        include: {
+          parcelle: { select: { nom: true } },
+          materielRef: { select: { libelle: true } },
+          produitRef: { select: { libelle: true } },
+        },
+      });
+      if (!intervention) return null;
+      if (intervention.odooTaskId) return { taskId: intervention.odooTaskId };
+
+      const client = await this.odooClientManager.forTenant(tenantId);
+      const projectId = await this.ensureCarnetProject(client, tenantId);
+
+      const titreType = intervention.type.replace(/_/g, " ").toLowerCase();
+      const titre = `${titreType.charAt(0).toUpperCase()}${titreType.slice(1)} — ${intervention.parcelle.nom}`;
+      const descriptionLines = [
+        `Date : ${intervention.dateOperation.toISOString().slice(0, 10)}`,
+        intervention.materielRef ? `Matériel : ${intervention.materielRef.libelle}` : null,
+        intervention.produitRef
+          ? `Produit : ${intervention.produitRef.libelle}${intervention.quantite ? ` — ${intervention.quantite} ${intervention.unite ?? ""}` : ""}`
+          : null,
+        intervention.surfaceHa ? `Surface : ${Number(intervention.surfaceHa).toFixed(2)} ha` : null,
+        intervention.notes ? `Notes : ${intervention.notes}` : null,
+      ].filter(Boolean);
+
+      const taskId = await client.create("project.task", {
+        name: titre,
+        project_id: projectId,
+        description: descriptionLines.join("\n"),
+        date_deadline: intervention.dateOperation.toISOString().slice(0, 10),
+      });
+
+      await this.prisma.intervention.update({
+        where: { id: interventionId },
+        data: { odooTaskId: taskId, odooTaskPushedAt: new Date() },
+      });
+
+      this.logger.log(
+        `project.task #${taskId} créé pour intervention ${interventionId} (cas A, projet ${projectId})`,
+      );
+      return { taskId };
+    } catch (err) {
+      this.logger.warn(
+        `Push project.task échoué pour intervention ${interventionId} : ${err instanceof Error ? err.message : err}`,
+      );
+      return null;
+    }
+  }
+
+  /**
+   * Trouve ou crée le project.project conteneur du carnet des champs
+   * pour le tenant. Cache mémoire pour éviter le lookup répété.
+   */
+  private async ensureCarnetProject(client: OdooClient, tenantId: string): Promise<number> {
+    const cached = this.carnetProjectCache.get(tenantId);
+    if (cached) return cached;
+
+    const projectName = "Agri Qodo — Carnet des champs";
+    const found = await client.searchRead<{ id: number }>(
+      "project.project",
+      [["name", "=", projectName]],
+      { fields: ["id"], limit: 1 },
+    );
+    if (found.length > 0 && found[0]) {
+      this.carnetProjectCache.set(tenantId, found[0].id);
+      return found[0].id;
+    }
+    const created = await client.create("project.project", {
+      name: projectName,
+      allow_billable: false,
+    });
+    this.carnetProjectCache.set(tenantId, created);
+    return created;
   }
 }

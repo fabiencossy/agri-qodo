@@ -356,21 +356,22 @@ export class InterventionsService {
       return { intervention: created, casBTravailId };
     });
 
-    // Hors transaction : push automatique du devis Odoo en cas B.
-    // Best-effort — si Odoo est down ou mal configuré, le Travail reste
-    // DRAFT sans odooSaleOrderId, l'utilisateur peut le re-pousser
-    // manuellement depuis /travaux/[id].
+    // Hors transaction : push automatique Odoo. Best-effort dans les deux
+    // cas — si Odoo est down ou mal configuré, l'intervention reste OK et
+    // l'utilisateur peut re-pousser manuellement plus tard.
     if (result.casBTravailId) {
+      // Cas B : devis Odoo (sale.order draft) sur le Travail facturable.
       await this.odooPush.tryPushTravailQuotation(result.casBTravailId);
-      // Recharge l'intervention pour exposer le linkedTravailId à jour
-      // (le travail a maintenant son odooSaleOrderId).
-      return this.prisma.intervention.findUniqueOrThrow({
-        where: { id: result.intervention.id },
-        include: this.includeRelations,
-      });
+    } else {
+      // Cas A : project.task Odoo (pas de facturation) pour tracer
+      // l'intervention dans le projet "Carnet des champs" du tenant.
+      await this.odooPush.tryPushInterventionTask(result.intervention.id);
     }
-
-    return result.intervention;
+    // Recharge l'intervention pour exposer odooTaskId / linkedTravailId à jour.
+    return this.prisma.intervention.findUniqueOrThrow({
+      where: { id: result.intervention.id },
+      include: this.includeRelations,
+    });
   }
 
   /**
