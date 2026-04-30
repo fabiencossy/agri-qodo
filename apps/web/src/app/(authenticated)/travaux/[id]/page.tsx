@@ -1,14 +1,27 @@
 "use client";
 
-import { CheckCircle2, ClipboardList, Clock, MapPin, Package, Trash2, XCircle } from "lucide-react";
+import {
+  CheckCircle2,
+  ClipboardList,
+  Clock,
+  ExternalLink,
+  MapPin,
+  Package,
+  Send,
+  Trash2,
+  XCircle,
+} from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
+import { useState } from "react";
 import { Breadcrumb } from "@/components/app/breadcrumb";
 import { DetailHeader } from "@/components/app/detail-header";
 import { Button } from "@/components/ui/button";
+import { useOdooConnected } from "@/lib/odoo-config";
 import {
   formatCHF,
   formatDuree,
+  type PushTravailResult,
   STATUT_BADGE,
   STATUT_LABEL,
   totalHeuresCHF,
@@ -16,6 +29,7 @@ import {
   totalTravailCHF,
   useCancelTravail,
   useDeleteTravail,
+  usePushTravailOdoo,
   useTravail,
   useValidateTravail,
 } from "@/lib/travaux";
@@ -36,6 +50,9 @@ export default function TravailDetailPage() {
   const validate = useValidateTravail();
   const cancel = useCancelTravail();
   const del = useDeleteTravail();
+  const push = usePushTravailOdoo();
+  const odoo = useOdooConnected();
+  const [pushResult, setPushResult] = useState<PushTravailResult | null>(null);
 
   if (travail.isLoading) {
     return (
@@ -222,6 +239,77 @@ export default function TravailDetailPage() {
           <div className="mb-4 rounded-2xl border-2 border-green bg-green/5 p-4 text-right">
             <p className="text-sm text-foreground/60">Total HT</p>
             <p className="font-mono text-2xl font-bold text-green-dark">{formatCHF(total)}</p>
+          </div>
+        )}
+
+        {/* Bandeau Odoo : push vers sale.order brouillon */}
+        {odoo.connected && !t.interne && t.statut !== "CANCELLED" && (
+          <div className="mb-4 rounded-2xl border border-violet-200 bg-violet-50 px-4 py-3 sm:px-5">
+            {t.odooSaleOrderId ? (
+              <div className="flex flex-wrap items-center gap-3">
+                <CheckCircle2 className="h-5 w-5 flex-shrink-0 text-violet-700" />
+                <div className="flex-1 text-sm">
+                  <p className="font-semibold text-violet-900">
+                    Devis Odoo créé · #{t.odooSaleOrderId}
+                  </p>
+                  <p className="text-xs text-violet-700/80">
+                    Pour re-pousser, annule d'abord le devis dans Odoo.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-wrap items-center gap-3">
+                <Send className="h-5 w-5 flex-shrink-0 text-violet-700" />
+                <div className="flex-1 text-sm">
+                  <p className="font-semibold text-violet-900">
+                    Pousser vers Odoo (devis brouillon)
+                  </p>
+                  <p className="text-xs text-violet-700/80">
+                    Crée un sale.order draft avec le client + lignes produits/heures. Tu peux
+                    ensuite confirmer le devis dans Odoo.
+                  </p>
+                </div>
+                <Button
+                  onClick={() => push.mutate(t.id, { onSuccess: (r) => setPushResult(r) })}
+                  disabled={push.isPending}
+                  size="sm"
+                  className="bg-violet-600 hover:bg-violet-700"
+                >
+                  <Send className="mr-1 h-4 w-4" />
+                  {push.isPending ? "Envoi…" : "Envoyer vers Odoo"}
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {pushResult && (
+          <div className="mb-4 rounded-xl border border-green/30 bg-green/5 p-4 text-sm">
+            <p className="font-medium text-green-dark">
+              ✓ Devis créé : sale.order #{pushResult.odooSaleOrderId} ({pushResult.linesCount}{" "}
+              lignes
+              {pushResult.partnerCreated && ", nouveau client créé"}
+              {pushResult.productsCreated > 0 &&
+                `, ${pushResult.productsCreated} produit${pushResult.productsCreated > 1 ? "s" : ""} créé${pushResult.productsCreated > 1 ? "s" : ""}`}
+              )
+            </p>
+            {pushResult.odooUrl && (
+              <a
+                href={pushResult.odooUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-green-dark underline"
+              >
+                Ouvrir dans Odoo
+                <ExternalLink className="h-3 w-3" />
+              </a>
+            )}
+          </div>
+        )}
+        {push.isError && (
+          <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+            Push Odoo échoué :{" "}
+            {push.error instanceof Error ? push.error.message : "erreur inconnue"}
           </div>
         )}
 

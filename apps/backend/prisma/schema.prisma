@@ -615,6 +615,11 @@ model PartnerLink {
   status          PartnerLinkStatus @default(PENDING)
   grantedAt       DateTime?         @map("granted_at")
   revokedAt       DateTime?         @map("revoked_at")
+  // Mapping Odoo : id du res.partner (côté Odoo de l'owner) qui correspond
+  // au tenant partenaire. Renseigné lors du 1er push d'un Travail vers Odoo
+  // (lookup par nom puis création si absent). Sert à éviter la création de
+  // doublons à chaque devis.
+  odooPartnerId   Int?              @map("odoo_partner_id")
   createdAt       DateTime          @default(now()) @map("created_at")
 
   ownerTenant   Exploitation @relation("PartnerLinkOwner", fields: [ownerTenantId], references: [id], onDelete: Cascade)
