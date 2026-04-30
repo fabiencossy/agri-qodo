@@ -1,10 +1,11 @@
 "use client";
 
-import { ArrowLeft, Beef, Save, Trash2 } from "lucide-react";
+import { Save, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Breadcrumb } from "@/components/app/breadcrumb";
+import { DetailHeader } from "@/components/app/detail-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -138,31 +139,20 @@ export default function AnimalDetailPage() {
           { label: a.nom ?? a.numeroBoucle ?? libelleCategorie(a.categorie) },
         ]}
       />
-      <div className="mx-auto max-w-3xl px-4 py-8">
-        <div className="mb-6 flex items-start gap-3">
-          <Link href="/animaux" className="mt-1 text-foreground/60 hover:text-foreground">
-            <ArrowLeft className="h-5 w-5" />
-          </Link>
-          <div className="flex-1">
-            <h1 className="flex items-center gap-2 text-2xl font-bold sm:text-3xl">
-              <span aria-hidden className="text-3xl">
-                {emojiCategorie(a.categorie)}
-              </span>
-              {a.nom ?? <Beef className="h-7 w-7 text-green" />}
-              {!a.nom && (
-                <span className="font-mono text-base font-normal text-foreground/70">
-                  {a.numeroBoucle ?? `#${a.id.slice(0, 6)}`}
-                </span>
-              )}
-            </h1>
-            <p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-foreground/60">
-              <span>{libelleCategorie(a.categorie)}</span>
-              {a.sexe && (
-                <span className="rounded bg-foreground/10 px-1.5 py-0.5 text-xs">
-                  {a.sexe === "M" ? "♂ Mâle" : "♀ Femelle"}
-                </span>
-              )}
-              <span>· {ageString(a.dateNaissance, a.dateMort)}</span>
+      <div className="mx-auto max-w-3xl px-2 py-3 sm:px-4 sm:py-6">
+        <DetailHeader
+          backHref="/animaux"
+          emoji={emojiCategorie(a.categorie)}
+          title={a.nom ?? a.numeroBoucle ?? `#${a.id.slice(0, 6)}`}
+          subtitle={
+            <>
+              {libelleCategorie(a.categorie)}
+              {a.sexe && (a.sexe === "M" ? " · ♂ Mâle" : " · ♀ Femelle")}
+              {a.dateNaissance && ` · ${ageString(a.dateNaissance, a.dateMort)}`}
+            </>
+          }
+          badges={
+            <>
               {isDead && (
                 <span className="rounded bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800">
                   Mort
@@ -175,17 +165,22 @@ export default function AnimalDetailPage() {
               )}
               {bvd && (
                 <span className={`rounded px-2 py-0.5 text-xs font-medium ${bvd.color}`}>
-                  BVD: {bvd.label}
+                  BVD : {bvd.label}
                 </span>
               )}
-            </p>
-          </div>
-          {!edit && (
-            <Button variant="secondary" size="sm" onClick={() => setEdit(true)}>
-              Modifier
-            </Button>
-          )}
-        </div>
+            </>
+          }
+          {...(!edit ? { onEdit: () => setEdit(true) } : {})}
+          menuActions={[
+            {
+              label: "Supprimer",
+              icon: Trash2,
+              variant: "danger",
+              disabled: del.isPending,
+              onClick: handleDelete,
+            },
+          ]}
+        />
 
         {!edit ? (
           <section className="mb-4 grid gap-4 rounded-2xl border border-border bg-background p-5 sm:grid-cols-2">
