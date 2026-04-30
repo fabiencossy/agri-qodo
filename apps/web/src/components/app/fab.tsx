@@ -178,8 +178,8 @@ function PrimaryCard({
   const styles =
     accent === "green"
       ? "border-green/30 bg-green/5 hover:border-green text-foreground"
-      : "border-violet-300/60 bg-violet-50 hover:border-violet-500 text-foreground dark:bg-violet-950/30 dark:border-violet-800";
-  const iconBg = accent === "green" ? "bg-green text-white" : "bg-violet-600 text-white";
+      : "border-amber-300/60 bg-amber-50 hover:border-amber-500 text-foreground dark:bg-amber-950/30 dark:border-amber-800";
+  const iconBg = accent === "green" ? "bg-green text-white" : "bg-amber-600 text-white";
   return (
     <Link
       href={action.href}

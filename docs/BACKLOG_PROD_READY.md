@@ -2,12 +2,42 @@
 
 Audit réalisé le 2026-04-30 sur la branche `main` après PR #88. Liste exhaustive de **ce qui manque** pour passer d'un MVP testable à une **app SaaS déployable à toute la Suisse** (compliance RGPD/nFADP, multi-langue, mailing, support…).
 
+> **Décisions Fabien 2026-04-30** :
+>
+> - Pricing/Stripe **reporté** — la facturation se fera depuis Odoo (les factures clients sont déjà créées via le push sale.order existant).
+> - **Bloquant ajouté** : page profil utilisateur (changer photo, infos perso, mot de passe centralisé)
+> - **Bloquant ajouté** : refonte UI cohérente (pas de violet — pas adapté agri ; vue carte par défaut sur mobile pour toutes les listes)
+
 Niveaux de priorité :
 
 - 🔴 **Bloquant prod** — sans ça pas de signup public sécurisé
 - 🟠 **Critique court terme** — à faire dans les 30j post-lancement
 - 🟡 **Important** — qualité de service / différenciation
 - 🟢 **Nice to have** — features secondaires
+
+---
+
+## 0. Profil utilisateur 🔴 (ajout 2026-04-30)
+
+### 0.1 Page "Mon profil" 🔴
+
+**Manque** : pas de page dédiée pour gérer son compte. Le change password est isolé dans /parametres/mot-de-passe mais c'est tout.
+**À faire** :
+
+- Page `/profil` ou `/mon-compte` avec :
+  - Photo de profil (upload + crop, stockée S3-compatible / Infomaniak Object Storage)
+  - Infos perso éditables : prénom, nom, email (avec re-vérification), téléphone
+  - Préférences : langue, fuseau, format date
+  - Section sécurité : changement mot de passe, 2FA, sessions actives
+  - Section données : export RGPD, suppression de compte
+- Modèle `User.avatarUrl` + endpoint `POST /api/users/me/avatar` (multipart)
+- Endpoint `PATCH /api/users/me` (modifs perso)
+- Endpoint `GET /api/auth/me` enrichi (avatarUrl, prefs)
+
+### 0.2 Vue "RH" (heures sup, congés) 🟠
+
+**Manque** : pas de gestion de soldes congés/heures style qodo-clock.
+**À faire** : modèle `Conge`, balance heures mensuel, demande de congé, validation OWNER. Cf qodo-clock pour pattern.
 
 ---
 
@@ -184,6 +214,39 @@ La Suisse a sa propre loi (nFADP en vigueur depuis 2023-09-01) très proche du R
 
 ---
 
+## 4bis. Refonte UI / Design system 🔴 (ajout 2026-04-30)
+
+### 4bis.1 Charte couleurs cohérente agri 🔴
+
+**Fait sur PR à venir** : suppression du violet (jugé "pas adapté agriculture"), remplacement par amber (terre/foin) + vert (carnet) + neutre.
+**Reste à faire** :
+
+- Définir une vraie palette dans `tailwind.config.ts` (terre, foin, ciel, ardoise) avec tokens nommés
+- Logo + favicon Agri Qodo cohérents
+- Mode sombre revu (actuellement sombre par défaut bizarre)
+
+### 4bis.2 Listes carte-first sur mobile 🔴
+
+**Manque** : `ResourceView` propose liste/kanban mais pas de vue carte automatique sur mobile. Sur smartphone, les tableaux sont durs à lire.
+**À faire** :
+
+- Composant `ResourceView` détecte la taille écran : default = "carte" sur < sm, "liste" sur ≥ md
+- Toggle persistant (localStorage) si l'user override
+- Pour chaque ressource (parcelles, interventions, travaux, animaux, srpa, présences, partenaires) : implémenter la vue carte (résumé condensé en card)
+
+### 4bis.3 Hub Activités refondu 🔴 (fait dans cette PR)
+
+- Remplace 2 grosses cartes par toggle haut Carnet/Prestations + liste directe + FAB global pour créer
+- Recherche en haut de chaque liste
+- Plus uniforme avec le reste de l'app
+
+### 4bis.4 Wizard "gros doigts" pour saisies critiques 🟠
+
+**Manque** : /interventions/new et /travaux/new sont des formulaires longs sur une page. Sur mobile c'est lourd.
+**À faire** : wizard pas-à-pas avec navigation prev/next, 1 décision par écran, validation progressive.
+
+---
+
 ## 5. Onboarding & support 🟠
 
 ### 5.1 Onboarding nouvel utilisateur 🟠
@@ -310,21 +373,17 @@ La Suisse a sa propre loi (nFADP en vigueur depuis 2023-09-01) très proche du R
 
 ---
 
-## 10. Facturation SaaS 🟠
+## 10. Facturation SaaS 🟢 (REPORTÉE — Décision Fabien 2026-04-30)
 
-### 10.1 Plans & subscription 🟠
+> Décision : **la facturation client se fait depuis Odoo, pas de Stripe**. Les sale.order sont déjà créés automatiquement par le push cas B (PR #82, #87) et confirmés au passage VALIDATED (PR #85). Toute la facturation client passe donc par Odoo natif (TVA 8.1% CH, QR-bill, IBAN, relances) — pas de double système.
 
-**Manque** : tout est gratuit, pas de pricing.
-**À faire** :
+### 10.1 Tarification Agri Qodo (SaaS) 🟢
 
-- 3 plans : Free (limité 5 ha), Pro (29 CHF/mois), Business (89 CHF/mois)
-- **Stripe** subscription + Checkout (TWINT via Stripe Suisse)
-- Module `BillingModule` qui track l'usage et bloque selon plan
-- Page `/parametres/abonnement` avec invoice history
+À étudier plus tard : comment "tarifer" Agri Qodo lui-même au-delà de la facturation client. Freemium avec limites ? Forfait via commande Odoo récurrente chez Kodo Digital SA ?
 
-### 10.2 TVA suisse 🟠
+### 10.2 TVA suisse 🟢 (déjà géré côté Odoo)
 
-**À faire** : facturation auto avec TVA 8.1% CH, IBAN, QR-bill suisse.
+Odoo gère nativement TVA 8.1% + QR-bill suisse — pas de duplication côté agri-qodo.
 
 ---
 
@@ -409,39 +468,50 @@ La Suisse a sa propre loi (nFADP en vigueur depuis 2023-09-01) très proche du R
 
 ---
 
-## Priorisation suggérée — premiers 3 mois
+## Priorisation suggérée — premiers 3 mois (révisée 2026-04-30)
 
-### Mois 1 (sécurité + RGPD)
+### Mois 1 — UI cohérente + Mailing + RGPD (bloquants prod) 🔴
 
-1. Reset password par email 🔴
-2. Vérification email signup 🔴
-3. Pages légales CGU/RGPD/Cookies 🔴
-4. Mail provider + welcome mail 🔴
-5. Audit logs 🟠
-6. Sentry 🟠
+1. **Page profil utilisateur** (avatar, infos, pwd centralisé) 🔴
+2. **Refonte UI** : palette agri sans violet ✓ + listes carte-first sur mobile 🔴
+3. **Mail provider** (Resend ou Mailgun EU) + module Mailer NestJS 🔴
+4. **Reset password par email** réel (token, lien signé, rate limit) 🔴
+5. **Vérification email** au signup 🔴
+6. **Pages légales** CGU + Politique confidentialité + Mentions + Cookies 🔴
+7. **Consentement signup** (checkbox + version stockée) 🔴
 
-### Mois 2 (qualité + i18n)
+### Mois 2 — Sécurité + Qualité + i18n (critiques) 🟠
 
-7. i18n DE 🟠 (marché 60%)
-8. 2FA optionnel 🟠
-9. Tests e2e parcours critiques 🟠
-10. Onboarding wizard 🟠
-11. Backup auto + monitoring uptime 🟠
+8. Audit logs (LPD/nFADP) 🟠
+9. Brute-force protection (rate limit login + lockout) 🟠
+10. Sentry (backend + frontend) 🟠
+11. Backup automatisé + monitoring uptime 🟠
+12. **i18n DE** (marché 60%) 🟠
+13. 2FA TOTP optionnel 🟠
+14. Tests e2e parcours critiques (Playwright) 🟠
+15. Onboarding wizard post-signup 🟠
+16. Droit à l'export RGPD (ZIP de mes données) 🟠
 
-### Mois 3 (monétisation + mobile)
+### Mois 3 — Mobile + Support + Intégrations 🟡
 
-12. Stripe subscription + plans 🟠
-13. App mobile Expo MVP (login + présences) 🟡
-14. Page support + FAQ 🟡
-15. Audit sécurité externe (avant launch public)
+17. App mobile Expo MVP (login + présences clock-in/out + interventions) 🟡
+18. Page `/aide` + FAQ + tutos 🟡
+19. Chat support (Crisp) ou ticket email 🟡
+20. Connecteur API SIG cantonal (au moins VD/BE/ZH) 🟡
+21. Sync BDTA / Identitas pour animaux 🟡
+22. Audit sécurité externe avant launch public 🟡
+
+> **Pricing/Stripe : reporté** — Fabien préfère facturer via Odoo natif (sale.order déjà créés par le push cas B). À ré-étudier après lancement public si on veut tarifer agri-qodo lui-même.
 
 ---
 
 ## Estimation grossière effort total
 
-- 🔴 Bloquants prod : **3-4 semaines** dev
+- 🔴 Bloquants prod : **4-5 semaines** dev (avec profil + UI + mailing)
 - 🟠 Critiques : **8-10 semaines**
 - 🟡 Importants : **6-8 semaines**
-- 🟢 Nice to have : à faire au fil de l'eau
+- 🟢 Nice to have / reporté : au fil de l'eau
+
+→ **~5-6 mois** d'effort solo pour un SaaS vraiment "déployable Suisse entière" (sans Stripe → un peu moins long que le plan initial).
 
 → **~6 mois** d'un dev solo pour un SaaS vraiment "déployable Suisse entière".

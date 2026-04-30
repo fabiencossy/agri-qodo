@@ -244,27 +244,27 @@ export default function TravailDetailPage() {
 
         {/* Bandeau Odoo : push vers sale.order brouillon */}
         {odoo.connected && !t.interne && t.statut !== "CANCELLED" && (
-          <div className="mb-4 rounded-2xl border border-violet-200 bg-violet-50 px-4 py-3 sm:px-5">
+          <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 sm:px-5">
             {t.odooSaleOrderId ? (
               <div className="flex flex-wrap items-center gap-3">
-                <CheckCircle2 className="h-5 w-5 flex-shrink-0 text-violet-700" />
+                <CheckCircle2 className="h-5 w-5 flex-shrink-0 text-amber-700" />
                 <div className="flex-1 text-sm">
-                  <p className="font-semibold text-violet-900">
+                  <p className="font-semibold text-amber-900">
                     Devis Odoo créé · #{t.odooSaleOrderId}
                   </p>
-                  <p className="text-xs text-violet-700/80">
+                  <p className="text-xs text-amber-700/80">
                     Pour re-pousser, annule d'abord le devis dans Odoo.
                   </p>
                 </div>
               </div>
             ) : (
               <div className="flex flex-wrap items-center gap-3">
-                <Send className="h-5 w-5 flex-shrink-0 text-violet-700" />
+                <Send className="h-5 w-5 flex-shrink-0 text-amber-700" />
                 <div className="flex-1 text-sm">
-                  <p className="font-semibold text-violet-900">
+                  <p className="font-semibold text-amber-900">
                     Pousser vers Odoo (devis brouillon)
                   </p>
-                  <p className="text-xs text-violet-700/80">
+                  <p className="text-xs text-amber-700/80">
                     Crée un sale.order draft avec le client + lignes produits/heures. Tu peux
                     ensuite confirmer le devis dans Odoo.
                   </p>
@@ -273,7 +273,7 @@ export default function TravailDetailPage() {
                   onClick={() => push.mutate(t.id, { onSuccess: (r) => setPushResult(r) })}
                   disabled={push.isPending}
                   size="sm"
-                  className="bg-violet-600 hover:bg-violet-700"
+                  className="bg-amber-600 hover:bg-amber-700"
                 >
                   <Send className="mr-1 h-4 w-4" />
                   {push.isPending ? "Envoi…" : "Envoyer vers Odoo"}
