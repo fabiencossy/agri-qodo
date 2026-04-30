@@ -58,6 +58,7 @@ const formSchema = z.object({
   produit: z.string().max(200).optional().or(z.literal("")),
   materielId: z.string().uuid().optional().or(z.literal("")),
   surfaceHa: z.coerce.number().positive().optional().or(z.literal(NaN)),
+  rendementParHa: z.coerce.number().min(0).optional().or(z.literal(NaN)),
   quantite: z.coerce.number().min(0).optional().or(z.literal(NaN)),
   unite: z.string().max(20).optional().or(z.literal("")),
   techniqueEpandage: z
@@ -132,6 +133,7 @@ export default function NewInterventionPage() {
       produit: "",
       materielId: "",
       surfaceHa: undefined,
+      rendementParHa: undefined,
       quantite: undefined,
       unite: "",
       techniqueEpandage: "",
@@ -251,6 +253,9 @@ export default function NewInterventionPage() {
         ...(values.surfaceHa && !Number.isNaN(values.surfaceHa)
           ? { surfaceHa: values.surfaceHa }
           : {}),
+        ...(values.rendementParHa && !Number.isNaN(values.rendementParHa)
+          ? { rendementParHa: values.rendementParHa }
+          : {}),
         ...(values.quantite && !Number.isNaN(values.quantite) ? { quantite: values.quantite } : {}),
         ...(values.unite ? { unite: values.unite } : {}),
         ...(values.techniqueEpandage
@@ -330,7 +335,7 @@ export default function NewInterventionPage() {
           </Field>
 
           {casB && proprietaireParcelle && (
-            <div className="flex items-start gap-3 rounded-2xl border-2 border-violet-300/60 bg-violet-50 p-4 text-sm dark:border-violet-800 dark:bg-violet-950/30">
+            <div className="flex items-start gap-3 rounded-2xl border-2 border-violet-300 bg-white p-4 text-sm dark:border-violet-800 dark:bg-zinc-900">
               <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-violet-600 text-white">
                 <span className="text-base" aria-hidden>
                   💼
@@ -338,12 +343,11 @@ export default function NewInterventionPage() {
               </span>
               <div className="flex-1">
                 <p className="font-semibold text-violet-900 dark:text-violet-200">
-                  Travail pour <strong>{proprietaireParcelle.nom}</strong>
+                  Prestation pour <strong>{proprietaireParcelle.nom}</strong>
                 </p>
-                <p className="mt-0.5 text-xs text-violet-700/80 dark:text-violet-300/80">
-                  Cette intervention sera enregistrée dans le carnet du client (en attente de
-                  validation) et générera automatiquement une commande Odoo brouillon que tu pourras
-                  facturer.
+                <p className="mt-1 text-xs text-foreground/80">
+                  L'intervention sera enregistrée dans le carnet du client (en attente de
+                  validation) et générera un devis Odoo facturable.
                 </p>
               </div>
             </div>
@@ -471,6 +475,22 @@ export default function NewInterventionPage() {
               <Input placeholder="L, kg, t, ha…" {...register("unite")} />
             </Field>
           </div>
+
+          {selectedType === "RECOLTE" && (
+            <Field
+              label="Rendement à l'hectare (optionnel)"
+              hint="Productivité de la parcelle. Ex : 80 q/ha de blé, 12 t/ha de maïs."
+              error={errors.rendementParHa?.message}
+            >
+              <Input
+                type="number"
+                step="0.01"
+                min="0"
+                placeholder="80"
+                {...register("rendementParHa")}
+              />
+            </Field>
+          )}
 
           {peutSaisirSurfacePartielle && selectedParcelle && (
             <Field label="Surface concernée">

@@ -162,6 +162,15 @@ export default function LoginPage() {
           <Button type="submit" size="lg" className="w-full" disabled={login.isPending}>
             {login.isPending ? "Connexion…" : "Se connecter"}
           </Button>
+
+          <div className="text-center">
+            <Link
+              href="/forgot-password"
+              className="text-xs text-foreground/60 underline hover:text-foreground/80"
+            >
+              Mot de passe oublié ?
+            </Link>
+          </div>
         </form>
 
         <p className="mt-6 text-center text-sm">

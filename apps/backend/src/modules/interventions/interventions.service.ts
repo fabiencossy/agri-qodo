@@ -303,6 +303,7 @@ export class InterventionsService {
           produit: dto.produit ?? produit?.libelle ?? null,
           materielId: dto.materielId ?? null,
           surfaceHa: surfaceHaResolu,
+          rendementParHa: dto.rendementParHa ?? null,
           quantite: dto.quantite ?? null,
           unite: dto.unite ?? null,
           surfaceTravailleeM2: surfaceFinale,
@@ -318,7 +319,7 @@ export class InterventionsService {
         await tx.$executeRawUnsafe(
           `UPDATE interventions
              SET geom = ST_GeomFromGeoJSON($1)::geometry(Polygon, 4326)
-           WHERE id = $2::uuid`,
+           WHERE id = $2`,
           JSON.stringify(dto.geomGeoJson),
           created.id,
         );
@@ -472,7 +473,7 @@ export class InterventionsService {
     const rows = await this.prisma.$queryRawUnsafe<{ within: boolean | null }[]>(
       `SELECT ST_Within(
                 ST_GeomFromGeoJSON($1)::geometry(Polygon, 4326),
-                (SELECT geom FROM parcelles WHERE id = $2::uuid)
+                (SELECT geom FROM parcelles WHERE id = $2)
               ) AS within`,
       JSON.stringify(geom),
       parcelleId,
@@ -546,6 +547,7 @@ export class InterventionsService {
           ...(dto.produit !== undefined ? { produit: dto.produit } : {}),
           ...(dto.materielId !== undefined ? { materielId: dto.materielId || null } : {}),
           ...(dto.surfaceHa !== undefined ? { surfaceHa: dto.surfaceHa } : {}),
+          ...(dto.rendementParHa !== undefined ? { rendementParHa: dto.rendementParHa } : {}),
           ...(dto.quantite !== undefined ? { quantite: dto.quantite } : {}),
           ...(dto.unite !== undefined ? { unite: dto.unite } : {}),
           ...(surfaceFromGeom !== undefined
@@ -562,15 +564,12 @@ export class InterventionsService {
 
       if (dto.geomGeoJson !== undefined) {
         if (dto.geomGeoJson === null) {
-          await tx.$executeRawUnsafe(
-            `UPDATE interventions SET geom = NULL WHERE id = $1::uuid`,
-            id,
-          );
+          await tx.$executeRawUnsafe(`UPDATE interventions SET geom = NULL WHERE id = $1`, id);
         } else {
           await tx.$executeRawUnsafe(
             `UPDATE interventions
                SET geom = ST_GeomFromGeoJSON($1)::geometry(Polygon, 4326)
-             WHERE id = $2::uuid`,
+             WHERE id = $2`,
             JSON.stringify(dto.geomGeoJson),
             id,
           );

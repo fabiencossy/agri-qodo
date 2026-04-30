@@ -425,6 +425,11 @@ model Intervention {
   // qui prend le relais (vraie commande facturable).
   odooTaskId          Int?                                    @map("odoo_task_id")
   odooTaskPushedAt    DateTime?                               @map("odoo_task_pushed_at")
+  // Rendement à l'hectare (optionnel) — typiquement saisi sur RECOLTE :
+  // 80 q/ha de blé, 12 t/ha de maïs, 45 t/ha pommes de terre. L'unité
+  // suit `unite` (kg, t, q, dose…). Sert aux statistiques agronomiques
+  // multi-année (suivi de productivité par parcelle).
+  rendementParHa      Decimal?                                @map("rendement_par_ha") @db.Decimal(12, 3)
   quantite            Decimal?                                @db.Decimal(12, 3)
   // Surface réellement concernée par l'intervention en m². NULL = toute
   // la parcelle (cas par défaut). Si `geom` est fournie, cette surface est
