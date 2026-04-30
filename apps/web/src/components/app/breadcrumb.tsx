@@ -9,7 +9,10 @@ export interface BreadcrumbItem {
 
 export function Breadcrumb({ items }: { items: BreadcrumbItem[] }) {
   return (
-    <nav aria-label="Fil d'ariane" className="border-b border-border bg-background/50">
+    <nav
+      aria-label="Fil d'ariane"
+      className="hidden border-b border-border bg-background/50 lg:block"
+    >
       <ol className="mx-auto flex max-w-5xl items-center gap-1 px-4 py-2 text-sm">
         {items.map((item, i) => (
           <li key={i} className="flex items-center gap-1">

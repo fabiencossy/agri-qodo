@@ -30,12 +30,12 @@ export function HamburgerDrawer({ open, onClose }: { open: boolean; onClose: () 
         <button
           aria-label="Fermer le menu"
           onClick={onClose}
-          className="fixed inset-0 z-40 bg-black/30 backdrop-blur-sm lg:hidden"
+          className="fixed inset-0 z-[9000] bg-black/30 backdrop-blur-sm lg:hidden"
         />
       )}
       <aside
         aria-hidden={!open}
-        className={`fixed left-0 top-0 z-50 flex h-full w-72 flex-col border-r border-border bg-background shadow-xl transition-transform duration-200 lg:hidden ${
+        className={`fixed left-0 top-0 z-[9100] flex h-full w-72 flex-col border-r border-border bg-background shadow-xl transition-transform duration-200 lg:hidden ${
           open ? "translate-x-0" : "-translate-x-full"
         }`}
       >
