@@ -4,6 +4,7 @@ import { ClipboardList, Plus, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useMemo } from "react";
 import { Breadcrumb } from "@/components/app/breadcrumb";
+import { PageHeader } from "@/components/app/page-header";
 import { Button } from "@/components/ui/button";
 import {
   emojiCategorie,
@@ -42,23 +43,16 @@ export default function SrpaPage() {
       <Breadcrumb
         items={[{ label: "Accueil", href: "/app" }, { label: "SRPA — Sorties au pâturage" }]}
       />
-      <div className="mx-auto max-w-5xl px-4 py-8">
-        <div className="mb-8 flex items-end justify-between">
-          <div>
-            <h1 className="text-3xl font-bold">SRPA — Sorties au pâturage</h1>
-            <p className="mt-1 text-foreground/70">
-              {sorties.data
-                ? `${sorties.data.length} sortie${sorties.data.length > 1 ? "s" : ""} enregistrée${sorties.data.length > 1 ? "s" : ""}`
-                : "Chargement…"}
-            </p>
-          </div>
-          <Link href="/srpa/new">
-            <Button>
-              <Plus className="mr-2 h-4 w-4" />
-              Saisir une sortie
-            </Button>
-          </Link>
-        </div>
+      <div className="mx-auto max-w-5xl px-2 py-4 sm:px-4 sm:py-8">
+        <PageHeader
+          title="SRPA — Sorties au pâturage"
+          icon={ClipboardList}
+          subtitle={
+            sorties.data
+              ? `${sorties.data.length} sortie${sorties.data.length > 1 ? "s" : ""} enregistrée${sorties.data.length > 1 ? "s" : ""}`
+              : "Chargement…"
+          }
+        />
 
         {sorties.isError && (
           <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">

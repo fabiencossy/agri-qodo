@@ -11,6 +11,7 @@ import { ClipboardList, Plus } from "lucide-react";
 import Link from "next/link";
 import { useMemo } from "react";
 import { Breadcrumb } from "@/components/app/breadcrumb";
+import { PageHeader } from "@/components/app/page-header";
 import { Button } from "@/components/ui/button";
 import {
   type FilterOption,
@@ -162,25 +163,12 @@ export default function TravauxPage() {
   return (
     <>
       <Breadcrumb items={[{ label: "Accueil", href: "/app" }, { label: "Travaux" }]} />
-      <div className="mx-auto max-w-6xl px-4 py-8">
-        <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
-          <div>
-            <h1 className="flex items-center gap-2 text-3xl font-bold">
-              <ClipboardList className="h-7 w-7 text-green" />
-              Travaux
-            </h1>
-            <p className="mt-1 text-foreground/70">
-              Prestations et opérations — produits consommés + heures de travail dans une seule
-              saisie. Facturation Odoo automatique (PR-E à venir).
-            </p>
-          </div>
-          <Link href="/travaux/new">
-            <Button>
-              <Plus className="mr-1 h-4 w-4" />
-              Nouveau travail
-            </Button>
-          </Link>
-        </div>
+      <div className="mx-auto max-w-6xl px-2 py-4 sm:px-4 sm:py-8">
+        <PageHeader
+          title="Travaux"
+          icon={ClipboardList}
+          subtitle="Produits + heures dans une seule saisie. Facturation Odoo automatique."
+        />
 
         {travauxQuery.isError && (
           <p className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">

@@ -13,6 +13,7 @@ import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { ImportBdtaDialog } from "@/components/animaux/import-bdta-dialog";
 import { Breadcrumb } from "@/components/app/breadcrumb";
+import { PageHeader } from "@/components/app/page-header";
 import { Button } from "@/components/ui/button";
 import {
   type FilterOption,
@@ -270,17 +271,15 @@ export default function CheptelPage() {
   return (
     <>
       <Breadcrumb items={[{ label: "Accueil", href: "/app" }, { label: "Cheptel" }]} />
-      <div className="mx-auto max-w-6xl px-4 py-8">
-        <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
-          <div>
-            <h1 className="flex items-center gap-2 text-3xl font-bold">
-              <Beef className="h-7 w-7 text-green" />
-              Cheptel
-            </h1>
-            <p className="mt-1 text-foreground/70">
+      <div className="mx-auto max-w-6xl px-2 py-4 sm:px-4 sm:py-8">
+        <PageHeader
+          title="Cheptel"
+          icon={Beef}
+          subtitle={
+            <>
               {animauxQuery.isLoading
                 ? "Chargement…"
-                : `${animaux.length} animau${animaux.length > 1 ? "x" : "l"} dans le cheptel`}
+                : `${animaux.length} animau${animaux.length > 1 ? "x" : "l"}`}
               {ugb.data && animaux.length > 0 && (
                 <>
                   {" "}
@@ -290,16 +289,16 @@ export default function CheptelPage() {
                   </span>
                 </>
               )}
-            </p>
-            <p className="mt-1 text-xs text-foreground/50">
-              UGB calculé selon Annexe 1 OPD (référentiel officiel CH).
-            </p>
-          </div>
-          <Button variant="secondary" onClick={() => setImportOpen(true)}>
-            <Upload className="mr-1 h-4 w-4" />
-            Importer depuis BDTA
-          </Button>
-        </div>
+            </>
+          }
+          menuActions={[
+            {
+              label: "Importer depuis BDTA",
+              icon: Upload,
+              onClick: () => setImportOpen(true),
+            },
+          ]}
+        />
         <ImportBdtaDialog open={importOpen} onClose={() => setImportOpen(false)} />
 
         {animauxQuery.isError && (
