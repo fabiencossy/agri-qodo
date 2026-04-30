@@ -15,7 +15,7 @@
  */
 import { ArrowLeft, ClipboardList, Plus, Save, Trash2, UserCircle } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { Breadcrumb } from "@/components/app/breadcrumb";
 import { Button } from "@/components/ui/button";
@@ -77,13 +77,19 @@ function dureeFromTimes(date: string, debut?: string, fin?: string): number | nu
 
 export default function NewTravailPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const create = useCreateTravail();
   const me = useCurrentUser();
   const users = useUsers();
   const produits = useProduits();
 
+  // Date pré-remplie via query string (ex: depuis le calendrier
+  // /mes-heures qui passe ?date=YYYY-MM-DD).
+  const dateParam = searchParams.get("date");
   const [titre, setTitre] = useState("");
-  const [date, setDate] = useState(todayIso());
+  const [date, setDate] = useState(
+    dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam) ? dateParam : todayIso(),
+  );
   const [partenaireId, setPartenaireId] = useState("");
   const [parcelleId, setParcelleId] = useState("");
   const [interne, setInterne] = useState(false);
