@@ -21,6 +21,7 @@ import { SrpaModule } from "./modules/srpa/srpa.module";
 import { SuisseBilanzModule } from "./modules/suisse-bilanz/suisse-bilanz.module";
 import { TenantsModule } from "./modules/tenants/tenants.module";
 import { UsersModule } from "./modules/users/users.module";
+import { TravauxModule } from "./modules/travaux/travaux.module";
 import { VeilleModule } from "./modules/veille/veille.module";
 
 @Module({
@@ -71,6 +72,7 @@ import { VeilleModule } from "./modules/veille/veille.module";
     PartnerLinksModule,
     OdooModule,
     OdooConfigModule,
+    TravauxModule,
     VeilleModule,
   ],
 })
