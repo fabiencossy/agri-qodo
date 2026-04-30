@@ -1,9 +1,10 @@
 "use client";
 
-import { Briefcase, ClipboardCheck, Clock, Sprout } from "lucide-react";
+import { Briefcase, ClipboardCheck, Clock, Sprout, TrendingUp } from "lucide-react";
 import Link from "next/link";
 import { Breadcrumb } from "@/components/app/breadcrumb";
-import { useInterventionsPending } from "@/lib/interventions";
+import { useInterventions, useInterventionsPending } from "@/lib/interventions";
+import { useMesHeures, useTravaux } from "@/lib/travaux";
 
 /**
  * Page d'accueil du module **Activités** — point d'entrée unique pour les
@@ -19,9 +20,43 @@ import { useInterventionsPending } from "@/lib/interventions";
  * UX "gros doigts" : 2 cartes géantes, 1 décision visible, pas de menu
  * secondaire à parcourir.
  */
+/** Renvoie le lundi 00:00 et le dimanche 23:59 de la semaine courante. */
+function semaineCourante(): { lundi: Date; dimanche: Date; lundiIso: string; dimancheIso: string } {
+  const now = new Date();
+  const day = now.getDay() || 7; // 0 dimanche → 7
+  const lundi = new Date(now);
+  lundi.setDate(now.getDate() - (day - 1));
+  lundi.setHours(0, 0, 0, 0);
+  const dimanche = new Date(lundi);
+  dimanche.setDate(lundi.getDate() + 6);
+  dimanche.setHours(23, 59, 59, 999);
+  return {
+    lundi,
+    dimanche,
+    lundiIso: lundi.toISOString().slice(0, 10),
+    dimancheIso: dimanche.toISOString().slice(0, 10),
+  };
+}
+
 export default function ActivitesPage() {
   const pending = useInterventionsPending();
   const pendingCount = pending.data?.length ?? 0;
+
+  const { lundi, dimanche, lundiIso, dimancheIso } = semaineCourante();
+  const interventions = useInterventions();
+  const travaux = useTravaux();
+  const heures = useMesHeures({ dateDebut: lundiIso, dateFin: dimancheIso });
+
+  const interventionsSemaine = (interventions.data ?? []).filter((i) => {
+    const d = new Date(i.dateOperation);
+    return d >= lundi && d <= dimanche;
+  });
+  const travauxSemaine = (travaux.data ?? []).filter((t) => {
+    const d = new Date(t.date);
+    return d >= lundi && d <= dimanche;
+  });
+  const minutesSemaine = (heures.data ?? []).reduce((sum, h) => sum + h.dureeMinutes, 0);
+  const heuresSemaineLabel = `${Math.floor(minutesSemaine / 60)}h${String(minutesSemaine % 60).padStart(2, "0")}`;
 
   return (
     <>
@@ -71,6 +106,49 @@ export default function ActivitesPage() {
             </span>
           </Link>
         </div>
+
+        <section className="mt-8 rounded-2xl border border-border bg-background p-4 sm:p-5">
+          <header className="mb-4 flex items-center gap-2">
+            <TrendingUp className="h-5 w-5 text-foreground/60" />
+            <h2 className="text-base font-semibold">Cette semaine</h2>
+            <span className="text-xs text-foreground/50">
+              ({lundi.toLocaleDateString("fr-CH")} → {dimanche.toLocaleDateString("fr-CH")})
+            </span>
+          </header>
+          <div className="grid grid-cols-3 gap-3">
+            <Link
+              href="/interventions"
+              className="rounded-xl border border-border bg-green/5 p-3 text-center transition-colors hover:border-green/50 hover:bg-green/10"
+            >
+              <div className="text-2xl font-bold text-green-dark sm:text-3xl">
+                {interventionsSemaine.length}
+              </div>
+              <div className="mt-0.5 text-xs text-foreground/70">
+                intervention{interventionsSemaine.length > 1 ? "s" : ""}
+              </div>
+            </Link>
+            <Link
+              href="/travaux"
+              className="rounded-xl border border-border bg-violet-50 p-3 text-center transition-colors hover:border-violet-300 hover:bg-violet-100 dark:bg-violet-950/30 dark:hover:bg-violet-950/50"
+            >
+              <div className="text-2xl font-bold text-violet-700 sm:text-3xl dark:text-violet-300">
+                {travauxSemaine.length}
+              </div>
+              <div className="mt-0.5 text-xs text-foreground/70">
+                travail{travauxSemaine.length > 1 ? "s" : ""}
+              </div>
+            </Link>
+            <Link
+              href="/mes-heures"
+              className="rounded-xl border border-border bg-muted/30 p-3 text-center transition-colors hover:border-foreground/20 hover:bg-muted/60"
+            >
+              <div className="font-mono text-2xl font-bold tabular-nums sm:text-3xl">
+                {heuresSemaineLabel}
+              </div>
+              <div className="mt-0.5 text-xs text-foreground/70">heures</div>
+            </Link>
+          </div>
+        </section>
 
         {pendingCount > 0 && (
           <Link

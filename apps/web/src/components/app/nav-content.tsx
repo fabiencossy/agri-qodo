@@ -5,6 +5,7 @@ import {
   Beef,
   BookOpen,
   ClipboardList,
+  Clock,
   Cog,
   FlaskConical,
   Handshake,
@@ -37,6 +38,7 @@ const NAVIGATION: NavLink[] = [
   { href: "/app", label: "Accueil", icon: Home },
   { href: "/parcelles", label: "Parcelles", icon: MapPin },
   { href: "/activites", label: "Activités", icon: Tractor },
+  { href: "/mes-heures", label: "Mes heures", icon: Clock },
   { href: "/animaux", label: "Cheptel", icon: Beef },
   { href: "/srpa", label: "SRPA — sorties pâturage", icon: ClipboardList },
 ];
