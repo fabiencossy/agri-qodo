@@ -15,14 +15,49 @@
  */
 
 export type AnimalCategorie =
+  // ----- Bovins -----
   | "VACHE_LAITIERE"
+  | "VACHE_ALLAITANTE"
   | "GENISSE"
   | "VEAU"
   | "TAUREAU"
   | "BOEUF"
   | "AUTRE_BOVIN"
+  // ----- Ovins -----
+  | "BREBIS"
+  | "AGNEAU"
+  | "BELIER"
+  // ----- Caprins -----
+  | "CHEVRE"
+  | "CABRI"
+  | "BOUC"
+  // ----- Équidés -----
+  | "CHEVAL_ADULTE"
+  | "POULAIN"
+  | "ANE"
+  // ----- Cervidés (chasse + élevage) -----
+  | "CERF"
+  | "DAIM"
+  // ----- Camélidés -----
+  | "LAMA"
+  | "ALPAGA"
+  // ----- Porcs (détaillés) -----
   | "PORC"
-  | "POULET"
+  | "TRUIE"
+  | "PORCELET"
+  // ----- Volailles (détaillées) -----
+  | "POULET" // poulet d'engraissement
+  | "POULE_PONDEUSE"
+  | "DINDE"
+  | "OIE"
+  | "CANARD"
+  | "PINTADE"
+  | "CAILLE"
+  // ----- Petits élevages -----
+  | "LAPIN"
+  | "ABEILLE_RUCHE" // 1 ruche
+  // ----- Autres -----
+  | "BISON"
   | "AUTRE";
 
 /**
@@ -32,14 +67,49 @@ export type AnimalCategorie =
  * le coefficient est inconnu, l'utilisateur doit requalifier l'animal.
  */
 export const DEFAULT_UGB_COEFFICIENTS: Record<AnimalCategorie, number> = {
+  // Bovins (Annexe 1 OPD)
   VACHE_LAITIERE: 1.0, // vache à lait standard (>= 600 kg)
+  VACHE_ALLAITANTE: 1.0, // vache mère
   GENISSE: 0.6, // moyenne génisses tous âges confondus
   VEAU: 0.13, // veau d'élevage < 160 jours (par défaut)
   TAUREAU: 1.0, // taureau d'élevage adulte
   BOEUF: 0.6, // bœuf d'engraissement > 1 an
   AUTRE_BOVIN: 0.6, // bovin non précisé > 1 an
+  // Ovins
+  BREBIS: 0.17,
+  AGNEAU: 0.04,
+  BELIER: 0.17,
+  // Caprins
+  CHEVRE: 0.13,
+  CABRI: 0.04,
+  BOUC: 0.13,
+  // Équidés
+  CHEVAL_ADULTE: 0.7,
+  POULAIN: 0.5,
+  ANE: 0.5,
+  // Cervidés
+  CERF: 0.4,
+  DAIM: 0.3,
+  // Camélidés
+  LAMA: 0.18,
+  ALPAGA: 0.13,
+  // Porcs
   PORC: 0.13, // porc d'engraissement standard
-  POULET: 0.004, // poulet d'engraissement
+  TRUIE: 0.4, // truie d'élevage
+  PORCELET: 0.06,
+  // Volailles
+  POULET: 0.004,
+  POULE_PONDEUSE: 0.005,
+  DINDE: 0.01,
+  OIE: 0.02,
+  CANARD: 0.01,
+  PINTADE: 0.005,
+  CAILLE: 0.002,
+  // Petits élevages
+  LAPIN: 0.012,
+  ABEILLE_RUCHE: 0, // les ruches ne comptent pas en UGB OPD
+  // Autres
+  BISON: 0.7,
   AUTRE: 0,
 };
 
@@ -86,12 +156,12 @@ export function coefUgb(
       if (ageAns < 1) return 0.3;
       return 0.6;
 
-    case "VACHE_LAITIERE":
-    case "TAUREAU":
-    case "PORC":
-    case "POULET":
-    case "AUTRE":
-      // Pas de tranche d'âge dans le barème OPD pour ces catégories.
+    default:
+      // Pour toutes les autres catégories (bovins fixes, ovins, caprins,
+      // équidés, cervidés, camélidés, porcs, volailles, lapins, ruches,
+      // bisons, autres) on prend le coefficient par défaut OPD-CH-2026.
+      // L'affinage par âge n'est pas spécifié dans le barème pour ces
+      // espèces — un seul coefficient pour adultes, un autre pour jeunes.
       return DEFAULT_UGB_COEFFICIENTS[categorie];
   }
 }

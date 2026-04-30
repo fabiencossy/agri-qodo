@@ -4,14 +4,49 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./api-client";
 
 export type AnimalCategorie =
+  // Bovins
   | "VACHE_LAITIERE"
+  | "VACHE_ALLAITANTE"
   | "GENISSE"
   | "VEAU"
   | "TAUREAU"
   | "BOEUF"
   | "AUTRE_BOVIN"
+  // Ovins
+  | "BREBIS"
+  | "AGNEAU"
+  | "BELIER"
+  // Caprins
+  | "CHEVRE"
+  | "CABRI"
+  | "BOUC"
+  // Équidés
+  | "CHEVAL_ADULTE"
+  | "POULAIN"
+  | "ANE"
+  // Cervidés
+  | "CERF"
+  | "DAIM"
+  // Camélidés
+  | "LAMA"
+  | "ALPAGA"
+  // Porcs
   | "PORC"
+  | "TRUIE"
+  | "PORCELET"
+  // Volailles
   | "POULET"
+  | "POULE_PONDEUSE"
+  | "DINDE"
+  | "OIE"
+  | "CANARD"
+  | "PINTADE"
+  | "CAILLE"
+  // Petits élevages
+  | "LAPIN"
+  | "ABEILLE_RUCHE"
+  // Autres
+  | "BISON"
   | "AUTRE";
 
 export interface SortieSrpa {
@@ -65,26 +100,96 @@ export function useDeleteSortie() {
 }
 
 const META: Record<AnimalCategorie, { label: string; emoji: string }> = {
+  // Bovins
   VACHE_LAITIERE: { label: "Vaches laitières", emoji: "🐄" },
+  VACHE_ALLAITANTE: { label: "Vaches allaitantes", emoji: "🐄" },
   GENISSE: { label: "Génisses", emoji: "🐃" },
   VEAU: { label: "Veaux", emoji: "🐮" },
   TAUREAU: { label: "Taureaux", emoji: "🐂" },
   BOEUF: { label: "Bœufs", emoji: "🐄" },
   AUTRE_BOVIN: { label: "Autres bovins", emoji: "🐂" },
+  // Ovins
+  BREBIS: { label: "Brebis", emoji: "🐑" },
+  AGNEAU: { label: "Agneaux", emoji: "🐑" },
+  BELIER: { label: "Béliers", emoji: "🐏" },
+  // Caprins
+  CHEVRE: { label: "Chèvres", emoji: "🐐" },
+  CABRI: { label: "Cabris", emoji: "🐐" },
+  BOUC: { label: "Boucs", emoji: "🐐" },
+  // Équidés
+  CHEVAL_ADULTE: { label: "Chevaux", emoji: "🐎" },
+  POULAIN: { label: "Poulains", emoji: "🐴" },
+  ANE: { label: "Ânes", emoji: "🫏" },
+  // Cervidés
+  CERF: { label: "Cerfs", emoji: "🦌" },
+  DAIM: { label: "Daims", emoji: "🦌" },
+  // Camélidés
+  LAMA: { label: "Lamas", emoji: "🦙" },
+  ALPAGA: { label: "Alpagas", emoji: "🦙" },
+  // Porcs
   PORC: { label: "Porcs", emoji: "🐖" },
-  POULET: { label: "Poulets", emoji: "🐔" },
+  TRUIE: { label: "Truies", emoji: "🐖" },
+  PORCELET: { label: "Porcelets", emoji: "🐷" },
+  // Volailles
+  POULET: { label: "Poulets de chair", emoji: "🐔" },
+  POULE_PONDEUSE: { label: "Poules pondeuses", emoji: "🐔" },
+  DINDE: { label: "Dindes", emoji: "🦃" },
+  OIE: { label: "Oies", emoji: "🪿" },
+  CANARD: { label: "Canards", emoji: "🦆" },
+  PINTADE: { label: "Pintades", emoji: "🐦" },
+  CAILLE: { label: "Cailles", emoji: "🐦" },
+  // Petits élevages
+  LAPIN: { label: "Lapins", emoji: "🐰" },
+  ABEILLE_RUCHE: { label: "Ruches", emoji: "🐝" },
+  // Autres
+  BISON: { label: "Bisons", emoji: "🦬" },
   AUTRE: { label: "Autres", emoji: "🐾" },
 };
 
 export const CATEGORIES_ORDER: AnimalCategorie[] = [
+  // Bovins
   "VACHE_LAITIERE",
+  "VACHE_ALLAITANTE",
   "GENISSE",
   "VEAU",
   "TAUREAU",
   "BOEUF",
   "AUTRE_BOVIN",
+  // Ovins
+  "BREBIS",
+  "AGNEAU",
+  "BELIER",
+  // Caprins
+  "CHEVRE",
+  "CABRI",
+  "BOUC",
+  // Équidés
+  "CHEVAL_ADULTE",
+  "POULAIN",
+  "ANE",
+  // Cervidés
+  "CERF",
+  "DAIM",
+  // Camélidés
+  "LAMA",
+  "ALPAGA",
+  // Porcs
   "PORC",
+  "TRUIE",
+  "PORCELET",
+  // Volailles
   "POULET",
+  "POULE_PONDEUSE",
+  "DINDE",
+  "OIE",
+  "CANARD",
+  "PINTADE",
+  "CAILLE",
+  // Petits élevages
+  "LAPIN",
+  "ABEILLE_RUCHE",
+  // Autres
+  "BISON",
   "AUTRE",
 ];
 

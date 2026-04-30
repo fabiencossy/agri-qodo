@@ -64,6 +64,7 @@ export interface ImportBdtaResult {
 /** Catégories pour lesquelles le n° de boucle BDTA s'applique. */
 export const BOVIN_CATEGORIES: AnimalCategorie[] = [
   "VACHE_LAITIERE",
+  "VACHE_ALLAITANTE",
   "GENISSE",
   "VEAU",
   "TAUREAU",
@@ -71,6 +72,59 @@ export const BOVIN_CATEGORIES: AnimalCategorie[] = [
   "AUTRE_BOVIN",
 ];
 export const isBovin = (c: AnimalCategorie): boolean => BOVIN_CATEGORIES.includes(c);
+
+/**
+ * Familles d'animaux pour le regroupement / filtres dans le cheptel.
+ * Permet de grouper Brebis+Agneaux+Béliers sous "Ovins" en kanban.
+ */
+export type AnimalFamille =
+  | "Bovins"
+  | "Ovins"
+  | "Caprins"
+  | "Équidés"
+  | "Cervidés"
+  | "Camélidés"
+  | "Porcins"
+  | "Volailles"
+  | "Petits élevages"
+  | "Autres";
+
+export const FAMILLE_BY_CATEGORIE: Record<AnimalCategorie, AnimalFamille> = {
+  VACHE_LAITIERE: "Bovins",
+  VACHE_ALLAITANTE: "Bovins",
+  GENISSE: "Bovins",
+  VEAU: "Bovins",
+  TAUREAU: "Bovins",
+  BOEUF: "Bovins",
+  AUTRE_BOVIN: "Bovins",
+  BREBIS: "Ovins",
+  AGNEAU: "Ovins",
+  BELIER: "Ovins",
+  CHEVRE: "Caprins",
+  CABRI: "Caprins",
+  BOUC: "Caprins",
+  CHEVAL_ADULTE: "Équidés",
+  POULAIN: "Équidés",
+  ANE: "Équidés",
+  CERF: "Cervidés",
+  DAIM: "Cervidés",
+  LAMA: "Camélidés",
+  ALPAGA: "Camélidés",
+  PORC: "Porcins",
+  TRUIE: "Porcins",
+  PORCELET: "Porcins",
+  POULET: "Volailles",
+  POULE_PONDEUSE: "Volailles",
+  DINDE: "Volailles",
+  OIE: "Volailles",
+  CANARD: "Volailles",
+  PINTADE: "Volailles",
+  CAILLE: "Volailles",
+  LAPIN: "Petits élevages",
+  ABEILLE_RUCHE: "Petits élevages",
+  BISON: "Autres",
+  AUTRE: "Autres",
+};
 
 const KEY_LIST = ["animaux"] as const;
 const KEY_SUMMARY = ["animaux", "summary"] as const;
