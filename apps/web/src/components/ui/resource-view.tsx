@@ -375,10 +375,21 @@ function SearchBar<T>(props: {
     return () => document.removeEventListener("mousedown", handler);
   }, [props.panelOpen, props.onClosePanel]);
 
+  // Pattern Odoo : clic n'importe où dans la search bar (input ou chips)
+  // ouvre le panneau Filtres / Regrouper / Favoris.
+  const openPanelIfClosed = () => {
+    if (!props.panelOpen) props.onTogglePanel();
+  };
+
   return (
     <div ref={containerRef} className="relative">
       <div className="flex items-stretch gap-2">
-        <div className="relative flex flex-1 items-center rounded-lg border border-border bg-background">
+        <div
+          role="button"
+          tabIndex={-1}
+          onClick={openPanelIfClosed}
+          className="relative flex flex-1 cursor-text items-center rounded-lg border border-border bg-background"
+        >
           <Search className="ml-3 h-4 w-4 text-foreground/40" />
           <div className="flex flex-1 flex-wrap items-center gap-1 px-2 py-1.5">
             {props.activeFilters.map((f) => (
@@ -404,8 +415,10 @@ function SearchBar<T>(props: {
               onChange={(e) => props.onSearchChange(e.target.value)}
               placeholder={props.searchPlaceholder}
               className="min-w-[120px] flex-1 bg-transparent py-1 text-sm outline-none"
-              onFocus={() => {
-                /* on n'ouvre pas le panel au focus — bouton dédié */
+              onFocus={openPanelIfClosed}
+              onClick={(e) => {
+                e.stopPropagation();
+                openPanelIfClosed();
               }}
             />
           </div>
