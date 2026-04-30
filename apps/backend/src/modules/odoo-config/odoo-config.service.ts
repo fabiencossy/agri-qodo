@@ -1,12 +1,14 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Injectable,
   NotFoundException,
-  NotImplementedException,
 } from "@nestjs/common";
 import { UserRole } from "@prisma/client";
+import { OdooAuthError, OdooError } from "@agri-qodo/odoo-client";
 import { EncryptionService } from "@/common/crypto/encryption.service";
 import { PrismaService } from "@/common/prisma/prisma.service";
+import { OdooClientManager } from "@/modules/odoo/odoo-client-manager.service";
 import type { OdooConfigDto } from "./dto/odoo-config.dto";
 import type { UpsertOdooConfigDto } from "./dto/upsert-odoo-config.dto";
 
@@ -23,6 +25,7 @@ export class OdooConfigService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly encryption: EncryptionService,
+    private readonly odooManager: OdooClientManager,
   ) {}
 
   async get(tenantId: string): Promise<OdooConfigDto> {
@@ -79,6 +82,8 @@ export class OdooConfigService {
     }
 
     await this.prisma.exploitation.update({ where: { id: tenantId }, data });
+    // Toute modif de config invalide le client en cache.
+    this.odooManager.invalidate(tenantId);
     return this.get(tenantId);
   }
 
@@ -95,19 +100,44 @@ export class OdooConfigService {
         odooConnectedAt: null,
       },
     });
+    this.odooManager.invalidate(tenantId);
   }
 
   /**
-   * Test de connexion — placeholder PR-A. La vraie implémentation
-   * (auth XML-RPC + `common.version()` + persistance de `odooVersion`
-   * et `odooConnectedAt`) arrive avec PR-B et le module backend `odoo`
-   * en PR-C.
+   * Vrai test de connexion : authentifie réellement contre Odoo via la
+   * lib @agri-qodo/odoo-client, persiste la version détectée et le
+   * timestamp de la connexion réussie. Renvoie les infos rafraîchies.
+   *
+   * Erreurs renvoyées en HTTP :
+   * - 400 BadRequest si auth échoue (URL/DB/login/key invalide).
+   * - 502 BadGateway implicite via OdooError pour les erreurs réseau /
+   *   serveur Odoo down (le filtre exception NestJS le mappe par défaut
+   *   en 500, ce qui est acceptable pour un test manuel).
    */
-  async testConnection(_tenantId: string, callerRole: UserRole): Promise<never> {
+  async testConnection(tenantId: string, callerRole: UserRole): Promise<OdooConfigDto> {
     this.assertOwner(callerRole);
-    throw new NotImplementedException(
-      "Test de connexion Odoo non encore implémenté — disponible avec la lib @agri-qodo/odoo-client (PR-B/PR-C M6).",
-    );
+    const client = await this.odooManager.forTenant(tenantId);
+    try {
+      const session = await client.authenticate();
+      await this.prisma.exploitation.update({
+        where: { id: tenantId },
+        data: {
+          odooVersion: session.version.serverVersion,
+          odooConnectedAt: new Date(),
+        },
+      });
+      return this.get(tenantId);
+    } catch (err) {
+      if (err instanceof OdooAuthError) {
+        throw new BadRequestException(
+          `Authentification Odoo refusée — vérifie URL, base de données, login et clé API. ${err.message}`,
+        );
+      }
+      if (err instanceof OdooError) {
+        throw new BadRequestException(`Connexion Odoo impossible (${err.status}) : ${err.message}`);
+      }
+      throw err;
+    }
   }
 
   private assertOwner(role: UserRole): void {
