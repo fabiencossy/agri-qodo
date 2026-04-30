@@ -9,6 +9,7 @@
  */
 import { ClipboardList, Download, Plus } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useMemo } from "react";
 import { Breadcrumb } from "@/components/app/breadcrumb";
 import { PageHeader } from "@/components/app/page-header";
@@ -34,6 +35,7 @@ import {
 const STATUT_ORDER: TravailStatut[] = ["DRAFT", "VALIDATED", "INVOICED", "CANCELLED"];
 
 export default function TravauxPage() {
+  const router = useRouter();
   const travauxQuery = useTravaux();
   const travaux = useMemo(() => travauxQuery.data ?? [], [travauxQuery.data]);
 
@@ -206,14 +208,11 @@ export default function TravauxPage() {
           defaultView="list"
           data={travaux}
           columns={columns}
+          onItemClick={(t) => router.push(`/travaux/${t.id}` as never)}
           renderKanbanCard={(t) => (
             <div>
               <div className="flex items-center justify-between gap-2">
-                <span className="truncate font-medium">
-                  <Link href={`/travaux/${t.id}` as never} className="hover:underline">
-                    {t.titre}
-                  </Link>
-                </span>
+                <span className="truncate font-medium">{t.titre}</span>
                 <span
                   className={`rounded px-2 py-0.5 text-xs font-medium ${STATUT_BADGE[t.statut]}`}
                 >
