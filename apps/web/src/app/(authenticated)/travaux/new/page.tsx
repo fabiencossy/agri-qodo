@@ -31,6 +31,8 @@ import {
   formatCHF,
   formatDuree,
   useCreateTravail,
+  useTravail,
+  useUpdateTravail,
 } from "@/lib/travaux";
 import { useUsers } from "@/lib/users";
 
@@ -79,9 +81,15 @@ export default function NewTravailPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const create = useCreateTravail();
+  const update = useUpdateTravail();
   const me = useCurrentUser();
   const users = useUsers();
   const produits = useProduits();
+
+  // Mode édition : ?edit={travailId} → pré-remplit le form depuis l'API.
+  const editId = searchParams.get("edit") ?? undefined;
+  const isEditMode = !!editId;
+  const existingTravail = useTravail(editId);
 
   // Date pré-remplie via query string (ex: depuis le calendrier
   // /mes-heures qui passe ?date=YYYY-MM-DD).
@@ -98,14 +106,51 @@ export default function NewTravailPage() {
   const [lignesHeure, setLignesHeure] = useState<DraftLigneHeure[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  // Présélection : ligne heures vide pour l'utilisateur courant.
+  // Pré-remplissage en mode édition depuis le travail existant.
+  const loadedRef = useState({ id: "" })[0];
+  useEffect(() => {
+    if (!isEditMode || !existingTravail.data) return;
+    if (loadedRef.id === existingTravail.data.id) return; // déjà chargé
+    loadedRef.id = existingTravail.data.id;
+    const t = existingTravail.data;
+    setTitre(t.titre);
+    setDate(t.date.slice(0, 10));
+    setPartenaireId(t.partenaireId ?? "");
+    setParcelleId(t.parcelleId ?? "");
+    setInterne(t.interne);
+    setNotes(t.notes ?? "");
+    setLignesProduit(
+      t.lignesProduit.map((l) => ({
+        uid: uid(),
+        ...(l.produitId ? { produitId: l.produitId } : {}),
+        libelle: l.libelle,
+        quantite: Number(l.quantite),
+        unite: l.unite,
+        ...(l.prixUnitaireCHF ? { prixUnitaireCHF: Number(l.prixUnitaireCHF) } : {}),
+        ...(l.notes ? { notes: l.notes } : {}),
+      })),
+    );
+    setLignesHeure(
+      t.lignesHeure.map((l) => ({
+        uid: uid(),
+        userId: l.userId,
+        ...(l.heureDebut ? { heureDebut: l.heureDebut.slice(11, 16) } : {}),
+        ...(l.heureFin ? { heureFin: l.heureFin.slice(11, 16) } : {}),
+        dureeMinutes: l.dureeMinutes,
+        ...(l.tauxHoraireCHF ? { tauxHoraireCHF: Number(l.tauxHoraireCHF) } : {}),
+        ...(l.notes ? { notes: l.notes } : {}),
+      })),
+    );
+  }, [existingTravail.data, isEditMode, loadedRef]);
+
+  // Présélection : ligne heures vide pour l'utilisateur courant (create only).
   const meId = me.data?.id;
   useEffect(() => {
-    if (!meId) return;
+    if (!meId || isEditMode) return;
     setLignesHeure((prev) =>
       prev.length === 0 ? [{ uid: uid(), userId: meId, dureeMinutes: 0 }] : prev,
     );
-  }, [meId]);
+  }, [meId, isEditMode]);
 
   const totalProduits = useMemo(
     () => lignesProduit.reduce((s, l) => s + (l.prixUnitaireCHF ?? 0) * l.quantite, 0),
@@ -186,18 +231,24 @@ export default function NewTravailPage() {
         return out;
       });
 
+    const payload = {
+      titre: titre.trim(),
+      date,
+      interne,
+      ...(partenaireId && !interne ? { partenaireId } : {}),
+      ...(parcelleId ? { parcelleId } : {}),
+      ...(notes ? { notes } : {}),
+      ...(lignesProduitClean.length > 0 ? { lignesProduit: lignesProduitClean } : {}),
+      ...(lignesHeureClean.length > 0 ? { lignesHeure: lignesHeureClean } : {}),
+    };
     try {
-      const created = await create.mutateAsync({
-        titre: titre.trim(),
-        date,
-        interne,
-        ...(partenaireId && !interne ? { partenaireId } : {}),
-        ...(parcelleId ? { parcelleId } : {}),
-        ...(notes ? { notes } : {}),
-        ...(lignesProduitClean.length > 0 ? { lignesProduit: lignesProduitClean } : {}),
-        ...(lignesHeureClean.length > 0 ? { lignesHeure: lignesHeureClean } : {}),
-      });
-      router.push(`/travaux/${created.id}` as never);
+      if (isEditMode && editId) {
+        const updated = await update.mutateAsync({ id: editId, ...payload });
+        router.push(`/travaux/${updated.id}` as never);
+      } else {
+        const created = await create.mutateAsync(payload);
+        router.push(`/travaux/${created.id}` as never);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erreur inconnue");
     }
@@ -209,17 +260,20 @@ export default function NewTravailPage() {
         items={[
           { label: "Accueil", href: "/app" },
           { label: "Travaux", href: "/travaux" },
-          { label: "Nouveau" },
+          { label: isEditMode ? "Modifier" : "Nouveau" },
         ]}
       />
       <div className="mx-auto max-w-3xl px-4 pb-32 pt-6 sm:py-8">
         <div className="mb-6 flex items-center gap-3">
-          <Link href="/travaux" className="text-foreground/60 hover:text-foreground">
+          <Link
+            href={isEditMode && editId ? (`/travaux/${editId}` as never) : "/travaux"}
+            className="text-foreground/60 hover:text-foreground"
+          >
             <ArrowLeft className="h-5 w-5" />
           </Link>
           <h1 className="flex items-center gap-2 text-2xl font-bold sm:text-3xl">
             <ClipboardList className="h-6 w-6 text-green sm:h-7 sm:w-7" />
-            Nouveau travail
+            {isEditMode ? "Modifier le travail" : "Nouveau travail"}
           </h1>
         </div>
 
@@ -387,7 +441,11 @@ export default function NewTravailPage() {
               </Link>
               <Button type="submit" disabled={create.isPending} className="h-11 px-6">
                 <Save className="mr-1 h-4 w-4" />
-                {create.isPending ? "Sauvegarde…" : "Sauvegarder"}
+                {create.isPending || update.isPending
+                  ? "Sauvegarde…"
+                  : isEditMode
+                    ? "Mettre à jour"
+                    : "Sauvegarder"}
               </Button>
             </div>
           </div>

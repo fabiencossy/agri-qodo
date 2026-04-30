@@ -94,6 +94,9 @@ export default function TravailDetailPage() {
               )}
             </>
           }
+          {...(t.statut === "DRAFT"
+            ? { onEdit: () => router.push(`/travaux/new?edit=${t.id}` as never) }
+            : {})}
           menuActions={
             t.statut === "DRAFT"
               ? [
