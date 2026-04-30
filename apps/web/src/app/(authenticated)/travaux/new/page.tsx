@@ -505,6 +505,126 @@ function LigneProduitRow({
   );
 }
 
+/**
+ * Parse une chaîne saisie style qodo-clock en minutes :
+ * - "720"   → 7h20  (HHMM compact)
+ * - "7h20"  → 7h20
+ * - "7:20"  → 7h20
+ * - "7.5"   → 7h30  (décimal)
+ * - "90"    → 1h30  (minutes)
+ * - "1h"    → 1h00
+ * - ""      → null
+ */
+function parseHhmm(input: string): number | null {
+  const s = input.trim().toLowerCase();
+  if (!s) return null;
+  // 7h20 / 7h
+  const hMatch = /^(\d+)\s*h\s*(\d+)?$/.exec(s);
+  if (hMatch) {
+    const h = parseInt(hMatch[1] ?? "0", 10);
+    const m = hMatch[2] ? parseInt(hMatch[2], 10) : 0;
+    if (m >= 60) return null;
+    return h * 60 + m;
+  }
+  // 7:20
+  const cMatch = /^(\d+):(\d+)$/.exec(s);
+  if (cMatch) {
+    const h = parseInt(cMatch[1] ?? "0", 10);
+    const m = parseInt(cMatch[2] ?? "0", 10);
+    if (m >= 60) return null;
+    return h * 60 + m;
+  }
+  // 7.5 ou 7,5 décimal
+  const dMatch = /^(\d+)[.,](\d+)$/.exec(s);
+  if (dMatch) {
+    const v = parseFloat(s.replace(",", "."));
+    if (!Number.isFinite(v)) return null;
+    return Math.round(v * 60);
+  }
+  // pure number : si > 24, c'est HHMM compact ou minutes
+  const nMatch = /^(\d+)$/.exec(s);
+  if (nMatch) {
+    const n = parseInt(nMatch[1] ?? "0", 10);
+    // Heuristique qodo-clock : ≤ 24 = heures, sinon HHMM si valide, sinon minutes
+    if (n <= 24) return n * 60;
+    // HHMM compact : les 2 derniers chiffres sont les minutes
+    const m = n % 100;
+    const h = Math.floor(n / 100);
+    if (m < 60) return h * 60 + m;
+    // Sinon traite comme minutes brutes
+    return n;
+  }
+  return null;
+}
+
+function formatHhmmInput(dureeMinutes: number): string {
+  if (dureeMinutes <= 0) return "";
+  const h = Math.floor(dureeMinutes / 60);
+  const m = dureeMinutes % 60;
+  return `${h}h${String(m).padStart(2, "0")}`;
+}
+
+function HhmmInput({
+  dureeMinutes,
+  onChange,
+}: {
+  dureeMinutes: number;
+  onChange: (d: number) => void;
+}) {
+  const [draft, setDraft] = useState(() => formatHhmmInput(dureeMinutes));
+  const [error, setError] = useState(false);
+
+  // Re-sync si parent change (toggle mode times → duree).
+  useEffect(() => {
+    setDraft(formatHhmmInput(dureeMinutes));
+  }, [dureeMinutes]);
+
+  const handleBlur = () => {
+    const parsed = parseHhmm(draft);
+    if (parsed === null && draft.trim() !== "") {
+      setError(true);
+      return;
+    }
+    setError(false);
+    const value = parsed ?? 0;
+    onChange(value);
+    setDraft(formatHhmmInput(value));
+  };
+
+  return (
+    <div>
+      <label className="block">
+        <span className="mb-0.5 block text-xs text-foreground/60">
+          Durée (saisie rapide style qodo-clock)
+        </span>
+        <Input
+          type="text"
+          inputMode="numeric"
+          value={draft}
+          onChange={(e) => {
+            setDraft(e.target.value);
+            setError(false);
+          }}
+          onBlur={handleBlur}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              handleBlur();
+            }
+          }}
+          placeholder="720 = 7h20  ·  7.5 = 7h30  ·  90 = 1h30"
+          className={`h-11 ${error ? "border-red-400" : ""}`}
+        />
+      </label>
+      <p className="mt-1 text-[11px] text-foreground/50">
+        Tape <code className="font-mono">720</code> pour 7h20, ou{" "}
+        <code className="font-mono">7.5</code>, <code className="font-mono">7h20</code>,{" "}
+        <code className="font-mono">7:20</code>, <code className="font-mono">90</code> (= 1h30).
+      </p>
+    </div>
+  );
+}
+
 function LigneHeureRow({
   ligne,
   users,
@@ -523,8 +643,6 @@ function LigneHeureRow({
   const [mode, setMode] = useState<"times" | "duree">(
     ligne.heureDebut || ligne.heureFin ? "times" : "duree",
   );
-  const heures = Math.floor(ligne.dureeMinutes / 60);
-  const minutes = ligne.dureeMinutes % 60;
   const userObj = users.find((u) => u.id === ligne.userId);
 
   return (
@@ -600,39 +718,10 @@ function LigneHeureRow({
           </label>
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-2">
-          <label className="block">
-            <span className="mb-0.5 block text-xs text-foreground/60">Heures</span>
-            <Input
-              type="number"
-              min="0"
-              max="24"
-              inputMode="numeric"
-              value={heures}
-              onChange={(e) => {
-                const h = Math.max(0, Number(e.target.value) || 0);
-                onChange({ dureeMinutes: h * 60 + minutes });
-              }}
-              className="h-11"
-            />
-          </label>
-          <label className="block">
-            <span className="mb-0.5 block text-xs text-foreground/60">Minutes</span>
-            <Input
-              type="number"
-              min="0"
-              max="59"
-              step="5"
-              inputMode="numeric"
-              value={minutes}
-              onChange={(e) => {
-                const m = Math.max(0, Math.min(59, Number(e.target.value) || 0));
-                onChange({ dureeMinutes: heures * 60 + m });
-              }}
-              className="h-11"
-            />
-          </label>
-        </div>
+        <HhmmInput
+          dureeMinutes={ligne.dureeMinutes}
+          onChange={(d) => onChange({ dureeMinutes: d })}
+        />
       )}
 
       {showPrice && (
