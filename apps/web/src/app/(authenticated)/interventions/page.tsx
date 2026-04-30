@@ -3,6 +3,7 @@
 import { Plus, Sprout, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { Breadcrumb } from "@/components/app/breadcrumb";
+import { PageHeader } from "@/components/app/page-header";
 import { Button } from "@/components/ui/button";
 import {
   colorType,
@@ -27,23 +28,16 @@ export default function InterventionsPage() {
   return (
     <>
       <Breadcrumb items={[{ label: "Accueil", href: "/app" }, { label: "Carnet des champs" }]} />
-      <div className="mx-auto max-w-5xl px-4 py-8">
-        <div className="mb-8 flex items-end justify-between">
-          <div>
-            <h1 className="text-3xl font-bold">Carnet des champs</h1>
-            <p className="mt-1 text-foreground/70">
-              {interventions.data
-                ? `${interventions.data.length} intervention${interventions.data.length > 1 ? "s" : ""}`
-                : "Chargement…"}
-            </p>
-          </div>
-          <Link href="/interventions/new">
-            <Button>
-              <Plus className="mr-2 h-4 w-4" />
-              Saisir une intervention
-            </Button>
-          </Link>
-        </div>
+      <div className="mx-auto max-w-5xl px-2 py-4 sm:px-4 sm:py-8">
+        <PageHeader
+          title="Carnet des champs"
+          icon={Sprout}
+          subtitle={
+            interventions.data
+              ? `${interventions.data.length} intervention${interventions.data.length > 1 ? "s" : ""}`
+              : "Chargement…"
+          }
+        />
 
         {interventions.isError && (
           <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">

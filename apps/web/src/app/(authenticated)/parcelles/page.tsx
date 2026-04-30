@@ -5,6 +5,7 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useState } from "react";
 import { Breadcrumb } from "@/components/app/breadcrumb";
+import { PageHeader } from "@/components/app/page-header";
 import { Button } from "@/components/ui/button";
 import {
   formatSurface,
@@ -40,56 +41,51 @@ export default function ParcellesPage() {
   return (
     <>
       <Breadcrumb items={[{ label: "Accueil", href: "/app" }, { label: "Parcelles" }]} />
-      <div className="mx-auto max-w-5xl px-4 py-8">
-        <div className="mb-6 flex items-end justify-between">
-          <div>
-            <h1 className="text-3xl font-bold">Mes parcelles</h1>
-            <p className="mt-1 text-foreground/70">
-              {parcelles.data
-                ? `${parcelles.data.length} parcelle${parcelles.data.length > 1 ? "s" : ""}`
-                : "Chargement…"}
-            </p>
-          </div>
-          <div className="flex gap-2">
-            <Link href="/parcelles/import">
-              <Button variant="secondary">
-                <FileUp className="mr-2 h-4 w-4" />
-                Importer
-              </Button>
-            </Link>
-            <Link href="/parcelles/new">
-              <Button>
-                <Plus className="mr-2 h-4 w-4" />
-                Nouvelle parcelle
-              </Button>
-            </Link>
-          </div>
-        </div>
-
-        {parcelles.data && parcelles.data.length > 0 && (
-          <div className="mb-6 inline-flex rounded-lg border border-border bg-background p-1">
-            <button
-              type="button"
-              onClick={() => setView("liste")}
-              className={`flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
-                view === "liste" ? "bg-green text-white" : "text-foreground/70 hover:bg-muted"
-              }`}
-            >
-              <LayoutGrid className="h-4 w-4" />
-              Liste
-            </button>
-            <button
-              type="button"
-              onClick={() => setView("carte")}
-              className={`flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
-                view === "carte" ? "bg-green text-white" : "text-foreground/70 hover:bg-muted"
-              }`}
-            >
-              <MapIcon className="h-4 w-4" />
-              Carte
-            </button>
-          </div>
-        )}
+      <div className="mx-auto max-w-5xl px-2 py-4 sm:px-4 sm:py-8">
+        <PageHeader
+          title="Mes parcelles"
+          icon={MapPin}
+          subtitle={
+            parcelles.data
+              ? `${parcelles.data.length} parcelle${parcelles.data.length > 1 ? "s" : ""}`
+              : "Chargement…"
+          }
+          rightSlot={
+            parcelles.data && parcelles.data.length > 0 ? (
+              <div className="inline-flex rounded-lg border border-border bg-background p-1">
+                <button
+                  type="button"
+                  onClick={() => setView("liste")}
+                  aria-label="Vue liste"
+                  className={`flex h-9 items-center gap-1.5 rounded-md px-2 text-sm font-medium transition-colors sm:px-3 ${
+                    view === "liste" ? "bg-green text-white" : "text-foreground/70 hover:bg-muted"
+                  }`}
+                >
+                  <LayoutGrid className="h-4 w-4" />
+                  <span className="hidden sm:inline">Liste</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setView("carte")}
+                  aria-label="Vue carte"
+                  className={`flex h-9 items-center gap-1.5 rounded-md px-2 text-sm font-medium transition-colors sm:px-3 ${
+                    view === "carte" ? "bg-green text-white" : "text-foreground/70 hover:bg-muted"
+                  }`}
+                >
+                  <MapIcon className="h-4 w-4" />
+                  <span className="hidden sm:inline">Carte</span>
+                </button>
+              </div>
+            ) : null
+          }
+          menuActions={[
+            {
+              label: "Importer un fichier",
+              icon: FileUp,
+              href: "/parcelles/import",
+            },
+          ]}
+        />
 
         {view === "carte" && parcellesMap.data && (
           <>
