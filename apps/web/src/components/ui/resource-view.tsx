@@ -21,6 +21,7 @@
 import {
   Bookmark,
   ChevronDown,
+  Columns,
   Filter as FilterIcon,
   Layers as LayersIcon,
   LayoutGrid,
@@ -34,7 +35,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 // ---------- Types publics ---------------------------------------------------
 
-export type ViewMode = "list" | "kanban";
+export type ViewMode = "list" | "kanban" | "card";
 
 export interface ListColumn<T> {
   key: string;
@@ -90,6 +91,12 @@ export interface ResourceViewProps<T> {
   columns: ListColumn<T>[];
   /** Renderer d'une carte mode kanban. */
   renderKanbanCard: (item: T) => React.ReactNode;
+  /**
+   * Renderer d'une carte mode "card" (vue par défaut sur mobile).
+   * Si non fourni, on réutilise `renderKanbanCard` — rétrocompat.
+   * Conçu compact : titre + 2-3 infos clés + actions inline.
+   */
+  renderCard?: (item: T) => React.ReactNode;
   /** Champs où la search bar matche (insensible casse, includes). */
   searchFields: (item: T) => string;
   /** Filtres cochables. */
@@ -133,7 +140,10 @@ function loadState(storageKey: string, defaultView: ViewMode): PersistedState {
     }
     const parsed = JSON.parse(raw) as Partial<PersistedState>;
     return {
-      view: parsed.view === "kanban" || parsed.view === "list" ? parsed.view : defaultView,
+      view:
+        parsed.view === "kanban" || parsed.view === "list" || parsed.view === "card"
+          ? parsed.view
+          : defaultView,
       search: typeof parsed.search === "string" ? parsed.search : "",
       activeFilterKeys: Array.isArray(parsed.activeFilterKeys) ? parsed.activeFilterKeys : [],
       groupByKey: typeof parsed.groupByKey === "string" ? parsed.groupByKey : null,
@@ -154,7 +164,12 @@ function saveState(storageKey: string, state: PersistedState): void {
 }
 
 export function ResourceView<T>(props: ResourceViewProps<T>) {
-  const defaultView = props.defaultView ?? "list";
+  // Sur mobile (< sm), default = "card" (compact, gros doigts).
+  // Sur desktop, on garde la valeur explicite (default "list").
+  // Une fois que l'user a basculé manuellement, le choix est persisté
+  // en localStorage et prime sur l'auto-default.
+  const isMobile = typeof window !== "undefined" && window.matchMedia("(max-width: 639px)").matches;
+  const defaultView: ViewMode = props.defaultView ?? (isMobile ? "card" : "list");
   const [view, setView] = useState<ViewMode>(defaultView);
   const [search, setSearch] = useState("");
   const [activeFilterKeys, setActiveFilterKeys] = useState<string[]>([]);
@@ -315,6 +330,13 @@ export function ResourceView<T>(props: ResourceViewProps<T>) {
           {...(props.onItemClick ? { onItemClick: props.onItemClick } : {})}
           {...(groups ? { groups } : {})}
         />
+      ) : view === "card" ? (
+        <CardView
+          data={filteredData}
+          getKey={props.getKey}
+          renderCard={props.renderCard ?? props.renderKanbanCard}
+          {...(props.onItemClick ? { onItemClick: props.onItemClick } : {})}
+        />
       ) : (
         <KanbanView
           groups={
@@ -333,6 +355,42 @@ export function ResourceView<T>(props: ResourceViewProps<T>) {
           {...(props.onItemClick ? { onItemClick: props.onItemClick } : {})}
         />
       )}
+    </div>
+  );
+}
+
+// ---------- CardView (vue par défaut sur mobile) -------------------------
+
+interface CardViewProps<T> {
+  data: T[];
+  getKey: (item: T) => string;
+  renderCard: (item: T) => React.ReactNode;
+  onItemClick?: (item: T) => void;
+}
+
+function CardView<T>({ data, getKey, renderCard, onItemClick }: CardViewProps<T>) {
+  return (
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      {data.map((item) => {
+        const key = getKey(item);
+        const content = (
+          <div className="rounded-xl border border-border bg-background p-3 transition-colors hover:bg-muted/30">
+            {renderCard(item)}
+          </div>
+        );
+        return onItemClick ? (
+          <button
+            key={key}
+            type="button"
+            onClick={() => onItemClick(item)}
+            className="block text-left"
+          >
+            {content}
+          </button>
+        ) : (
+          <div key={key}>{content}</div>
+        );
+      })}
     </div>
   );
 }
@@ -437,14 +495,22 @@ function SearchBar<T>(props: {
         </div>
         <div className="flex gap-1 rounded-lg bg-muted p-1 text-sm">
           <ViewToggleButton
+            active={props.view === "card"}
+            onClick={() => props.onViewChange("card")}
+            icon={LayoutGrid}
+            label="Cartes"
+          />
+          <ViewToggleButton
             active={props.view === "list"}
             onClick={() => props.onViewChange("list")}
             icon={List}
+            label="Liste"
           />
           <ViewToggleButton
             active={props.view === "kanban"}
             onClick={() => props.onViewChange("kanban")}
-            icon={LayoutGrid}
+            icon={Columns}
+            label="Kanban"
           />
         </div>
       </div>
@@ -604,15 +670,19 @@ function ViewToggleButton({
   active,
   onClick,
   icon: Icon,
+  label,
 }: {
   active: boolean;
   onClick: () => void;
   icon: LucideIcon;
+  label: string;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
+      title={label}
+      aria-label={label}
       className={`flex h-9 items-center justify-center rounded-md px-3 transition-colors ${
         active ? "bg-background shadow-sm" : "text-foreground/60 hover:bg-background/40"
       }`}
