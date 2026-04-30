@@ -379,27 +379,33 @@ function bdtaNumberFor(i: number): string {
   return `CH 120.1304.${seq}`;
 }
 
-async function purgeDemoTenant(): Promise<string | null> {
-  const existing = await prisma.exploitation.findUnique({ where: { code: DEMO_CODE } });
-  if (!existing) return null;
-  // Cascade : Animal/Parcelle/Travail/etc ont onDelete: Cascade.
-  // Pour les modèles sans cascade explicite, on nettoie à la main :
-  await prisma.ligneTravailHeure.deleteMany({ where: { travail: { tenantId: existing.id } } });
-  await prisma.ligneTravailProduit.deleteMany({ where: { travail: { tenantId: existing.id } } });
-  await prisma.travail.deleteMany({ where: { tenantId: existing.id } });
-  await prisma.intervention.deleteMany({ where: { ownerTenantId: existing.id } });
-  await prisma.culture.deleteMany({ where: { tenantId: existing.id } });
-  await prisma.animal.deleteMany({ where: { tenantId: existing.id } });
-  await prisma.sortieSrpa.deleteMany({ where: { tenantId: existing.id } });
-  await prisma.parcelle.deleteMany({ where: { tenantId: existing.id } });
-  await prisma.user.deleteMany({ where: { tenantId: existing.id } });
-  await prisma.exploitation.delete({ where: { id: existing.id } });
-  console.log(`✓ Tenant démo purgé (${DEMO_CODE})`);
-  return existing.id;
+// Codes de tenants démo à purger systématiquement (anciens + actuel).
+// Inclut les codes legacy générés par les versions précédentes du seed,
+// pour que admin@admin.ch et demo@demo.ch ne se retrouvent plus connectés
+// à un ancien tenant fantôme.
+const PURGE_CODES = ["AQ-VD-DEMO-PUBLIC", "AQ-VD-ADMIN-PUBLIC", "AQ-VD-1247-DEMO"];
+
+async function purgeOldDemoTenants(): Promise<void> {
+  for (const code of PURGE_CODES) {
+    const existing = await prisma.exploitation.findUnique({ where: { code } });
+    if (!existing) continue;
+    await prisma.ligneTravailHeure.deleteMany({ where: { travail: { tenantId: existing.id } } });
+    await prisma.ligneTravailProduit.deleteMany({ where: { travail: { tenantId: existing.id } } });
+    await prisma.travail.deleteMany({ where: { tenantId: existing.id } });
+    await prisma.intervention.deleteMany({ where: { ownerTenantId: existing.id } });
+    await prisma.culture.deleteMany({ where: { tenantId: existing.id } });
+    await prisma.animal.deleteMany({ where: { tenantId: existing.id } });
+    await prisma.sortieSrpa.deleteMany({ where: { tenantId: existing.id } });
+    await prisma.parcelle.deleteMany({ where: { tenantId: existing.id } });
+    await prisma.refreshToken.deleteMany({ where: { user: { tenantId: existing.id } } });
+    await prisma.user.deleteMany({ where: { tenantId: existing.id } });
+    await prisma.exploitation.delete({ where: { id: existing.id } });
+    console.log(`✓ Ancien tenant purgé : ${code}`);
+  }
 }
 
 async function seedDemoTenant(): Promise<void> {
-  await purgeDemoTenant();
+  await purgeOldDemoTenants();
 
   const tenant = await prisma.exploitation.create({
     data: {
