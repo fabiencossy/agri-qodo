@@ -4,7 +4,9 @@ import {
   BarChart3,
   Beef,
   BookOpen,
+  Briefcase,
   ClipboardList,
+  Clock,
   Cog,
   FlaskConical,
   Handshake,
@@ -30,11 +32,13 @@ interface NavLink {
 }
 
 const NAVIGATION: NavLink[] = [
-  { href: "/", label: "Accueil", icon: Home },
+  { href: "/app", label: "Accueil", icon: Home },
   { href: "/parcelles", label: "Parcelles", icon: MapPin },
   { href: "/interventions", label: "Carnet des champs", icon: Sprout },
   { href: "/animaux", label: "Cheptel", icon: Beef },
   { href: "/srpa", label: "SRPA — sorties pâturage", icon: ClipboardList },
+  { href: "/travaux", label: "Travaux", icon: Briefcase },
+  { href: "/mes-heures", label: "Mes heures", icon: Clock },
   { href: "/produits", label: "Catalogue produits", icon: Package },
 ];
 

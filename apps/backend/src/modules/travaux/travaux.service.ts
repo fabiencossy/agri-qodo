@@ -49,6 +49,44 @@ export class TravauxService {
     });
   }
 
+  /**
+   * Heures saisies par l'utilisateur courant — agrège ses
+   * `LigneTravailHeure` à travers tous les Travaux du tenant. Filtres
+   * date pour une semaine ou un mois précis.
+   *
+   * Renvoie les lignes avec le contexte du Travail parent (titre, date,
+   * client, statut) — utile pour la vue timesheet personnelle.
+   */
+  async mesHeures(filters?: { dateDebut?: string; dateFin?: string }) {
+    const ctx = this.tenantContext.get();
+    const travailWhere: Prisma.TravailWhereInput = { tenantId: ctx.tenantId };
+    if (filters?.dateDebut || filters?.dateFin) {
+      const dateFilter: { gte?: Date; lte?: Date } = {};
+      if (filters.dateDebut) dateFilter.gte = new Date(filters.dateDebut);
+      if (filters.dateFin) dateFilter.lte = new Date(filters.dateFin);
+      travailWhere.date = dateFilter;
+    }
+    return this.prisma.ligneTravailHeure.findMany({
+      where: {
+        userId: ctx.userId,
+        travail: travailWhere,
+      },
+      include: {
+        travail: {
+          select: {
+            id: true,
+            titre: true,
+            date: true,
+            statut: true,
+            partenaire: { select: { id: true, nom: true } },
+            parcelle: { select: { id: true, nom: true } },
+          },
+        },
+      },
+      orderBy: [{ travail: { date: "desc" } }, { createdAt: "asc" }],
+    });
+  }
+
   async getById(id: string) {
     const { tenantId } = this.tenantContext.get();
     const travail = await this.prisma.travail.findFirst({

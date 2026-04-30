@@ -9,9 +9,10 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from "@nestjs/common";
-import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
+import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from "@nestjs/swagger";
 import { JwtAuthGuard } from "@/modules/auth/guards/jwt-auth.guard";
 import { CreateTravailDto } from "./dto/create-travail.dto";
 import { UpdateTravailDto } from "./dto/update-travail.dto";
@@ -28,6 +29,20 @@ export class TravauxController {
   @ApiOperation({ summary: "Liste les travaux du tenant courant." })
   list() {
     return this.travaux.list();
+  }
+
+  @Get("mes-heures")
+  @ApiOperation({
+    summary:
+      "Heures saisies par l'utilisateur courant (timesheet perso, agrégées des LigneTravailHeure).",
+  })
+  @ApiQuery({ name: "dateDebut", required: false, description: "ISO date inclusive (>=)" })
+  @ApiQuery({ name: "dateFin", required: false, description: "ISO date inclusive (<=)" })
+  mesHeures(@Query("dateDebut") dateDebut?: string, @Query("dateFin") dateFin?: string) {
+    return this.travaux.mesHeures({
+      ...(dateDebut ? { dateDebut } : {}),
+      ...(dateFin ? { dateFin } : {}),
+    });
   }
 
   @Get(":id")

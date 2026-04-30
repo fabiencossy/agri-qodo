@@ -85,6 +85,35 @@ export function useTravaux() {
   });
 }
 
+export interface MesHeuresLigne {
+  id: string;
+  travailId: string;
+  travail: {
+    id: string;
+    titre: string;
+    date: string;
+    statut: TravailStatut;
+    partenaire: { id: string; nom: string } | null;
+    parcelle: { id: string; nom: string } | null;
+  };
+  userId: string;
+  dureeMinutes: number;
+  tauxHoraireCHF: string | null;
+  notes: string | null;
+}
+
+export function useMesHeures(filters?: { dateDebut?: string; dateFin?: string }) {
+  const params = new URLSearchParams();
+  if (filters?.dateDebut) params.set("dateDebut", filters.dateDebut);
+  if (filters?.dateFin) params.set("dateFin", filters.dateFin);
+  const qs = params.toString();
+  const url = qs ? `/api/travaux/mes-heures?${qs}` : "/api/travaux/mes-heures";
+  return useQuery({
+    queryKey: ["travaux", "mes-heures", filters?.dateDebut ?? "", filters?.dateFin ?? ""] as const,
+    queryFn: () => api<MesHeuresLigne[]>(url),
+  });
+}
+
 export function useTravail(id: string | undefined) {
   return useQuery({
     queryKey: ["travaux", id] as const,
