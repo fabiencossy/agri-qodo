@@ -139,3 +139,44 @@ export function useChangePassword() {
       api<void>("/api/auth/change-password", { method: "POST", body: input }),
   });
 }
+
+export interface UserProfile {
+  id: string;
+  email: string;
+  prenom: string;
+  nom: string;
+  telephone: string | null;
+  avatarUrl: string | null;
+  preferences: Record<string, unknown> | null;
+  role: "OWNER" | "EMPLOYE" | "COMPTABLE" | "CONSULTANT";
+  isActive: boolean;
+  lastLoginAt: string | null;
+  createdAt: string;
+}
+
+export function useMyProfile() {
+  return useQuery({
+    queryKey: ["users", "me"],
+    queryFn: () => api<UserProfile>("/api/users/me"),
+    enabled: getStoredTokens() !== null,
+  });
+}
+
+export interface UpdateProfileInput {
+  prenom?: string;
+  nom?: string;
+  telephone?: string;
+  preferences?: Record<string, unknown>;
+}
+
+export function useUpdateProfile() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: UpdateProfileInput) =>
+      api<UserProfile>("/api/users/me", { method: "PATCH", body: input }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["users", "me"] });
+      void qc.invalidateQueries({ queryKey: ["current-user"] });
+    },
+  });
+}

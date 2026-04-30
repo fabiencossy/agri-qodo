@@ -30,20 +30,25 @@ export class UsersService {
     private readonly tenantContext: TenantContextService,
   ) {}
 
+  private readonly publicSelect = {
+    id: true,
+    email: true,
+    prenom: true,
+    nom: true,
+    telephone: true,
+    avatarUrl: true,
+    preferences: true,
+    role: true,
+    isActive: true,
+    lastLoginAt: true,
+    createdAt: true,
+  } satisfies Prisma.UserSelect;
+
   list() {
     const { tenantId } = this.tenantContext.get();
     return this.prisma.user.findMany({
       where: { tenantId },
-      select: {
-        id: true,
-        email: true,
-        prenom: true,
-        nom: true,
-        role: true,
-        isActive: true,
-        lastLoginAt: true,
-        createdAt: true,
-      },
+      select: this.publicSelect,
       orderBy: [{ isActive: "desc" }, { createdAt: "asc" }],
     });
   }
@@ -52,19 +57,14 @@ export class UsersService {
     const { tenantId } = this.tenantContext.get();
     const user = await this.prisma.user.findFirst({
       where: { id, tenantId },
-      select: {
-        id: true,
-        email: true,
-        prenom: true,
-        nom: true,
-        role: true,
-        isActive: true,
-        lastLoginAt: true,
-        createdAt: true,
-      },
+      select: this.publicSelect,
     });
     if (!user) throw new NotFoundException("Utilisateur introuvable");
     return user;
+  }
+
+  async getMe(userId: string) {
+    return this.getById(userId);
   }
 
   async create(callerRole: UserRole, dto: CreateUserDto) {
@@ -125,6 +125,10 @@ export class UsersService {
     const data: Prisma.UserUpdateInput = {
       ...(dto.prenom !== undefined ? { prenom: dto.prenom } : {}),
       ...(dto.nom !== undefined ? { nom: dto.nom } : {}),
+      ...(dto.telephone !== undefined ? { telephone: dto.telephone || null } : {}),
+      ...(dto.preferences !== undefined
+        ? { preferences: dto.preferences as Prisma.InputJsonValue }
+        : {}),
       ...(dto.role !== undefined ? { role: dto.role } : {}),
       ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
       ...(dto.password ? { passwordHash: await bcrypt.hash(dto.password, 10) } : {}),

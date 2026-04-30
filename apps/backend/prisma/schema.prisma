@@ -266,6 +266,16 @@ model User {
   tenantId     String    @map("tenant_id")
   isActive     Boolean   @default(true) @map("is_active")
   lastLoginAt  DateTime? @map("last_login_at")
+  // Profil utilisateur — section "Mon compte" sur /profil.
+  telephone    String?
+  // URL publique de l'avatar (stockage statique côté backend dans
+  // /uploads/avatars/{userId}.{ext}, servi via /api/uploads/avatars/...).
+  // Null = avatar par défaut (initiales prenom+nom).
+  avatarUrl    String?   @map("avatar_url")
+  // Préférences UI : langue (fr|de|it|en), thème (light|dark|system),
+  // format date. Stocké en JSON pour flexibilité MVP — schéma fixe à
+  // figer plus tard avec une vraie table si on a beaucoup de prefs.
+  preferences  Json?
   createdAt    DateTime  @default(now()) @map("created_at")
   updatedAt    DateTime  @updatedAt @map("updated_at")
 
