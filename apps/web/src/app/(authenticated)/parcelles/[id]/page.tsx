@@ -66,7 +66,7 @@ export default function ParcelleDetailPage() {
     <>
       <Breadcrumb
         items={[
-          { label: "Accueil", href: "/" },
+          { label: "Accueil", href: "/app" },
           { label: "Parcelles", href: "/parcelles" },
           { label: parcelle.data?.nom ?? "…" },
         ]}

@@ -26,7 +26,7 @@ export default function UtilisateursPage() {
 
   return (
     <>
-      <Breadcrumb items={[{ label: "Accueil", href: "/" }, { label: "Utilisateurs" }]} />
+      <Breadcrumb items={[{ label: "Accueil", href: "/app" }, { label: "Utilisateurs" }]} />
       <div className="mx-auto max-w-4xl px-4 py-8">
         <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
           <div>

@@ -22,7 +22,7 @@ export default function AnimauxPage() {
 
   return (
     <>
-      <Breadcrumb items={[{ label: "Accueil", href: "/" }, { label: "Cheptel" }]} />
+      <Breadcrumb items={[{ label: "Accueil", href: "/app" }, { label: "Cheptel" }]} />
       <div className="mx-auto max-w-4xl px-4 py-8">
         <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
           <div>

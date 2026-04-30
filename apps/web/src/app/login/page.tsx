@@ -23,7 +23,7 @@ export default function LoginPage() {
   const login = useLogin();
 
   useEffect(() => {
-    if (isAuthenticated) router.push("/");
+    if (isAuthenticated) router.push("/app");
   }, [isAuthenticated, router]);
 
   const {

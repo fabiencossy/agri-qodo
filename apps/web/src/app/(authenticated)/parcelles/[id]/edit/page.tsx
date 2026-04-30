@@ -127,7 +127,7 @@ export default function EditParcellePage() {
     <>
       <Breadcrumb
         items={[
-          { label: "Accueil", href: "/" },
+          { label: "Accueil", href: "/app" },
           { label: "Parcelles", href: "/parcelles" },
           { label: parcelle.data?.nom ?? "…", href: `/parcelles/${parcelleId}` },
           { label: "Modifier" },

@@ -118,7 +118,7 @@ export default function ImportPage() {
     <>
       <Breadcrumb
         items={[
-          { label: "Accueil", href: "/" },
+          { label: "Accueil", href: "/app" },
           { label: "Parcelles", href: "/parcelles" },
           { label: "Importer" },
         ]}

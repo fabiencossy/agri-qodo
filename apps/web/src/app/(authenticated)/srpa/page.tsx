@@ -40,7 +40,7 @@ export default function SrpaPage() {
   return (
     <>
       <Breadcrumb
-        items={[{ label: "Accueil", href: "/" }, { label: "SRPA — Sorties au pâturage" }]}
+        items={[{ label: "Accueil", href: "/app" }, { label: "SRPA — Sorties au pâturage" }]}
       />
       <div className="mx-auto max-w-5xl px-4 py-8">
         <div className="mb-8 flex items-end justify-between">
