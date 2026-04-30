@@ -153,19 +153,13 @@ export default function ParcellesPage() {
         {view === "liste" && parcelles.data && parcelles.data.length > 0 && (
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {parcelles.data.map((p) => (
-              <article
+              <Link
                 key={p.id}
-                className="relative rounded-2xl border border-border bg-background p-5 transition-colors hover:border-green"
+                href={`/parcelles/${p.id}` as never}
+                className="group relative block rounded-2xl border border-border bg-background p-5 transition-all hover:border-green hover:shadow-md active:scale-[0.99]"
               >
-                <header className="mb-3 flex items-start justify-between">
-                  <h2 className="text-lg font-semibold">
-                    <Link
-                      href={`/parcelles/${p.id}`}
-                      className="after:absolute after:inset-0 after:content-[''] hover:underline"
-                    >
-                      {p.nom}
-                    </Link>
-                  </h2>
+                <header className="mb-3 flex items-start justify-between gap-2">
+                  <h2 className="text-lg font-semibold group-hover:text-green">{p.nom}</h2>
                   <button
                     onClick={(e) => {
                       e.preventDefault();
@@ -173,7 +167,7 @@ export default function ParcellesPage() {
                       onDelete(p.id, p.nom);
                     }}
                     disabled={deleteMutation.isPending}
-                    className="relative z-10 rounded-md p-1.5 text-foreground/50 hover:bg-red-50 hover:text-red-600"
+                    className="relative z-10 -mr-1 -mt-1 flex-shrink-0 rounded-md p-1.5 text-foreground/40 hover:bg-red-50 hover:text-red-600"
                     aria-label="Supprimer"
                   >
                     <Trash2 className="h-4 w-4" />
@@ -196,7 +190,7 @@ export default function ParcellesPage() {
                   )}
                 </dl>
                 {p.notes && <p className="mt-3 text-xs text-foreground/60">{p.notes}</p>}
-              </article>
+              </Link>
             ))}
           </div>
         )}
