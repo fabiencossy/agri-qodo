@@ -90,7 +90,7 @@ export default function AssolementPage() {
 
   return (
     <>
-      <Breadcrumb items={[{ label: "Accueil", href: "/" }, { label: "Plan d'assolement" }]} />
+      <Breadcrumb items={[{ label: "Accueil", href: "/app" }, { label: "Plan d'assolement" }]} />
       <div className="mx-auto max-w-7xl px-4 py-8">
         <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
           <div>

@@ -51,7 +51,7 @@ export function useLogin() {
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["auth-state"] });
-      router.push("/");
+      router.push("/app");
     },
   });
 }

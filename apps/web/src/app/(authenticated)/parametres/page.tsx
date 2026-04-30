@@ -98,7 +98,7 @@ export default function ParametresPage() {
 
   return (
     <>
-      <Breadcrumb items={[{ label: "Accueil", href: "/" }, { label: "Paramètres" }]} />
+      <Breadcrumb items={[{ label: "Accueil", href: "/app" }, { label: "Paramètres" }]} />
       <div className="mx-auto max-w-5xl px-4 py-8">
         <div className="mb-6">
           <h1 className="flex items-center gap-2 text-3xl font-bold">

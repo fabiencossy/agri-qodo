@@ -16,7 +16,7 @@ export default function VeilleArticlePage() {
     <>
       <Breadcrumb
         items={[
-          { label: "Accueil", href: "/" },
+          { label: "Accueil", href: "/app" },
           { label: "Veille réglementaire", href: "/veille" },
           { label: article.data?.titre ?? "…" },
         ]}

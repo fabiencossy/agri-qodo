@@ -35,7 +35,7 @@ export default function PermissionsPage() {
     <>
       <Breadcrumb
         items={[
-          { label: "Accueil", href: "/" },
+          { label: "Accueil", href: "/app" },
           { label: "Paramètres", href: "/parametres" },
           { label: "Rôles et permissions" },
         ]}

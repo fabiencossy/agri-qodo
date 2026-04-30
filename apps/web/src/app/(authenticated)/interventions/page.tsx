@@ -26,7 +26,7 @@ export default function InterventionsPage() {
 
   return (
     <>
-      <Breadcrumb items={[{ label: "Accueil", href: "/" }, { label: "Carnet des champs" }]} />
+      <Breadcrumb items={[{ label: "Accueil", href: "/app" }, { label: "Carnet des champs" }]} />
       <div className="mx-auto max-w-5xl px-4 py-8">
         <div className="mb-8 flex items-end justify-between">
           <div>

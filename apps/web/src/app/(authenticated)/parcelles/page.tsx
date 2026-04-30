@@ -39,7 +39,7 @@ export default function ParcellesPage() {
 
   return (
     <>
-      <Breadcrumb items={[{ label: "Accueil", href: "/" }, { label: "Parcelles" }]} />
+      <Breadcrumb items={[{ label: "Accueil", href: "/app" }, { label: "Parcelles" }]} />
       <div className="mx-auto max-w-5xl px-4 py-8">
         <div className="mb-6 flex items-end justify-between">
           <div>

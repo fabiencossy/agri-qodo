@@ -89,7 +89,7 @@ export default function NewSortiePage() {
     <>
       <Breadcrumb
         items={[
-          { label: "Accueil", href: "/" },
+          { label: "Accueil", href: "/app" },
           { label: "SRPA", href: "/srpa" },
           { label: "Nouvelle sortie" },
         ]}

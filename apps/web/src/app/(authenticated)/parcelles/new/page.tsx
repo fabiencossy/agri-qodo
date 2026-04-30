@@ -105,7 +105,7 @@ export default function NewParcellePage() {
     <>
       <Breadcrumb
         items={[
-          { label: "Accueil", href: "/" },
+          { label: "Accueil", href: "/app" },
           { label: "Parcelles", href: "/parcelles" },
           { label: "Nouvelle parcelle" },
         ]}

@@ -250,7 +250,7 @@ export default function NewInterventionPage() {
     <>
       <Breadcrumb
         items={[
-          { label: "Accueil", href: "/" },
+          { label: "Accueil", href: "/app" },
           { label: "Carnet des champs", href: "/interventions" },
           { label: "Nouvelle intervention" },
         ]}

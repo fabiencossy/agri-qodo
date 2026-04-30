@@ -49,7 +49,7 @@ export default function PartenairesPage() {
 
   return (
     <>
-      <Breadcrumb items={[{ label: "Accueil", href: "/" }, { label: "Partenaires" }]} />
+      <Breadcrumb items={[{ label: "Accueil", href: "/app" }, { label: "Partenaires" }]} />
       <div className="mx-auto max-w-4xl px-4 py-8">
         <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
           <div>
