@@ -33,6 +33,20 @@ export class UsersController {
     return this.service.list();
   }
 
+  @Get("me")
+  @ApiOperation({ summary: "Mon profil utilisateur (avec téléphone, avatar, préférences)." })
+  getMe(@Req() req: Request) {
+    const user = req.user as JwtPayload;
+    return this.service.getMe(user.sub);
+  }
+
+  @Patch("me")
+  @ApiOperation({ summary: "Met à jour mon profil (prenom, nom, telephone, preferences)." })
+  updateMe(@Req() req: Request, @Body() dto: UpdateUserDto) {
+    const user = req.user as JwtPayload;
+    return this.service.update(user.role, user.sub, user.sub, dto);
+  }
+
   @Get(":id")
   getById(@Param("id", ParseUUIDPipe) id: string) {
     return this.service.getById(id);

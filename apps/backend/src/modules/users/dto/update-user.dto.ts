@@ -1,6 +1,14 @@
 import { ApiPropertyOptional } from "@nestjs/swagger";
 import { UserRole } from "@prisma/client";
-import { IsBoolean, IsEnum, IsOptional, IsString, MaxLength, MinLength } from "class-validator";
+import {
+  IsBoolean,
+  IsEnum,
+  IsObject,
+  IsOptional,
+  IsString,
+  MaxLength,
+  MinLength,
+} from "class-validator";
 
 export class UpdateUserDto {
   @ApiPropertyOptional()
@@ -14,6 +22,21 @@ export class UpdateUserDto {
   @IsString()
   @MaxLength(80)
   nom?: string;
+
+  @ApiPropertyOptional({ description: "Téléphone (format libre, validation côté frontend)." })
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  telephone?: string;
+
+  @ApiPropertyOptional({
+    description: "Préférences UI : { langue, theme, formatDate }. Stockage JSONB libre.",
+    type: "object",
+    additionalProperties: true,
+  })
+  @IsOptional()
+  @IsObject()
+  preferences?: Record<string, unknown>;
 
   @ApiPropertyOptional({ enum: UserRole })
   @IsOptional()

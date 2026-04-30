@@ -19,6 +19,7 @@ import {
   Sprout,
   Tractor,
   Timer,
+  UserCircle,
   Users,
   Wrench,
 } from "lucide-react";
@@ -61,6 +62,7 @@ const ADMINISTRATION: NavLink[] = [
   { href: "/partenaires", label: "Partenaires", icon: Handshake },
   { href: "/produits", label: "Catalogue produits", icon: Package },
   { href: "/materiels", label: "Prestations", icon: Wrench },
+  { href: "/profil", label: "Mon profil", icon: UserCircle },
   { href: "/parametres", label: "Paramètres", icon: Cog },
 ];
 
