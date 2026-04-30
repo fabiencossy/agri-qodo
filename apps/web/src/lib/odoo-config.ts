@@ -57,14 +57,15 @@ export function useTestOdooConfig() {
 }
 
 /**
- * Renvoie true si Odoo est configuré ET connecté avec succès au moins une
- * fois. Utilisé pour afficher conditionnellement les fonctionnalités qui
- * dépendent d'Odoo (Travaux/facturation, Mes heures/timesheet).
+ * Renvoie true si Odoo est **configuré** : URL + clé API chiffrée
+ * présentes. On ne vérifie plus `connectedAt` — un admin peut avoir
+ * saisi sans cliquer sur "Tester", et la nav doit quand même se
+ * débloquer dans ce cas. Le test réel reste accessible via /parametres.
  */
 export function useOdooConnected(): { connected: boolean; isLoading: boolean } {
   const cfg = useOdooConfig();
   return {
-    connected: !!cfg.data?.connectedAt && !!cfg.data?.url && cfg.data.hasApiKey,
+    connected: !!cfg.data?.url && !!cfg.data?.hasApiKey,
     isLoading: cfg.isLoading,
   };
 }
