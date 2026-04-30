@@ -38,6 +38,7 @@ export class UsersService {
     telephone: true,
     avatarUrl: true,
     preferences: true,
+    emailVerifiedAt: true,
     role: true,
     isActive: true,
     lastLoginAt: true,

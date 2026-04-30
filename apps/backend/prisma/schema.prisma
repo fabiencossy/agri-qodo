@@ -276,14 +276,21 @@ model User {
   // format date. Stocké en JSON pour flexibilité MVP — schéma fixe à
   // figer plus tard avec une vraie table si on a beaucoup de prefs.
   preferences  Json?
+  // Vérification email — null tant que l'utilisateur n'a pas cliqué sur
+  // le lien de vérification reçu au signup. À utiliser pour gater
+  // certaines actions sensibles (push Odoo, invitation partenaire) plus
+  // tard. Pour l'instant on n'aborte rien si null, mais on affiche un
+  // banner UI "Vérifie ton email".
+  emailVerifiedAt DateTime? @map("email_verified_at")
   createdAt    DateTime  @default(now()) @map("created_at")
   updatedAt    DateTime  @updatedAt @map("updated_at")
 
   tenant        Exploitation        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  refreshTokens       RefreshToken[]
-  passwordResetTokens PasswordResetToken[]
-  lignesHeure         LigneTravailHeure[]
-  presences           Presence[]
+  refreshTokens           RefreshToken[]
+  passwordResetTokens     PasswordResetToken[]
+  emailVerificationTokens EmailVerificationToken[]
+  lignesHeure             LigneTravailHeure[]
+  presences               Presence[]
 
   // Email partagé : un comptable / conseiller peut avoir un compte sur
   // plusieurs exploitations. L'unicité est sur (email, tenantId).
@@ -291,6 +298,22 @@ model User {
   @@index([email])
   @@index([tenantId])
   @@map("users")
+}
+
+model EmailVerificationToken {
+  id         String    @id @default(uuid())
+  userId     String    @map("user_id")
+  // Hash SHA-256 du token. Brut envoyé par mail uniquement.
+  tokenHash  String    @unique @map("token_hash")
+  // Expire long (7j) — l'utilisateur peut prendre son temps.
+  expiresAt  DateTime  @map("expires_at")
+  usedAt     DateTime? @map("used_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("email_verification_tokens")
 }
 
 model PasswordResetToken {

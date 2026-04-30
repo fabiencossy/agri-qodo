@@ -148,10 +148,17 @@ export interface UserProfile {
   telephone: string | null;
   avatarUrl: string | null;
   preferences: Record<string, unknown> | null;
+  emailVerifiedAt: string | null;
   role: "OWNER" | "EMPLOYE" | "COMPTABLE" | "CONSULTANT";
   isActive: boolean;
   lastLoginAt: string | null;
   createdAt: string;
+}
+
+export function useResendEmailVerification() {
+  return useMutation({
+    mutationFn: () => api<void>("/api/auth/email/resend", { method: "POST" }),
+  });
 }
 
 export function useMyProfile() {

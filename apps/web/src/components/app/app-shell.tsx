@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import { EmailVerificationBanner } from "./email-verification-banner";
 import { Fab } from "./fab";
 import { HamburgerDrawer } from "./hamburger-drawer";
 import { Sidebar } from "./sidebar";
@@ -24,6 +25,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       <div className="flex min-w-0 flex-1 flex-col">
         <TopBar onMenuClick={openDrawer} />
+        <EmailVerificationBanner />
         <main className="flex-1">{children}</main>
         <Fab />
       </div>
