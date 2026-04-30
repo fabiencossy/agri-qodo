@@ -39,6 +39,15 @@ export class ParcellesController {
     return this.parcelles.listForMap();
   }
 
+  @Get("accessibles")
+  @ApiOperation({
+    summary:
+      "Liste les parcelles accessibles : les miennes + celles des partenaires liés (PartnerLink ACTIVE). Sert à la saisie d'interventions/travaux 'chez un client'.",
+  })
+  listAccessibles() {
+    return this.parcelles.listAccessibles();
+  }
+
   @Get(":id")
   @ApiOperation({ summary: "Détail d'une parcelle par id" })
   getById(@Param("id", ParseUUIDPipe) id: string) {

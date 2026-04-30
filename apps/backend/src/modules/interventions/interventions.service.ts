@@ -80,12 +80,30 @@ export class InterventionsService {
   async create(dto: CreateInterventionDto) {
     const { tenantId } = this.tenantContext.get();
 
+    // Parcelle accessible : la mienne OU celle d'un partenaire ACTIVE.
     const parcelle = await this.prisma.parcelle.findFirst({
-      where: { id: dto.parcelleId, tenantId },
+      where: { id: dto.parcelleId },
       select: { id: true, tenantId: true, surfaceM2: true },
     });
     if (!parcelle) {
-      throw new ForbiddenException("Parcelle introuvable ou hors de votre exploitation");
+      throw new ForbiddenException("Parcelle introuvable");
+    }
+    if (parcelle.tenantId !== tenantId) {
+      const link = await this.prisma.partnerLink.findFirst({
+        where: {
+          status: "ACTIVE",
+          OR: [
+            { ownerTenantId: parcelle.tenantId, partnerTenantId: tenantId },
+            { ownerTenantId: tenantId, partnerTenantId: parcelle.tenantId },
+          ],
+        },
+        select: { id: true },
+      });
+      if (!link) {
+        throw new ForbiddenException(
+          "Cette parcelle appartient à un tenant non lié — invite-le comme partenaire d'abord.",
+        );
+      }
     }
 
     // Si une géom est fournie, elle est la source de vérité : on valide

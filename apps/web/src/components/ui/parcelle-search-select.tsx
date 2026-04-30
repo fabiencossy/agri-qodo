@@ -13,11 +13,11 @@ import { Check, Loader2, MapPin, Plus, Search, X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Input } from "@/components/ui/input";
-import { type Parcelle, useParcelles } from "@/lib/parcelles";
+import { type AccessibleParcelle, useParcellesAccessibles } from "@/lib/parcelles";
 
 interface ParcelleSearchSelectProps {
   value: string;
-  onChange: (parcelleId: string, parcelle: Parcelle | null) => void;
+  onChange: (parcelleId: string, parcelle: AccessibleParcelle | null) => void;
   placeholder?: string;
   required?: boolean;
   /** Si true, désactive le sélecteur (ex: pas de parcelle disponible). */
@@ -31,7 +31,7 @@ export function ParcelleSearchSelect({
   required,
   disabled,
 }: ParcelleSearchSelectProps) {
-  const parcelles = useParcelles();
+  const parcelles = useParcellesAccessibles();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const containerRef = useRef<HTMLDivElement>(null);
@@ -90,7 +90,7 @@ export function ParcelleSearchSelect({
       .sort((a, b) => a.nom.localeCompare(b.nom, "fr"));
   }, [parcelles.data, query]);
 
-  const handleSelect = (p: Parcelle) => {
+  const handleSelect = (p: AccessibleParcelle) => {
     onChange(p.id, p);
     setOpen(false);
     setQuery("");
@@ -197,10 +197,10 @@ function Panel({
   query: string;
   onQueryChange: (q: string) => void;
   inputRef: React.RefObject<HTMLInputElement>;
-  filtered: Parcelle[];
+  filtered: AccessibleParcelle[];
   isLoading: boolean;
   selectedId: string;
-  onSelect: (p: Parcelle) => void;
+  onSelect: (p: AccessibleParcelle) => void;
   onClose: () => void;
 }) {
   const trimmed = query.trim();
@@ -249,7 +249,14 @@ function Panel({
                   >
                     <MapPin className="mt-0.5 h-4 w-4 flex-shrink-0 text-foreground/50" />
                     <div className="min-w-0 flex-1">
-                      <p className="truncate font-medium">{p.nom}</p>
+                      <p className="truncate font-medium">
+                        {p.nom}
+                        {!p.isOwn && (
+                          <span className="ml-2 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-amber-800">
+                            chez {p.tenant.nom}
+                          </span>
+                        )}
+                      </p>
                       <p className="mt-0.5 truncate text-xs text-foreground/60">
                         {surfaceHa.toFixed(2)} ha · {p.zone}
                         {p.identifiantCadastral ? ` · ${p.identifiantCadastral}` : ""}

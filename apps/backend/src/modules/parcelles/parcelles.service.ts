@@ -55,6 +55,48 @@ export class ParcellesService {
   }
 
   /**
+   * Liste les tenants dont les parcelles sont accessibles au tenant courant :
+   * lui-même + tous les partenaires liés via PartnerLink ACTIVE (en tant
+   * qu'owner ou partner). Sert pour la saisie d'interventions/travaux
+   * "chez un client" sans avoir à basculer de tenant.
+   */
+  private async accessibleTenantIds(): Promise<Set<string>> {
+    const { tenantId } = this.tenantContext.get();
+    const links = await this.prisma.partnerLink.findMany({
+      where: {
+        status: "ACTIVE",
+        OR: [{ ownerTenantId: tenantId }, { partnerTenantId: tenantId }],
+      },
+      select: { ownerTenantId: true, partnerTenantId: true },
+    });
+    const ids = new Set<string>([tenantId]);
+    for (const l of links) {
+      ids.add(l.ownerTenantId);
+      ids.add(l.partnerTenantId);
+    }
+    return ids;
+  }
+
+  /**
+   * Liste enrichie : parcelles du tenant + parcelles des partenaires
+   * ACTIVE. Chaque parcelle inclut son tenant propriétaire pour que le
+   * frontend puisse afficher "Champ du Bas (chez Client X)".
+   */
+  async listAccessibles() {
+    const tenantIds = await this.accessibleTenantIds();
+    const { tenantId: current } = this.tenantContext.get();
+    const rows = await this.prisma.parcelle.findMany({
+      where: { tenantId: { in: Array.from(tenantIds) } },
+      orderBy: [{ tenantId: "asc" }, { nom: "asc" }],
+      include: { tenant: { select: { id: true, nom: true, code: true } } },
+    });
+    return rows.map((p) => ({
+      ...p,
+      isOwn: p.tenantId === current,
+    }));
+  }
+
+  /**
    * Variante carte : retourne id, nom, surface, zone et géométrie
    * sérialisée en GeoJSON. Filtre tenant manuel via tenantContext (le
    * raw query ne passe pas par l'extension Prisma).

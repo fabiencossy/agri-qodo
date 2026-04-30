@@ -270,10 +270,27 @@ export class TravauxService {
   private async assertParcelle(parcelleId: string | undefined, tenantId: string) {
     if (!parcelleId) return;
     const p = await this.prisma.parcelle.findFirst({
-      where: { id: parcelleId, tenantId },
+      where: { id: parcelleId },
+      select: { id: true, tenantId: true },
+    });
+    if (!p) throw new ForbiddenException("Parcelle introuvable");
+    if (p.tenantId === tenantId) return;
+    // Parcelle d'un partenaire : OK si PartnerLink ACTIVE entre les deux.
+    const link = await this.prisma.partnerLink.findFirst({
+      where: {
+        status: "ACTIVE",
+        OR: [
+          { ownerTenantId: p.tenantId, partnerTenantId: tenantId },
+          { ownerTenantId: tenantId, partnerTenantId: p.tenantId },
+        ],
+      },
       select: { id: true },
     });
-    if (!p) throw new ForbiddenException("Parcelle introuvable ou hors de votre exploitation");
+    if (!link) {
+      throw new ForbiddenException(
+        "Cette parcelle appartient à un tenant non lié — invite-le comme partenaire d'abord.",
+      );
+    }
   }
 
   private async assertPartenaire(partenaireId: string | undefined, _tenantId: string) {

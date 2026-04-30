@@ -62,6 +62,24 @@ export function useParcelles() {
   });
 }
 
+export interface AccessibleParcelle extends Parcelle {
+  tenantId: string;
+  tenant: { id: string; nom: string; code: string };
+  isOwn: boolean;
+}
+
+/**
+ * Parcelles accessibles : les miennes + celles des partenaires liés
+ * (PartnerLink ACTIVE). Permet de saisir des interventions/travaux pour
+ * un client sans avoir à basculer de tenant.
+ */
+export function useParcellesAccessibles() {
+  return useQuery({
+    queryKey: ["parcelles", "accessibles"] as const,
+    queryFn: () => api<AccessibleParcelle[]>("/api/parcelles/accessibles"),
+  });
+}
+
 export function useParcelle(id: string | undefined) {
   return useQuery({
     queryKey: ["parcelles", id] as const,
