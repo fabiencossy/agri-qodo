@@ -10,6 +10,7 @@ import { z } from "zod";
 import { Breadcrumb } from "@/components/app/breadcrumb";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { ParcelleSearchSelect } from "@/components/ui/parcelle-search-select";
 import { ProduitSearchSelect } from "@/components/ui/produit-search-select";
 import {
   emojiType,
@@ -271,18 +272,18 @@ export default function NewInterventionPage() {
           className="space-y-5 rounded-2xl border border-border bg-background p-6"
         >
           <Field label="Parcelle" error={errors.parcelleId?.message}>
-            <select
-              className="h-11 w-full rounded-lg border border-border bg-background px-3 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green"
-              disabled={noParcelles}
-              {...register("parcelleId")}
-            >
-              <option value="">Sélectionner une parcelle…</option>
-              {parcelles.data?.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.nom}
-                </option>
-              ))}
-            </select>
+            <Controller
+              control={control}
+              name="parcelleId"
+              render={({ field: { value, onChange } }) => (
+                <ParcelleSearchSelect
+                  value={value ?? ""}
+                  onChange={(id) => onChange(id)}
+                  required
+                  disabled={noParcelles}
+                />
+              )}
+            />
           </Field>
 
           <Field label="Type d'opération" error={errors.type?.message}>
