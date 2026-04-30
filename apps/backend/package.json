@@ -21,6 +21,8 @@
     "prisma:migrate:deploy": "prisma migrate deploy",
     "prisma:studio": "prisma studio",
     "db:seed": "tsx prisma/seed.ts",
+    "db:seed:materiels": "tsx prisma/seed-materiels.ts",
+    "db:seed:produits": "tsx prisma/seed-produits.ts",
     "clean": "rimraf dist .turbo"
   },
   "dependencies": {

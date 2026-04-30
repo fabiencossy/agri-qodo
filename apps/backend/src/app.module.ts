@@ -10,6 +10,7 @@ import { AnimauxModule } from "./modules/animaux/animaux.module";
 import { AuthModule } from "./modules/auth/auth.module";
 import { HealthModule } from "./modules/health/health.module";
 import { InterventionsModule } from "./modules/interventions/interventions.module";
+import { MaterielsModule } from "./modules/materiels/materiels.module";
 import { OdooModule } from "./modules/odoo/odoo.module";
 import { OdooConfigModule } from "./modules/odoo-config/odoo-config.module";
 import { ParcellesModule } from "./modules/parcelles/parcelles.module";
@@ -66,6 +67,7 @@ import { VeilleModule } from "./modules/veille/veille.module";
     SrpaModule,
     AnimauxModule,
     ProduitsModule,
+    MaterielsModule,
     SuisseBilanzModule,
     PlanFumureModule,
     PerModule,
