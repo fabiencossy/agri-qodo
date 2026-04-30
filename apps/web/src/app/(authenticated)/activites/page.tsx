@@ -74,7 +74,7 @@ export default function ActivitesPage() {
         <div className="grid gap-4 sm:grid-cols-2 sm:gap-5">
           <Link
             href="/interventions/new"
-            className="group flex flex-col items-start gap-4 rounded-3xl border-2 border-green/30 bg-green/5 p-6 transition-all hover:border-green hover:shadow-lg active:scale-[0.99] sm:p-8"
+            className="group flex flex-col items-start gap-4 rounded-3xl border border-border bg-background p-6 transition-all hover:border-foreground/20 hover:shadow-md active:scale-[0.99] sm:p-8"
           >
             <span className="flex h-20 w-20 items-center justify-center rounded-2xl bg-green text-white shadow-md transition-transform group-hover:scale-105 sm:h-24 sm:w-24">
               <Sprout className="h-10 w-10 sm:h-12 sm:w-12" />
@@ -85,14 +85,14 @@ export default function ActivitesPage() {
                 Carnet des champs : labour, semis, fumure, traitement phyto, récolte…
               </span>
             </span>
-            <span className="mt-auto inline-flex items-center gap-2 text-sm font-medium text-green">
+            <span className="mt-auto inline-flex items-center gap-2 text-sm font-medium text-foreground/70">
               Sur une parcelle <span aria-hidden>→</span>
             </span>
           </Link>
 
           <Link
             href="/travaux/new"
-            className="group flex flex-col items-start gap-4 rounded-3xl border-2 border-violet-200 bg-white p-6 transition-all hover:border-violet-500 hover:shadow-lg active:scale-[0.99] sm:p-8 dark:border-violet-800 dark:bg-zinc-900"
+            className="group flex flex-col items-start gap-4 rounded-3xl border border-border bg-background p-6 transition-all hover:border-foreground/20 hover:shadow-md active:scale-[0.99] sm:p-8"
           >
             <span className="flex h-20 w-20 items-center justify-center rounded-2xl bg-violet-600 text-white shadow-md transition-transform group-hover:scale-105 sm:h-24 sm:w-24">
               <Briefcase className="h-10 w-10 sm:h-12 sm:w-12" />
@@ -101,42 +101,53 @@ export default function ActivitesPage() {
               <span className="block text-xl font-bold text-foreground sm:text-2xl">
                 Saisir une prestation
               </span>
-              <span className="mt-1 block text-sm text-foreground/80 sm:text-base">
+              <span className="mt-1 block text-sm text-foreground/70 sm:text-base">
                 Prestation pour un client (balles rondes, transport…) ou interne (mécanique).
               </span>
             </span>
-            <span className="mt-auto inline-flex items-center gap-2 text-sm font-semibold text-violet-700 dark:text-violet-300">
+            <span className="mt-auto inline-flex items-center gap-2 text-sm font-medium text-foreground/70">
               Pour un client ou interne <span aria-hidden>→</span>
             </span>
           </Link>
         </div>
 
-        {/* Présence en cours — bandeau rouge si pointage ouvert */}
+        {/* Notification présence en cours — ligne sobre */}
         {presenceCourante.data && (
           <Link
             href="/presences"
-            className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border-2 border-red-400 bg-red-50 p-4 text-sm transition-colors hover:border-red-600 hover:bg-red-100 active:scale-[0.99] dark:border-red-800 dark:bg-red-950/30"
+            className="mt-6 flex items-center justify-between gap-3 rounded-xl border border-border bg-background p-3 text-sm transition-colors hover:bg-muted/30"
           >
             <div className="flex items-center gap-3">
-              <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-red-600 text-white">
-                <Timer className="h-5 w-5" />
+              <Timer className="h-4 w-4 text-foreground/60" />
+              <span>
+                Présence <strong>{presenceCourante.data.type.toLowerCase()}</strong> en cours
               </span>
-              <div>
-                <p className="font-semibold text-red-900 dark:text-red-200">
-                  Présence en cours — {presenceCourante.data.type}
-                </p>
-                <p className="text-xs text-red-700/80 dark:text-red-300/80">
-                  Pointe ta sortie quand tu as terminé.
-                </p>
-              </div>
             </div>
-            <span className="rounded-full bg-red-600 px-3 py-1 text-sm font-bold text-white">
-              ▶
-            </span>
+            <span className="text-xs text-foreground/60">Pointer la sortie →</span>
           </Link>
         )}
 
-        {/* Résumé "Cette semaine" - 3 KPI cliquables */}
+        {/* Notification interventions à valider — ligne sobre, redirige sur /interventions
+            où le badge "à valider" apparaît sur les lignes concernées avec boutons inline. */}
+        {pendingCount > 0 && (
+          <Link
+            href="/interventions"
+            className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-border bg-background p-3 text-sm transition-colors hover:bg-muted/30"
+          >
+            <div className="flex items-center gap-3">
+              <ClipboardCheck className="h-4 w-4 text-foreground/60" />
+              <span>
+                <strong>
+                  {pendingCount} intervention{pendingCount > 1 ? "s" : ""}
+                </strong>{" "}
+                à valider
+              </span>
+            </div>
+            <span className="text-xs text-foreground/60">Voir →</span>
+          </Link>
+        )}
+
+        {/* Résumé "Cette semaine" - 3 KPI cliquables (style uniforme sobre) */}
         <section className="mt-6 rounded-2xl border border-border bg-background p-4 sm:p-5">
           <header className="mb-4 flex items-center gap-2">
             <TrendingUp className="h-5 w-5 text-foreground/60" />
@@ -148,29 +159,25 @@ export default function ActivitesPage() {
           <div className="grid grid-cols-3 gap-3">
             <Link
               href="/interventions"
-              className="rounded-xl border border-border bg-green/5 p-3 text-center transition-colors hover:border-green/50 hover:bg-green/10"
+              className="rounded-xl border border-border bg-background p-3 text-center transition-colors hover:bg-muted/30"
             >
-              <div className="text-2xl font-bold text-green-dark sm:text-3xl">
-                {interventionsSemaine.length}
-              </div>
+              <div className="text-2xl font-bold sm:text-3xl">{interventionsSemaine.length}</div>
               <div className="mt-0.5 text-xs text-foreground/70">
                 intervention{interventionsSemaine.length > 1 ? "s" : ""}
               </div>
             </Link>
             <Link
               href="/travaux"
-              className="rounded-xl border border-violet-200 bg-white p-3 text-center transition-colors hover:border-violet-400 hover:bg-violet-50 dark:border-violet-800 dark:bg-zinc-900 dark:hover:bg-violet-950/30"
+              className="rounded-xl border border-border bg-background p-3 text-center transition-colors hover:bg-muted/30"
             >
-              <div className="text-2xl font-bold text-violet-800 sm:text-3xl dark:text-violet-200">
-                {travauxSemaine.length}
-              </div>
+              <div className="text-2xl font-bold sm:text-3xl">{travauxSemaine.length}</div>
               <div className="mt-0.5 text-xs text-foreground/70">
                 prestation{travauxSemaine.length > 1 ? "s" : ""}
               </div>
             </Link>
             <Link
               href="/mes-heures"
-              className="rounded-xl border border-border bg-muted/30 p-3 text-center transition-colors hover:border-foreground/20 hover:bg-muted/60"
+              className="rounded-xl border border-border bg-background p-3 text-center transition-colors hover:bg-muted/30"
             >
               <div className="font-mono text-2xl font-bold tabular-nums sm:text-3xl">
                 {heuresSemaineLabel}
@@ -179,30 +186,6 @@ export default function ActivitesPage() {
             </Link>
           </div>
         </section>
-
-        {pendingCount > 0 && (
-          <Link
-            href="/interventions/pending"
-            className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border-2 border-amber-300 bg-amber-50 p-4 text-sm transition-colors hover:border-amber-500 hover:bg-amber-100 active:scale-[0.99] dark:border-amber-800 dark:bg-amber-950/30 dark:hover:bg-amber-950/50"
-          >
-            <div className="flex items-center gap-3">
-              <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500 text-white">
-                <ClipboardCheck className="h-5 w-5" />
-              </span>
-              <div>
-                <p className="font-semibold text-amber-900 dark:text-amber-200">
-                  {pendingCount} intervention{pendingCount > 1 ? "s" : ""} à valider
-                </p>
-                <p className="text-xs text-amber-800/80 dark:text-amber-300/80">
-                  Saisies par tes partenaires sur tes parcelles — accepte, refuse ou modifie.
-                </p>
-              </div>
-            </div>
-            <span className="rounded-full bg-amber-500 px-3 py-1 text-sm font-bold text-white">
-              {pendingCount}
-            </span>
-          </Link>
-        )}
 
         <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border bg-muted/30 p-4 text-sm">
           <div className="flex items-center gap-3">

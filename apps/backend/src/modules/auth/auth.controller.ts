@@ -4,6 +4,7 @@ import { CurrentUser } from "@/common/decorators/current-user.decorator";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { AuthService } from "./auth.service";
 import { AuthTokensDto } from "./dto/auth-tokens.dto";
+import { ChangePasswordDto } from "./dto/change-password.dto";
 import { LoginDto } from "./dto/login.dto";
 import { RefreshDto } from "./dto/refresh.dto";
 import { RegisterDto } from "./dto/register.dto";
@@ -74,5 +75,20 @@ export class AuthController {
   @ApiOperation({ summary: "Déconnexion (révoque tous les refresh tokens)" })
   async logout(@CurrentUser() user: JwtPayload): Promise<void> {
     await this.auth.logout(user.sub);
+  }
+
+  @Post("change-password")
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary:
+      "Changer son propre mot de passe (vérification du mot de passe actuel). Révoque les autres sessions.",
+  })
+  async changePassword(
+    @CurrentUser() user: JwtPayload,
+    @Body() dto: ChangePasswordDto,
+  ): Promise<void> {
+    await this.auth.changePassword(user.sub, dto.currentPassword, dto.newPassword);
   }
 }

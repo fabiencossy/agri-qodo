@@ -1,4 +1,9 @@
-import { ConflictException, Injectable, UnauthorizedException } from "@nestjs/common";
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  UnauthorizedException,
+} from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { JwtService } from "@nestjs/jwt";
 import { type Canton, Prisma, UserRole } from "@prisma/client";
@@ -112,6 +117,43 @@ export class AuthService {
     await this.prisma.refreshToken.updateMany({
       where: { userId, revokedAt: null },
       data: { revokedAt: new Date() },
+    });
+  }
+
+  /**
+   * Change le mot de passe d'un user authentifié. Vérifie le password
+   * courant avant de set le nouveau (sécurité). Révoque tous les
+   * refresh tokens existants pour forcer une re-login partout.
+   */
+  async changePassword(
+    userId: string,
+    currentPassword: string,
+    newPassword: string,
+  ): Promise<void> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { passwordHash: true },
+    });
+    if (!user) throw new UnauthorizedException("Utilisateur introuvable");
+    const ok = await bcrypt.compare(currentPassword, user.passwordHash);
+    if (!ok) {
+      throw new UnauthorizedException("Mot de passe actuel incorrect");
+    }
+    if (newPassword.length < 8) {
+      throw new BadRequestException("Le nouveau mot de passe doit faire au moins 8 caractères");
+    }
+    const newHash = await bcrypt.hash(newPassword, 10);
+    await this.prisma.$transaction(async (tx) => {
+      await tx.user.update({
+        where: { id: userId },
+        data: { passwordHash: newHash },
+      });
+      // Révoque tous les refresh tokens — l'utilisateur garde son
+      // accessToken courant mais devra re-login sur ses autres devices.
+      await tx.refreshToken.updateMany({
+        where: { userId, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
     });
   }
 
