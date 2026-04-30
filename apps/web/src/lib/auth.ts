@@ -56,6 +56,36 @@ export function useLogin() {
   });
 }
 
+export interface RegisterInput {
+  email: string;
+  password: string;
+  prenom: string;
+  nom: string;
+  exploitationNom: string;
+  canton: string;
+}
+
+export function useRegister() {
+  const router = useRouter();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (input: RegisterInput): Promise<AuthTokens> => {
+      const tokens = await api<AuthTokens>("/api/auth/register", {
+        method: "POST",
+        body: input,
+        skipAuth: true,
+      });
+      setStoredTokens(tokens);
+      return tokens;
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["auth-state"] });
+      router.push("/app");
+    },
+  });
+}
+
 export function useLogout() {
   const router = useRouter();
   const queryClient = useQueryClient();

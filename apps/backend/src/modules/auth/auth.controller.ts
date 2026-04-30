@@ -6,6 +6,7 @@ import { AuthService } from "./auth.service";
 import { AuthTokensDto } from "./dto/auth-tokens.dto";
 import { LoginDto } from "./dto/login.dto";
 import { RefreshDto } from "./dto/refresh.dto";
+import { RegisterDto } from "./dto/register.dto";
 import { JwtAuthGuard } from "./guards/jwt-auth.guard";
 import type { JwtPayload } from "./types/jwt-payload.type";
 
@@ -25,6 +26,23 @@ export class AuthController {
   })
   login(@Body() dto: LoginDto): Promise<AuthTokensDto> {
     return this.auth.login(dto.email, dto.password);
+  }
+
+  @Post("register")
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary:
+      "Crée une nouvelle exploitation + utilisateur OWNER, et renvoie les tokens (login direct).",
+  })
+  register(@Body() dto: RegisterDto): Promise<AuthTokensDto> {
+    return this.auth.register({
+      email: dto.email,
+      password: dto.password,
+      prenom: dto.prenom,
+      nom: dto.nom,
+      exploitationNom: dto.exploitationNom,
+      canton: dto.canton,
+    });
   }
 
   @Post("refresh")

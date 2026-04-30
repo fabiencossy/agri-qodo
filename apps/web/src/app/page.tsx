@@ -68,8 +68,8 @@ function Header() {
           >
             Se connecter
           </Link>
-          <Link href="/login">
-            <Button size="sm">Tester gratuitement</Button>
+          <Link href="/signup">
+            <Button size="sm">Créer mon exploitation</Button>
           </Link>
         </nav>
       </div>
@@ -94,9 +94,9 @@ function Hero() {
             partenariats entre exploitations. Pensé pour la saisie au champ, sur mobile, hors ligne.
           </p>
           <div className="mt-6 flex flex-wrap gap-3">
-            <Link href="/login">
+            <Link href="/signup">
               <Button size="lg">
-                Tester l'application
+                Créer mon exploitation
                 <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
             </Link>
@@ -107,7 +107,7 @@ function Hero() {
             </Link>
           </div>
           <p className="mt-3 text-xs text-foreground/50">
-            Comptes démo disponibles : <code className="font-mono">demo@demo.ch</code> /{" "}
+            Compte démo : <code className="font-mono">demo@demo.ch</code> /{" "}
             <code className="font-mono">demo</code>
           </p>
         </div>
@@ -259,8 +259,8 @@ function CallToAction() {
           ton exploitation. Aucun engagement, données stockées en Suisse.
         </p>
         <div className="mt-6 flex flex-wrap justify-center gap-3">
-          <Link href="/login">
-            <Button size="lg">Tester l'application</Button>
+          <Link href="/signup">
+            <Button size="lg">Créer mon exploitation</Button>
           </Link>
           <a
             href="https://github.com/fabiencossy/agri-qodo"
