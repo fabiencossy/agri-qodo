@@ -225,6 +225,8 @@ model Exploitation {
   produitsCustom        Produit[]
   partnerLinksOwned     PartnerLink[]  @relation("PartnerLinkOwner")
   partnerLinksPartner   PartnerLink[]  @relation("PartnerLinkPartner")
+  travaux               Travail[]      @relation("TravailTenant")
+  travauxAsPartenaire   Travail[]      @relation("TravailPartenaire")
 
   @@map("exploitations")
 }
@@ -242,8 +244,9 @@ model User {
   createdAt    DateTime  @default(now()) @map("created_at")
   updatedAt    DateTime  @updatedAt @map("updated_at")
 
-  tenant        Exploitation   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant        Exploitation        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   refreshTokens RefreshToken[]
+  lignesHeure   LigneTravailHeure[]
 
   // Email partagé : un comptable / conseiller peut avoir un compte sur
   // plusieurs exploitations. L'unicité est sur (email, tenantId).
@@ -292,6 +295,7 @@ model Parcelle {
   cultures      Culture[]
   interventions Intervention[]
   planApports   PlanApport[]
+  travaux       Travail[]
 
   @@index([tenantId])
   @@map("parcelles")
@@ -576,9 +580,10 @@ model Produit {
   createdAt       DateTime         @default(now()) @map("created_at")
   updatedAt       DateTime         @updatedAt @map("updated_at")
 
-  tenant        Exploitation?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant        Exploitation?         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   interventions Intervention[]
   planApports   PlanApport[]
+  lignesTravail LigneTravailProduit[]
 
   @@index([tenantId])
   @@index([categorie])
@@ -603,4 +608,106 @@ model PartnerLink {
   @@unique([ownerTenantId, partnerTenantId])
   @@index([status])
   @@map("partner_links")
+}
+
+// ====================================================================
+// Travaux facturables (M6 PR-D) — modèle unifié produits + heures
+// ====================================================================
+//
+// Un Travail = un événement complet (mission, prestation, opération
+// interne) qui regroupe en un seul endroit :
+//   - les PRODUITS consommés (semences, phytos, fournitures…)
+//   - les HEURES de travail des employés (timesheet)
+//
+// Ce design évite la double saisie (cf project_agri_qodo_travaux_timesheet
+// en mémoire). Pour la facturation Odoo : 1 sale.order avec lignes
+// produits ET lignes services horaires + N analytic lines pour le
+// timesheet comptable (PR-E à venir).
+
+enum TravailStatut {
+  DRAFT     // brouillon, l'agriculteur saisit
+  VALIDATED // validé, prêt à facturer
+  INVOICED  // poussé vers Odoo (sale.order créé)
+  CANCELLED
+}
+
+model Travail {
+  id           String        @id @default(uuid())
+  tenantId     String        @map("tenant_id")
+  // Client/partenaire pour qui le travail a été fait. Null = travail
+  // interne à l'exploitation (sans facturation client).
+  partenaireId String?       @map("partenaire_id")
+  // Parcelle concernée (optionnel — un travail peut être hors parcelle,
+  // ex maintenance bâtiment, transport).
+  parcelleId   String?       @map("parcelle_id")
+  // Référence libre (ex "Récolte champ Loup"), affichée dans les listes.
+  titre        String
+  date         DateTime
+  dateDebut    DateTime?     @map("date_debut")
+  dateFin      DateTime?     @map("date_fin")
+  statut       TravailStatut @default(DRAFT)
+  notes        String?
+  // Une fois poussé vers Odoo, on garde la trace du sale.order créé pour
+  // pouvoir réconcilier (et bloquer la modification).
+  odooSaleOrderId Int?       @map("odoo_sale_order_id")
+  invoicedAt   DateTime?     @map("invoiced_at")
+  createdAt    DateTime      @default(now()) @map("created_at")
+  updatedAt    DateTime      @updatedAt @map("updated_at")
+
+  tenant     Exploitation  @relation("TravailTenant", fields: [tenantId], references: [id], onDelete: Cascade)
+  partenaire Exploitation? @relation("TravailPartenaire", fields: [partenaireId], references: [id], onDelete: SetNull)
+  parcelle   Parcelle?     @relation(fields: [parcelleId], references: [id], onDelete: SetNull)
+
+  lignesProduit LigneTravailProduit[]
+  lignesHeure   LigneTravailHeure[]
+
+  @@index([tenantId])
+  @@index([partenaireId])
+  @@index([parcelleId])
+  @@index([statut])
+  @@index([date])
+  @@map("travaux")
+}
+
+model LigneTravailProduit {
+  id        String   @id @default(uuid())
+  travailId String   @map("travail_id")
+  // Référence catalogue (recommandé). Null pour libellé libre.
+  produitId String?  @map("produit_id")
+  // Libellé affiché (auto-rempli depuis le produit si choisi).
+  libelle   String
+  quantite  Decimal  @db.Decimal(12, 3)
+  unite     String   @default("kg")
+  // Prix unitaire CHF HT. Null = ligne non facturable (consommable interne).
+  prixUnitaireCHF Decimal? @map("prix_unitaire_chf") @db.Decimal(12, 2)
+  notes     String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  travail Travail  @relation(fields: [travailId], references: [id], onDelete: Cascade)
+  produit Produit? @relation(fields: [produitId], references: [id], onDelete: SetNull)
+
+  @@index([travailId])
+  @@index([produitId])
+  @@map("travail_lignes_produit")
+}
+
+model LigneTravailHeure {
+  id        String  @id @default(uuid())
+  travailId String  @map("travail_id")
+  // Employé qui a effectué les heures. Référence User (= membership tenant).
+  userId    String  @map("user_id")
+  // Durée en minutes — plus précis qu'heures décimales pour la saisie au
+  // smartphone (pause = 30 min, déplacement = 45 min, etc.).
+  dureeMinutes Int  @map("duree_minutes")
+  // Taux horaire CHF HT. Null = ligne non facturable (heures internes).
+  tauxHoraireCHF Decimal? @map("taux_horaire_chf") @db.Decimal(12, 2)
+  notes     String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  travail Travail @relation(fields: [travailId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([travailId])
+  @@index([userId])
+  @@map("travail_lignes_heure")
 }
