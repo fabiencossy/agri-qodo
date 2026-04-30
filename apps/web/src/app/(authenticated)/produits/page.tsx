@@ -73,21 +73,31 @@ export default function ProduitsPage() {
               <span className="hidden sm:inline">Nouveau</span>
             </Button>
           }
-          menuActions={
-            isAdmin && odoo.connected
-              ? [
-                  {
-                    label: syncOdoo.isPending
-                      ? "Synchronisation en cours…"
-                      : "Synchroniser depuis Odoo",
-                    icon: RefreshCw,
-                    disabled: syncOdoo.isPending,
-                    onClick: handleSyncOdoo,
-                  },
-                ]
-              : []
-          }
         />
+
+        {/* Bandeau Odoo : visible uniquement aux admins, dès que la config
+            Odoo est saisie. Bouton sync mis en évidence. */}
+        {isAdmin && odoo.connected && (
+          <div className="mb-4 flex flex-wrap items-center gap-3 rounded-2xl border border-violet-200 bg-violet-50 px-4 py-3 sm:px-5">
+            <RefreshCw className="h-5 w-5 flex-shrink-0 text-violet-700" />
+            <div className="flex-1 text-sm">
+              <p className="font-semibold text-violet-900">Synchronisation Odoo</p>
+              <p className="text-xs text-violet-700/80">
+                Importe tous les <code className="font-mono">product.product</code> actifs depuis
+                ton instance Odoo. Idempotent : les produits existants sont mis à jour.
+              </p>
+            </div>
+            <Button
+              onClick={handleSyncOdoo}
+              disabled={syncOdoo.isPending}
+              size="sm"
+              className="bg-violet-600 hover:bg-violet-700"
+            >
+              <RefreshCw className={`mr-1 h-4 w-4 ${syncOdoo.isPending ? "animate-spin" : ""}`} />
+              {syncOdoo.isPending ? "Sync…" : "Synchroniser"}
+            </Button>
+          </div>
+        )}
 
         {syncResult && (
           <div className="mb-4 rounded-xl border border-green/30 bg-green/5 p-4 text-sm">
