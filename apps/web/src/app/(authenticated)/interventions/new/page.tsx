@@ -10,6 +10,7 @@ import { z } from "zod";
 import { Breadcrumb } from "@/components/app/breadcrumb";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { MaterielPicker } from "@/components/ui/materiel-picker";
 import { ParcelleSearchSelect } from "@/components/ui/parcelle-search-select";
 import { ProduitSearchSelect } from "@/components/ui/produit-search-select";
 import {
@@ -23,7 +24,7 @@ import {
   TYPES_ORDER,
   useCreateIntervention,
 } from "@/lib/interventions";
-import { formatSurface, useParcelle, useParcelles } from "@/lib/parcelles";
+import { formatSurface, useParcelle, useParcelles, useParcellesAccessibles } from "@/lib/parcelles";
 import { useCheckFumureOrganique } from "@/lib/per";
 
 // Leaflet a besoin de window — on dynamiquement charge sans SSR.
@@ -54,6 +55,8 @@ const formSchema = z.object({
   dateOperation: z.string().min(1, "Date obligatoire"),
   produitId: z.string().uuid().optional().or(z.literal("")),
   produit: z.string().max(200).optional().or(z.literal("")),
+  materielId: z.string().uuid().optional().or(z.literal("")),
+  surfaceHa: z.coerce.number().positive().optional().or(z.literal(NaN)),
   quantite: z.coerce.number().min(0).optional().or(z.literal(NaN)),
   unite: z.string().max(20).optional().or(z.literal("")),
   techniqueEpandage: z
@@ -109,6 +112,7 @@ export default function NewInterventionPage() {
   const presetParcelleId = searchParams?.get("parcelleId") ?? "";
   const createMutation = useCreateIntervention();
   const parcelles = useParcelles();
+  const accessiblesParcelles = useParcellesAccessibles();
   const produits = useProduits();
 
   const {
@@ -125,6 +129,8 @@ export default function NewInterventionPage() {
       dateOperation: today(),
       produitId: "",
       produit: "",
+      materielId: "",
+      surfaceHa: undefined,
       quantite: undefined,
       unite: "",
       techniqueEpandage: "",
@@ -185,6 +191,12 @@ export default function NewInterventionPage() {
   const [sousZoneSurfaceM2, setSousZoneSurfaceM2] = useState<number | null>(null);
 
   const selectedParcelle = parcelles.data?.find((p) => p.id === selectedParcelleId);
+  // Détection cas A (parcelle perso) vs cas B (parcelle d'un partenaire) —
+  // pour afficher le bandeau "facturé à {client}" et déclencher le push
+  // automatique sale.order Odoo (PR-6).
+  const accessibleParcelle = accessiblesParcelles.data?.find((p) => p.id === selectedParcelleId);
+  const casB = accessibleParcelle && !accessibleParcelle.isOwn;
+  const proprietaireParcelle = accessibleParcelle?.tenant;
   // Le getById expose la geom — utile pour afficher le contour parent.
   const parcelleDetail = useParcelle(selectedParcelleId || undefined);
   const surfaceParcelleM2 = selectedParcelle ? Number(selectedParcelle.surfaceM2) : 0;
@@ -229,6 +241,10 @@ export default function NewInterventionPage() {
         dateOperation: values.dateOperation,
         ...(values.produitId ? { produitId: values.produitId } : {}),
         ...(values.produit ? { produit: values.produit } : {}),
+        ...(values.materielId ? { materielId: values.materielId } : {}),
+        ...(values.surfaceHa && !Number.isNaN(values.surfaceHa)
+          ? { surfaceHa: values.surfaceHa }
+          : {}),
         ...(values.quantite && !Number.isNaN(values.quantite) ? { quantite: values.quantite } : {}),
         ...(values.unite ? { unite: values.unite } : {}),
         ...(values.techniqueEpandage
@@ -286,6 +302,26 @@ export default function NewInterventionPage() {
             />
           </Field>
 
+          {casB && proprietaireParcelle && (
+            <div className="flex items-start gap-3 rounded-2xl border-2 border-violet-300/60 bg-violet-50 p-4 text-sm dark:border-violet-800 dark:bg-violet-950/30">
+              <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-violet-600 text-white">
+                <span className="text-base" aria-hidden>
+                  💼
+                </span>
+              </span>
+              <div className="flex-1">
+                <p className="font-semibold text-violet-900 dark:text-violet-200">
+                  Travail pour <strong>{proprietaireParcelle.nom}</strong>
+                </p>
+                <p className="mt-0.5 text-xs text-violet-700/80 dark:text-violet-300/80">
+                  Cette intervention sera enregistrée dans le carnet du client (en attente de
+                  validation) et générera automatiquement une commande Odoo brouillon que tu pourras
+                  facturer.
+                </p>
+              </div>
+            </div>
+          )}
+
           <Field label="Type d'opération" error={errors.type?.message}>
             <Controller
               control={control}
@@ -319,6 +355,27 @@ export default function NewInterventionPage() {
 
           <Field label="Date" error={errors.dateOperation?.message}>
             <Input type="date" {...register("dateOperation")} />
+          </Field>
+
+          <Field
+            label={casB ? "Matériel utilisé (facturé au client)" : "Matériel utilisé"}
+            hint={
+              casB
+                ? "Le matériel sélectionné servira à générer la ligne de facture Odoo (quantité = surface en hectares)."
+                : "Outil/machine utilisé : charrue, semoir, pulvé, ensileuse… Optionnel."
+            }
+          >
+            <Controller
+              control={control}
+              name="materielId"
+              render={({ field: { value, onChange } }) => (
+                <MaterielPicker
+                  interventionType={selectedType}
+                  value={value ?? ""}
+                  onChange={(id) => onChange(id)}
+                />
+              )}
+            />
           </Field>
 
           {categorie ? (

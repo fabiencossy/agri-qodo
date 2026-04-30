@@ -60,8 +60,11 @@ export class InterventionsService {
   }
 
   private readonly includeRelations = {
-    parcelle: { select: { id: true, nom: true } },
+    parcelle: { select: { id: true, nom: true, tenantId: true } },
     produitRef: { select: { id: true, libelle: true, categorie: true, especeCode: true } },
+    materielRef: {
+      select: { id: true, libelle: true, categorie: true, unite: true, prixUnitaireCHF: true },
+    },
     culture: { select: { id: true, espece: true, variete: true, campagne: true } },
   } satisfies Prisma.InterventionInclude;
 
@@ -146,6 +149,28 @@ export class InterventionsService {
       throw new BadRequestException("Produit introuvable ou inactif");
     }
 
+    // Matériel optionnel — outil/machine utilisé. Catalogue global ou tenant.
+    if (dto.materielId) {
+      const materiel = await this.prisma.materiel.findFirst({
+        where: {
+          id: dto.materielId,
+          actif: true,
+          OR: [{ tenantId: null }, { tenantId }],
+        },
+        select: { id: true },
+      });
+      if (!materiel) throw new BadRequestException("Matériel introuvable ou inactif");
+    }
+
+    // Surface en hectares — si non fournie, on calcule depuis geom (priorité)
+    // ou depuis la parcelle entière. Sert à la facturation matériel à l'ha.
+    const surfaceHaResolu =
+      dto.surfaceHa !== undefined
+        ? dto.surfaceHa
+        : surfaceFromGeom !== undefined
+          ? surfaceFromGeom / 10000
+          : Number(parcelle.surfaceM2) / 10000;
+
     // SEMIS = déclencheur de Culture. Carnet = source unique : pas de
     // saisie séparée. Le produit doit être une SEMENCE avec especeCode.
     return this.prisma.$transaction(async (tx) => {
@@ -188,6 +213,8 @@ export class InterventionsService {
           dateOperation,
           produitId: produit?.id ?? null,
           produit: dto.produit ?? produit?.libelle ?? null,
+          materielId: dto.materielId ?? null,
+          surfaceHa: surfaceHaResolu,
           quantite: dto.quantite ?? null,
           unite: dto.unite ?? null,
           surfaceTravailleeM2: surfaceFinale,
@@ -288,11 +315,26 @@ export class InterventionsService {
         );
       }
 
+      // Si materielId fourni, on valide qu'il existe (global ou tenant).
+      if (dto.materielId) {
+        const materiel = await tx.materiel.findFirst({
+          where: {
+            id: dto.materielId,
+            actif: true,
+            OR: [{ tenantId: null }, { tenantId }],
+          },
+          select: { id: true },
+        });
+        if (!materiel) throw new BadRequestException("Matériel introuvable ou inactif");
+      }
+
       await tx.intervention.update({
         where: { id },
         data: {
           ...(newDate !== null ? { dateOperation: newDate } : {}),
           ...(dto.produit !== undefined ? { produit: dto.produit } : {}),
+          ...(dto.materielId !== undefined ? { materielId: dto.materielId || null } : {}),
+          ...(dto.surfaceHa !== undefined ? { surfaceHa: dto.surfaceHa } : {}),
           ...(dto.quantite !== undefined ? { quantite: dto.quantite } : {}),
           ...(dto.unite !== undefined ? { unite: dto.unite } : {}),
           ...(surfaceFromGeom !== undefined

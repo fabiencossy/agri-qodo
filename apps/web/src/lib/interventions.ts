@@ -76,6 +76,10 @@ export interface CreateInterventionInput {
   dateOperation: string;
   produitId?: string;
   produit?: string;
+  /** ID Matériel utilisé (charrue, semoir, pulvé, ensileuse…). En cas B, sert à facturer Odoo. */
+  materielId?: string;
+  /** Surface effective en hectares — quantité facturée si matériel tarifé HA. */
+  surfaceHa?: number;
   quantite?: number;
   unite?: string;
   surfaceTravailleeM2?: number;
