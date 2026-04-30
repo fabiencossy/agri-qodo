@@ -22,6 +22,8 @@ export interface LigneTravailHeure {
   travailId: string;
   userId: string;
   user?: { id: string; prenom: string; nom: string; email: string };
+  heureDebut: string | null;
+  heureFin: string | null;
   dureeMinutes: number;
   tauxHoraireCHF: string | null;
   notes: string | null;
@@ -38,6 +40,7 @@ export interface Travail {
   date: string;
   dateDebut: string | null;
   dateFin: string | null;
+  interne: boolean;
   statut: TravailStatut;
   notes: string | null;
   odooSaleOrderId: number | null;
@@ -59,6 +62,8 @@ export interface CreateLigneProduitInput {
 
 export interface CreateLigneHeureInput {
   userId: string;
+  heureDebut?: string;
+  heureFin?: string;
   dureeMinutes: number;
   tauxHoraireCHF?: number;
   notes?: string;
@@ -71,6 +76,7 @@ export interface CreateTravailInput {
   dateFin?: string;
   partenaireId?: string;
   parcelleId?: string;
+  interne?: boolean;
   notes?: string;
   lignesProduit?: CreateLigneProduitInput[];
   lignesHeure?: CreateLigneHeureInput[];

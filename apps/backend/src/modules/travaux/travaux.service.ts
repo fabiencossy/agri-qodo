@@ -109,6 +109,7 @@ export class TravauxService {
         titre: dto.titre.trim(),
         date: new Date(dto.date),
         statut: TravailStatut.DRAFT,
+        ...(dto.interne !== undefined ? { interne: dto.interne } : {}),
         ...(dto.dateDebut ? { dateDebut: new Date(dto.dateDebut) } : {}),
         ...(dto.dateFin ? { dateFin: new Date(dto.dateFin) } : {}),
         ...(dto.partenaireId ? { partenaireId: dto.partenaireId } : {}),
@@ -164,6 +165,7 @@ export class TravauxService {
       const data: Prisma.TravailUpdateInput = {};
       if (dto.titre !== undefined) data.titre = dto.titre.trim();
       if (dto.date !== undefined) data.date = new Date(dto.date);
+      if (dto.interne !== undefined) data.interne = dto.interne;
       if (dto.dateDebut !== undefined)
         data.dateDebut = dto.dateDebut ? new Date(dto.dateDebut) : null;
       if (dto.dateFin !== undefined) data.dateFin = dto.dateFin ? new Date(dto.dateFin) : null;
@@ -245,9 +247,21 @@ export class TravauxService {
   }
 
   private toLigneHeureData(l: CreateLigneHeureDto) {
+    // Si heureDebut + heureFin fournies, on recalcule la durée pour rester
+    // cohérent (l'UI peut envoyer les deux mais c'est le serveur qui décide).
+    let dureeMinutes = l.dureeMinutes;
+    if (l.heureDebut && l.heureFin) {
+      const start = new Date(l.heureDebut).getTime();
+      const end = new Date(l.heureFin).getTime();
+      if (Number.isFinite(start) && Number.isFinite(end) && end > start) {
+        dureeMinutes = Math.round((end - start) / 60000);
+      }
+    }
     return {
       userId: l.userId,
-      dureeMinutes: l.dureeMinutes,
+      dureeMinutes,
+      ...(l.heureDebut ? { heureDebut: new Date(l.heureDebut) } : {}),
+      ...(l.heureFin ? { heureFin: new Date(l.heureFin) } : {}),
       ...(l.tauxHoraireCHF !== undefined ? { tauxHoraireCHF: l.tauxHoraireCHF } : {}),
       ...(l.notes ? { notes: l.notes } : {}),
     };

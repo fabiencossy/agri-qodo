@@ -645,6 +645,10 @@ model Travail {
   date         DateTime
   dateDebut    DateTime?     @map("date_debut")
   dateFin      DateTime?     @map("date_fin")
+  // Travail interne : pas facturable, pas exporté vers Odoo. Permet de
+  // pointer du temps "personnel" (entretien tracteur, formation) sans
+  // créer de devis client.
+  interne      Boolean       @default(false)
   statut       TravailStatut @default(DRAFT)
   notes        String?
   // Une fois poussé vers Odoo, on garde la trace du sale.order créé pour
@@ -696,6 +700,11 @@ model LigneTravailHeure {
   travailId String  @map("travail_id")
   // Employé qui a effectué les heures. Référence User (= membership tenant).
   userId    String  @map("user_id")
+  // Heures début / fin (optionnel). Si renseignés, dureeMinutes est calculée
+  // automatiquement. Sert aussi pour le lien avec la présence (qui a
+  // travaillé quand) — cf future intégration timesheet/attendance Odoo.
+  heureDebut DateTime? @map("heure_debut")
+  heureFin   DateTime? @map("heure_fin")
   // Durée en minutes — plus précis qu'heures décimales pour la saisie au
   // smartphone (pause = 30 min, déplacement = 45 min, etc.).
   dureeMinutes Int  @map("duree_minutes")
