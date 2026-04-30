@@ -19,13 +19,17 @@ import { JwtAuthGuard } from "@/modules/auth/guards/jwt-auth.guard";
 import { CreateMaterielDto } from "./dto/create-materiel.dto";
 import { UpdateMaterielDto } from "./dto/update-materiel.dto";
 import { MaterielsService } from "./materiels.service";
+import { MaterielsOdooSyncService } from "./odoo-sync.service";
 
 @ApiTags("materiels")
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard)
 @Controller("materiels")
 export class MaterielsController {
-  constructor(private readonly service: MaterielsService) {}
+  constructor(
+    private readonly service: MaterielsService,
+    private readonly odooSync: MaterielsOdooSyncService,
+  ) {}
 
   @Get()
   @ApiOperation({
@@ -49,6 +53,24 @@ export class MaterielsController {
   @ApiOperation({ summary: "Crée un matériel perso (tenant)." })
   create(@Body() dto: CreateMaterielDto) {
     return this.service.create(dto);
+  }
+
+  @Post("sync-odoo")
+  @ApiOperation({
+    summary:
+      "Synchronise le catalogue Matériel depuis Odoo (product.product type=service). Admin uniquement. Crée les nouveaux + met à jour les existants par odooProductId.",
+  })
+  syncOdoo() {
+    return this.odooSync.syncMateriels();
+  }
+
+  @Post(":id/push-odoo")
+  @ApiOperation({
+    summary:
+      "Garantit qu'un matériel a un product.product Odoo associé (crée le service si manquant). Renvoie l'odooProductId.",
+  })
+  pushOdoo(@Param("id", ParseUUIDPipe) id: string) {
+    return this.odooSync.ensureOdooProduct(id).then((odooProductId) => ({ odooProductId }));
   }
 
   @Patch(":id")
