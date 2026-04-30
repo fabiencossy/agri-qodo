@@ -1,6 +1,16 @@
 "use client";
 
-import { type LucideIcon, MapPin, Plus, Sprout, X } from "lucide-react";
+import {
+  Beef,
+  Briefcase,
+  ClipboardList,
+  Clock,
+  type LucideIcon,
+  MapPin,
+  Plus,
+  Sprout,
+  X,
+} from "lucide-react";
 import Link from "next/link";
 import type { Route } from "next";
 import { useEffect, useRef, useState } from "react";
@@ -12,16 +22,12 @@ interface Action {
 }
 
 const ACTIONS: Action[] = [
-  {
-    href: "/interventions/new",
-    label: "Saisir une intervention",
-    icon: Sprout,
-  },
-  {
-    href: "/parcelles/new",
-    label: "Nouvelle parcelle",
-    icon: MapPin,
-  },
+  { href: "/interventions/new", label: "Saisir une intervention", icon: Sprout },
+  { href: "/parcelles/new", label: "Nouvelle parcelle", icon: MapPin },
+  { href: "/travaux/new", label: "Saisir un travail", icon: Briefcase },
+  { href: "/mes-heures", label: "Mes heures", icon: Clock },
+  { href: "/srpa/new", label: "Saisir une sortie SRPA", icon: ClipboardList },
+  { href: "/animaux", label: "Cheptel / Importer BDTA", icon: Beef },
 ];
 
 export function Fab() {
