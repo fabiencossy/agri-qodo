@@ -10,6 +10,7 @@ import { AnimauxModule } from "./modules/animaux/animaux.module";
 import { AuthModule } from "./modules/auth/auth.module";
 import { HealthModule } from "./modules/health/health.module";
 import { InterventionsModule } from "./modules/interventions/interventions.module";
+import { OdooModule } from "./modules/odoo/odoo.module";
 import { OdooConfigModule } from "./modules/odoo-config/odoo-config.module";
 import { ParcellesModule } from "./modules/parcelles/parcelles.module";
 import { PartnerLinksModule } from "./modules/partner-links/partner-links.module";
@@ -68,6 +69,7 @@ import { VeilleModule } from "./modules/veille/veille.module";
     PlanFumureModule,
     PerModule,
     PartnerLinksModule,
+    OdooModule,
     OdooConfigModule,
     VeilleModule,
   ],
