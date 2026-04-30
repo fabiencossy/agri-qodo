@@ -30,6 +30,15 @@ export const envSchema = z.object({
 
   OTEL_EXPORTER_OTLP_ENDPOINT: z.string().optional(),
   OTEL_SERVICE_NAME: z.string().default("agri-qodo-backend"),
+
+  // Mailer (Resend). Si RESEND_API_KEY vide → mode "log only" : les
+  // mails sont écrits dans les logs au lieu d'être envoyés (utile en
+  // dev / staging sans budget).
+  RESEND_API_KEY: z.string().optional(),
+  MAIL_FROM: z.string().default("Agri Qodo <noreply@qodo.ch>"),
+  // URL publique du frontend pour générer les liens dans les mails
+  // (reset password, vérification email…). Ex prod : https://newagri.qodo.ch
+  PUBLIC_APP_URL: z.string().url().default("http://localhost:3000"),
 });
 
 export type Env = z.infer<typeof envSchema>;
