@@ -109,6 +109,8 @@ export class CreateInterventionDto {
       "Doit être inclus dans la parcelle (validation ST_Within). Si fourni, " +
       "`surfaceTravailleeM2` est recalculée automatiquement depuis le polygone. " +
       "Permet de représenter spatialement le plan d'assolement (blé sur la moitié est, orge sur la moitié ouest, …).",
+    type: "object",
+    additionalProperties: true,
   })
   @IsOptional()
   @IsObject()

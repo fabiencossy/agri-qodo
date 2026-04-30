@@ -69,6 +69,8 @@ export class CreateParcelleDto {
   @ApiPropertyOptional({
     description:
       "Géométrie GeoJSON (Polygon ou MultiPolygon) en WGS84 (EPSG:4326). Convertie en geometry(MultiPolygon, 4326) côté Postgres via ST_GeomFromGeoJSON.",
+    type: "object",
+    additionalProperties: true,
   })
   @IsOptional()
   @IsObject()
