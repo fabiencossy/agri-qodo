@@ -55,3 +55,16 @@ export function useTestOdooConfig() {
     mutationFn: () => api<unknown>("/api/tenants/me/odoo-config/test", { method: "POST" }),
   });
 }
+
+/**
+ * Renvoie true si Odoo est configuré ET connecté avec succès au moins une
+ * fois. Utilisé pour afficher conditionnellement les fonctionnalités qui
+ * dépendent d'Odoo (Travaux/facturation, Mes heures/timesheet).
+ */
+export function useOdooConnected(): { connected: boolean; isLoading: boolean } {
+  const cfg = useOdooConfig();
+  return {
+    connected: !!cfg.data?.connectedAt && !!cfg.data?.url && cfg.data.hasApiKey,
+    isLoading: cfg.isLoading,
+  };
+}
