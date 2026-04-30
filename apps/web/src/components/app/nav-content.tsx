@@ -23,12 +23,15 @@ import Link from "next/link";
 import type { Route } from "next";
 import { usePathname } from "next/navigation";
 import { useCurrentTenant, useLogout } from "@/lib/auth";
+import { useOdooConnected } from "@/lib/odoo-config";
 import { TenantSwitcher } from "./tenant-switcher";
 
 interface NavLink {
   href: Route;
   label: string;
   icon: LucideIcon;
+  /** Visible uniquement si Odoo est connecté (les data sont poussées vers Odoo). */
+  requiresOdoo?: boolean;
 }
 
 const NAVIGATION: NavLink[] = [
@@ -37,8 +40,8 @@ const NAVIGATION: NavLink[] = [
   { href: "/interventions", label: "Carnet des champs", icon: Sprout },
   { href: "/animaux", label: "Cheptel", icon: Beef },
   { href: "/srpa", label: "SRPA — sorties pâturage", icon: ClipboardList },
-  { href: "/travaux", label: "Travaux", icon: Briefcase },
-  { href: "/mes-heures", label: "Mes heures", icon: Clock },
+  { href: "/travaux", label: "Travaux", icon: Briefcase, requiresOdoo: true },
+  { href: "/mes-heures", label: "Mes heures", icon: Clock, requiresOdoo: true },
   { href: "/produits", label: "Catalogue produits", icon: Package },
 ];
 
@@ -63,6 +66,8 @@ export function NavContent() {
   const pathname = usePathname();
   const tenant = useCurrentTenant();
   const logout = useLogout();
+  const odoo = useOdooConnected();
+  const visible = (link: NavLink) => !link.requiresOdoo || odoo.connected;
 
   return (
     <>
@@ -75,7 +80,7 @@ export function NavContent() {
 
       <nav className="flex-1 overflow-y-auto p-3">
         <NavSection title="Navigation">
-          {NAVIGATION.map((link) => (
+          {NAVIGATION.filter(visible).map((link) => (
             <NavItem key={link.href} link={link} pathname={pathname} />
           ))}
         </NavSection>
