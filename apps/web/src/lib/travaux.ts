@@ -167,6 +167,32 @@ export function useCancelTravail() {
   });
 }
 
+export interface PushTravailResult {
+  odooSaleOrderId: number;
+  odooUrl: string;
+  partnerCreated: boolean;
+  productsCreated: number;
+  linesCount: number;
+}
+
+/**
+ * Pousse un travail vers Odoo en sale.order brouillon. Le backend gère
+ * la résolution du res.partner (lookup/create) et le mapping produits
+ * via odooProductId. Les lignes heures sont agrégées sur un produit
+ * service "Main d'œuvre (Agri Qodo)".
+ */
+export function usePushTravailOdoo() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      api<PushTravailResult>(`/api/travaux/${id}/push-odoo`, { method: "POST" }),
+    onSuccess: (_r, id) => {
+      void qc.invalidateQueries({ queryKey: KEY });
+      void qc.invalidateQueries({ queryKey: ["travaux", id] });
+    },
+  });
+}
+
 export function useDeleteTravail() {
   const qc = useQueryClient();
   return useMutation({

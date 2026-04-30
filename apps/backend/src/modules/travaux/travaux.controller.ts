@@ -16,6 +16,7 @@ import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from "@nestjs/swagger"
 import { JwtAuthGuard } from "@/modules/auth/guards/jwt-auth.guard";
 import { CreateTravailDto } from "./dto/create-travail.dto";
 import { UpdateTravailDto } from "./dto/update-travail.dto";
+import { OdooPushService } from "./odoo-push.service";
 import { TravauxService } from "./travaux.service";
 
 @ApiTags("travaux")
@@ -23,7 +24,10 @@ import { TravauxService } from "./travaux.service";
 @UseGuards(JwtAuthGuard)
 @Controller("travaux")
 export class TravauxController {
-  constructor(private readonly travaux: TravauxService) {}
+  constructor(
+    private readonly travaux: TravauxService,
+    private readonly odooPush: OdooPushService,
+  ) {}
 
   @Get()
   @ApiOperation({ summary: "Liste les travaux du tenant courant." })
@@ -73,6 +77,15 @@ export class TravauxController {
   @ApiOperation({ summary: "Annule un travail (interdit si déjà INVOICED)." })
   cancel(@Param("id", ParseUUIDPipe) id: string) {
     return this.travaux.cancel(id);
+  }
+
+  @Post(":id/push-odoo")
+  @ApiOperation({
+    summary:
+      "Pousse le travail vers Odoo en tant que sale.order brouillon. Crée le res.partner si besoin, mappe les produits via odooProductId, agrège les heures sur un produit service 'Main d'œuvre'.",
+  })
+  pushOdoo(@Param("id", ParseUUIDPipe) id: string) {
+    return this.odooPush.pushTravail(id);
   }
 
   @Delete(":id")
