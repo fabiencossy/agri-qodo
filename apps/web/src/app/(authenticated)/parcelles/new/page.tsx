@@ -110,7 +110,7 @@ export default function NewParcellePage() {
           { label: "Nouvelle parcelle" },
         ]}
       />
-      <div className="mx-auto max-w-3xl px-4 py-8">
+      <div className="mx-auto max-w-3xl px-2 py-4 sm:px-4 sm:py-8">
         <h1 className="mb-6 text-2xl font-bold">Nouvelle parcelle</h1>
 
         <div className="mb-6 inline-flex rounded-lg border border-border bg-background p-1">
@@ -138,7 +138,7 @@ export default function NewParcellePage() {
 
         <form
           onSubmit={handleSubmit(onSubmit)}
-          className="space-y-5 rounded-2xl border border-border bg-background p-6"
+          className="space-y-5 rounded-xl border border-border bg-background p-3 sm:rounded-2xl sm:p-6"
         >
           {mode === "carte" && (
             <Field label="Tracé de la parcelle">

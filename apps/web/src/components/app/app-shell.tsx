@@ -3,21 +3,18 @@
 import { useCallback, useState } from "react";
 import { Fab } from "./fab";
 import { HamburgerDrawer } from "./hamburger-drawer";
-import { NavTabs } from "./nav-tabs";
 import { Sidebar } from "./sidebar";
 import { TopBar } from "./top-bar";
 
 /**
  * Layout responsive :
  *  - Desktop (lg+ ≥1024px) : Sidebar permanente à gauche, pas de hamburger.
- *  - Mobile / tablet (<lg) : Top bar + onglets sticky + drawer hamburger.
+ *  - Mobile / tablet (<lg) : Top bar + drawer hamburger (le hamburger
+ *    suffit, les onglets en doublon ont été supprimés).
  *  - FAB visible partout, en bas à droite.
  */
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
-  // useCallback obligatoire : HamburgerDrawer a un useEffect dépendant de
-  // onClose qui se ré-exécute à chaque render. Sans stabilité de la ref,
-  // le drawer se referme immédiatement après ouverture.
   const closeDrawer = useCallback(() => setDrawerOpen(false), []);
   const openDrawer = useCallback(() => setDrawerOpen(true), []);
   return (
@@ -27,7 +24,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       <div className="flex min-w-0 flex-1 flex-col">
         <TopBar onMenuClick={openDrawer} />
-        <NavTabs />
         <main className="flex-1">{children}</main>
         <Fab />
       </div>

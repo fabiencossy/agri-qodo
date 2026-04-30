@@ -99,7 +99,7 @@ export default function NewSortiePage() {
 
         <form
           onSubmit={handleSubmit(onSubmit)}
-          className="space-y-5 rounded-2xl border border-border bg-background p-6"
+          className="space-y-5 rounded-xl border border-border bg-background p-3 sm:rounded-2xl sm:p-6"
         >
           <Field label="Catégorie d'animaux" error={errors.categorie?.message}>
             <Controller
