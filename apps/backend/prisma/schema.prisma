@@ -584,6 +584,11 @@ model Produit {
   // OWNER / COMPTABLE). Les EMPLOYE saisissent le prix sur la ligne de
   // travail si nécessaire, sans voir le prix catalogue ni les marges.
   prixVenteCHF    Decimal?         @map("prix_vente_chf") @db.Decimal(12, 2)
+  // Lien Odoo (M6 Phase 2) : product.product.id distant. Renseigné par
+  // la sync /api/produits/sync-odoo. Permet le re-sync incrémental
+  // (upsert sur (tenantId, odooProductId)).
+  odooProductId   Int?             @map("odoo_product_id")
+  odooSyncedAt    DateTime?        @map("odoo_synced_at")
   notes           String?
   actif           Boolean          @default(true)
   createdAt       DateTime         @default(now()) @map("created_at")
@@ -594,6 +599,7 @@ model Produit {
   planApports   PlanApport[]
   lignesTravail LigneTravailProduit[]
 
+  @@unique([tenantId, odooProductId], name: "tenant_odoo_product_unique")
   @@index([tenantId])
   @@index([categorie])
   @@map("produits")
