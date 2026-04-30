@@ -4,7 +4,13 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { InterventionType, type Prisma, ProduitCategorie, ValidationStatus } from "@prisma/client";
+import {
+  InterventionType,
+  type Prisma,
+  ProduitCategorie,
+  TravailStatut,
+  ValidationStatus,
+} from "@prisma/client";
 import area from "@turf/area";
 import { randomUUID } from "node:crypto";
 import { PrismaService } from "@/common/prisma/prisma.service";
@@ -236,7 +242,114 @@ export class InterventionsService {
         );
       }
 
+      // Cas B (intervention sur parcelle d'un partenaire) : on crée
+      // automatiquement un Travail facturable chez le prestataire (=
+      // tenant courant), avec partenaireId = propriétaire de la parcelle.
+      // Lignes Travail :
+      //   - 1 ligne matériel (libellé + qty = surfaceHa, prix unitaire)
+      //   - 1 ligne intrant (produit consommé, si présent + quantité)
+      // Le Travail est en DRAFT — l'utilisateur le pousse vers Odoo
+      // depuis /travaux/[id] avec le bouton existant. Ne déclenche pas
+      // d'appel Odoo sync ici (transaction DB courte, robustesse).
+      if (validationStatus === ValidationStatus.PENDING) {
+        await this.createCasBTravail(tx, {
+          interventionId: created.id,
+          authorTenantId,
+          partenaireId: ownerTenantId,
+          parcelleId: dto.parcelleId,
+          type: dto.type,
+          dateOperation,
+          materielId: dto.materielId,
+          surfaceHa: surfaceHaResolu,
+          produit,
+          produitQuantite: dto.quantite,
+          produitUnite: dto.unite,
+          notes: dto.notes,
+        });
+
+        // Recharge l'intervention avec linkedTravailId à jour pour le retour API.
+        return tx.intervention.findUniqueOrThrow({
+          where: { id: created.id },
+          include: this.includeRelations,
+        });
+      }
+
       return created;
+    });
+  }
+
+  /**
+   * Crée le Travail prestataire en cas B (intervention sur parcelle de
+   * partenaire). À appeler dans la transaction de `create()` après que
+   * l'intervention a été insérée. Met à jour `intervention.linkedTravailId`.
+   */
+  private async createCasBTravail(
+    tx: Prisma.TransactionClient,
+    args: {
+      interventionId: string;
+      authorTenantId: string;
+      partenaireId: string;
+      parcelleId: string;
+      type: InterventionType;
+      dateOperation: Date;
+      materielId: string | undefined;
+      surfaceHa: number;
+      produit: { id: string; libelle: string } | null;
+      produitQuantite: number | undefined;
+      produitUnite: string | undefined;
+      notes: string | undefined;
+    },
+  ): Promise<void> {
+    const parcelle = await tx.parcelle.findUnique({
+      where: { id: args.parcelleId },
+      select: { nom: true },
+    });
+    const titreType = args.type.replace(/_/g, " ").toLowerCase();
+    const titre = `${titreType.charAt(0).toUpperCase()}${titreType.slice(1)} — ${parcelle?.nom ?? "parcelle"}`;
+
+    const lignesProduit: Prisma.LigneTravailProduitCreateWithoutTravailInput[] = [];
+
+    if (args.materielId) {
+      const m = await tx.materiel.findUnique({
+        where: { id: args.materielId },
+        select: { libelle: true, unite: true, prixUnitaireCHF: true },
+      });
+      if (m) {
+        lignesProduit.push({
+          libelle: m.libelle,
+          quantite: args.surfaceHa,
+          unite: m.unite.toLowerCase(),
+          prixUnitaireCHF: m.prixUnitaireCHF,
+        });
+      }
+    }
+
+    if (args.produit && args.produitQuantite !== undefined && args.produitQuantite > 0) {
+      lignesProduit.push({
+        libelle: args.produit.libelle,
+        quantite: args.produitQuantite,
+        unite: args.produitUnite ?? "kg",
+        produit: { connect: { id: args.produit.id } },
+      });
+    }
+
+    const travail = await tx.travail.create({
+      data: {
+        tenantId: args.authorTenantId,
+        partenaireId: args.partenaireId,
+        parcelleId: args.parcelleId,
+        titre,
+        date: args.dateOperation,
+        statut: TravailStatut.DRAFT,
+        notes: args.notes ?? null,
+        ...(lignesProduit.length > 0 ? { lignesProduit: { create: lignesProduit } } : {}),
+      },
+      select: { id: true },
+    });
+
+    await tx.intervention.update({
+      where: { id: args.interventionId },
+      data: { linkedTravailId: travail.id },
     });
   }
 

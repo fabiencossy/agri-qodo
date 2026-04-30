@@ -55,6 +55,19 @@ export interface Intervention {
     categorie: string;
     especeCode: string | null;
   } | null;
+  /** Matériel utilisé (outil/machine) — null si saisi sans matériel précis. */
+  materielId: string | null;
+  materielRef: {
+    id: string;
+    libelle: string;
+    categorie: string;
+    unite: string;
+    prixUnitaireCHF: string | null;
+  } | null;
+  /** Surface effective travaillée en hectares — sert à la facturation cas B. */
+  surfaceHa: string | null;
+  /** Cas B : ID du Travail créé chez le prestataire pour facturer Odoo. */
+  linkedTravailId: string | null;
   quantite: string | null;
   unite: string | null;
   surfaceTravailleeM2: string | null;
