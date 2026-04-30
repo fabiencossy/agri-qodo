@@ -53,6 +53,11 @@ services:
       # Clé maître AES-256-GCM pour chiffrer les API keys Odoo par tenant (M6 PR-A).
       # Doit rester stable une fois en prod, sinon les API keys deviennent illisibles.
       ODOO_CREDENTIALS_KEY: ${ODOO_CREDENTIALS_KEY}
+      # Mailer (Resend). Si RESEND_API_KEY vide, mode "log only" (les
+      # mails sont juste écrits dans les logs au lieu d'être envoyés).
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      MAIL_FROM: ${MAIL_FROM:-Agri Qodo <noreply@qodo.ch>}
+      PUBLIC_APP_URL: ${PUBLIC_APP_URL:-https://newagri.qodo.ch}
     networks:
       - agriqodo
 
