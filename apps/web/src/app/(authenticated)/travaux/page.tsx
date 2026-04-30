@@ -165,10 +165,10 @@ export default function TravauxPage() {
 
   return (
     <>
-      <Breadcrumb items={[{ label: "Accueil", href: "/app" }, { label: "Travaux" }]} />
+      <Breadcrumb items={[{ label: "Accueil", href: "/app" }, { label: "Prestations" }]} />
       <div className="mx-auto max-w-6xl px-2 py-4 sm:px-4 sm:py-8">
         <PageHeader
-          title="Travaux"
+          title="Prestations"
           icon={ClipboardList}
           subtitle="Produits + heures dans une seule saisie. Facturation Odoo automatique."
           menuActions={[

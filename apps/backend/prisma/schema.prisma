@@ -419,6 +419,12 @@ model Intervention {
   // le prestataire pour porter le sale.order Odoo. Permet de re-pousser /
   // annuler / modifier en cascade. Null en cas A (parcelle perso).
   linkedTravailId     String?                                 @unique @map("linked_travail_id")
+  // Cas A (parcelle perso) : project.task Odoo créé automatiquement pour
+  // tracer l'intervention sans facturation. Null si Odoo non configuré
+  // ou push échoué (best-effort). En cas B, c'est `linkedTravail.odooSaleOrderId`
+  // qui prend le relais (vraie commande facturable).
+  odooTaskId          Int?                                    @map("odoo_task_id")
+  odooTaskPushedAt    DateTime?                               @map("odoo_task_pushed_at")
   quantite            Decimal?                                @db.Decimal(12, 3)
   // Surface réellement concernée par l'intervention en m². NULL = toute
   // la parcelle (cas par défaut). Si `geom` est fournie, cette surface est

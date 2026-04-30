@@ -273,7 +273,7 @@ export default function NewTravailPage() {
           </Link>
           <h1 className="flex items-center gap-2 text-2xl font-bold sm:text-3xl">
             <ClipboardList className="h-6 w-6 text-green sm:h-7 sm:w-7" />
-            {isEditMode ? "Modifier le travail" : "Nouveau travail"}
+            {isEditMode ? "Modifier la prestation" : "Nouvelle prestation"}
           </h1>
         </div>
 

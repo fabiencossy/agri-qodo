@@ -35,7 +35,7 @@ const PRIMARY_INTERVENTION: FabAction = {
 
 const PRIMARY_TRAVAIL: FabAction = {
   href: "/travaux/new",
-  label: "Saisir un travail",
+  label: "Saisir une prestation",
   description: "Prestation pour un client ou interne (mécanique, transport).",
   icon: Briefcase,
 };

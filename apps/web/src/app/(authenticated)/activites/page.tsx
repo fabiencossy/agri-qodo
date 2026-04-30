@@ -61,7 +61,7 @@ export default function ActivitesPage() {
               <Briefcase className="h-10 w-10 sm:h-12 sm:w-12" />
             </span>
             <span className="block">
-              <span className="block text-xl font-bold sm:text-2xl">Saisir un travail</span>
+              <span className="block text-xl font-bold sm:text-2xl">Saisir une prestation</span>
               <span className="mt-1 block text-sm text-foreground/70 sm:text-base">
                 Prestation pour un client (balles rondes, transport…) ou interne (mécanique).
               </span>
