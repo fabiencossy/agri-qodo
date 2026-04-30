@@ -132,3 +132,10 @@ export function useCurrentUser() {
     enabled: getStoredTokens() !== null,
   });
 }
+
+export function useChangePassword() {
+  return useMutation({
+    mutationFn: (input: { currentPassword: string; newPassword: string }) =>
+      api<void>("/api/auth/change-password", { method: "POST", body: input }),
+  });
+}

@@ -1,6 +1,6 @@
 "use client";
 
-import { Download, Plus, Sprout, Trash2 } from "lucide-react";
+import { Check, Download, Plus, Sprout, Trash2, X } from "lucide-react";
 import Link from "next/link";
 import { Breadcrumb } from "@/components/app/breadcrumb";
 import { PageHeader } from "@/components/app/page-header";
@@ -14,16 +14,26 @@ import {
   libelleType,
   useDeleteIntervention,
   useInterventions,
+  useRejectIntervention,
+  useValidateIntervention,
 } from "@/lib/interventions";
 
 export default function InterventionsPage() {
   const interventions = useInterventions();
   const deleteMutation = useDeleteIntervention();
+  const validateMutation = useValidateIntervention();
+  const rejectMutation = useRejectIntervention();
 
   const onDelete = (id: string, label: string) => {
     if (confirm(`Supprimer cette ${label} ? Cette action est définitive.`)) {
       deleteMutation.mutate(id);
     }
+  };
+
+  const onReject = (id: string) => {
+    const reason = prompt("Raison du refus (optionnel) :");
+    if (reason === null) return;
+    rejectMutation.mutate(reason.trim() ? { id, reason: reason.trim() } : { id });
   };
 
   return (
@@ -92,8 +102,14 @@ export default function InterventionsPage() {
           <ul className="space-y-3">
             {interventions.data.map((iv) => {
               const quantite = formatQuantite(iv.quantite, iv.unite);
+              const isPending = iv.validationStatus === "PENDING";
               return (
-                <li key={iv.id} className="rounded-2xl border border-border bg-background p-4">
+                <li
+                  key={iv.id}
+                  className={`rounded-2xl border bg-background p-4 ${
+                    isPending ? "border-amber-300" : "border-border"
+                  }`}
+                >
                   <header className="flex items-start justify-between gap-4">
                     <div className="flex items-start gap-3">
                       <span
@@ -107,6 +123,11 @@ export default function InterventionsPage() {
                           {iv.produit && (
                             <span className="ml-2 font-normal text-foreground/70">
                               · {iv.produit}
+                            </span>
+                          )}
+                          {isPending && (
+                            <span className="ml-2 inline-flex items-center rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800">
+                              à valider
                             </span>
                           )}
                         </div>
@@ -123,14 +144,39 @@ export default function InterventionsPage() {
                         {iv.notes && <p className="mt-1 text-sm text-foreground/70">{iv.notes}</p>}
                       </div>
                     </div>
-                    <button
-                      onClick={() => onDelete(iv.id, libelleType(iv.type).toLowerCase())}
-                      disabled={deleteMutation.isPending}
-                      className="rounded-md p-1.5 text-foreground/50 hover:bg-red-50 hover:text-red-600"
-                      aria-label="Supprimer"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
+                    <div className="flex flex-shrink-0 items-center gap-1">
+                      {isPending ? (
+                        <>
+                          <button
+                            onClick={() => validateMutation.mutate(iv.id)}
+                            disabled={validateMutation.isPending}
+                            className="rounded-md p-1.5 text-foreground/50 hover:bg-green/10 hover:text-green"
+                            aria-label="Accepter"
+                            title="Accepter"
+                          >
+                            <Check className="h-4 w-4" />
+                          </button>
+                          <button
+                            onClick={() => onReject(iv.id)}
+                            disabled={rejectMutation.isPending}
+                            className="rounded-md p-1.5 text-foreground/50 hover:bg-red-50 hover:text-red-600"
+                            aria-label="Refuser"
+                            title="Refuser"
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          onClick={() => onDelete(iv.id, libelleType(iv.type).toLowerCase())}
+                          disabled={deleteMutation.isPending}
+                          className="rounded-md p-1.5 text-foreground/50 hover:bg-red-50 hover:text-red-600"
+                          aria-label="Supprimer"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      )}
+                    </div>
                   </header>
                 </li>
               );

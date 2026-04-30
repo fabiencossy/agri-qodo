@@ -6,6 +6,7 @@ import {
   Database,
   Handshake,
   KeyRound,
+  Lock,
   type LucideIcon,
   Package,
   ShieldCheck,
@@ -33,6 +34,15 @@ interface SettingsLink {
  * pointe vers un écran dédié, ce qui garde l'URL propre et permet de
  * partager un lien direct vers une sous-section.
  */
+const MON_COMPTE_LINKS: SettingsLink[] = [
+  {
+    href: "/parametres/mot-de-passe",
+    label: "Changer mon mot de passe",
+    description: "Saisis le mot de passe actuel + le nouveau pour mettre à jour.",
+    icon: Lock,
+  },
+];
+
 const EXPLOITATION_LINKS: SettingsLink[] = [
   {
     href: "/parametres/exploitation",
@@ -121,6 +131,7 @@ export default function ParametresPage() {
           </div>
         )}
 
+        <Section title="Mon compte" links={MON_COMPTE_LINKS} isOwner={isOwner} />
         <Section title="Exploitation" links={EXPLOITATION_LINKS} isOwner={isOwner} />
         <Section title="Collaboration" links={COLLABORATION_LINKS} isOwner={isOwner} />
         <Section title="Référentiels" links={REFERENTIELS_LINKS} isOwner={isOwner} />
