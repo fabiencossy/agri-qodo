@@ -295,20 +295,11 @@ export default function NewTravailPage() {
             </span>
           </label>
 
-          {/* ----- Métadonnées ----- */}
+          {/* ----- Métadonnées : Date → Client → Parcelle → Titre → Notes ----- */}
           <section className="space-y-4 rounded-2xl border border-border bg-background p-4 sm:p-6">
             <h2 className="text-sm font-semibold uppercase tracking-wide text-foreground/60">
               Informations
             </h2>
-            <Field label="Titre" required>
-              <Input
-                value={titre}
-                onChange={(e) => setTitre(e.target.value)}
-                placeholder="Ex : Récolte champ Loup, Pulvérisation prés…"
-                required
-                className="h-12 text-base"
-              />
-            </Field>
             <Field label="Date">
               <Input
                 type="date"
@@ -331,6 +322,15 @@ export default function NewTravailPage() {
                 value={parcelleId}
                 onChange={(id) => setParcelleId(id)}
                 placeholder="Choisir une parcelle…"
+              />
+            </Field>
+            <Field label="Titre / description" required>
+              <Input
+                value={titre}
+                onChange={(e) => setTitre(e.target.value)}
+                placeholder="Ex : Récolte champ Loup, Pulvérisation prés…"
+                required
+                className="h-12 text-base"
               />
             </Field>
             <Field label="Notes (optionnel)">

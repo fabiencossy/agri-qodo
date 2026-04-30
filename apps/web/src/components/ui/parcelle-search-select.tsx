@@ -22,6 +22,8 @@ interface ParcelleSearchSelectProps {
   required?: boolean;
   /** Si true, désactive le sélecteur (ex: pas de parcelle disponible). */
   disabled?: boolean;
+  /** Filtre les parcelles à celles d'un tenant précis (= un client choisi en amont). */
+  filtreTenantId?: string;
 }
 
 export function ParcelleSearchSelect({
@@ -30,6 +32,7 @@ export function ParcelleSearchSelect({
   placeholder = "Choisir une parcelle…",
   required,
   disabled,
+  filtreTenantId,
 }: ParcelleSearchSelectProps) {
   const parcelles = useParcellesAccessibles();
   const [open, setOpen] = useState(false);
@@ -80,7 +83,10 @@ export function ParcelleSearchSelect({
   );
 
   const filtered = useMemo(() => {
-    const list = parcelles.data ?? [];
+    let list = parcelles.data ?? [];
+    if (filtreTenantId) {
+      list = list.filter((p) => p.tenantId === filtreTenantId);
+    }
     const q = query.trim().toLowerCase();
     if (!q) return list.slice().sort((a, b) => a.nom.localeCompare(b.nom, "fr"));
     return list
@@ -88,7 +94,7 @@ export function ParcelleSearchSelect({
         [p.nom, p.identifiantCadastral ?? "", p.zone].join(" ").toLowerCase().includes(q),
       )
       .sort((a, b) => a.nom.localeCompare(b.nom, "fr"));
-  }, [parcelles.data, query]);
+  }, [parcelles.data, query, filtreTenantId]);
 
   const handleSelect = (p: AccessibleParcelle) => {
     onChange(p.id, p);

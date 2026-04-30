@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { MaterielPicker } from "@/components/ui/materiel-picker";
 import { ParcelleSearchSelect } from "@/components/ui/parcelle-search-select";
+import { PartenaireSelect } from "@/components/ui/partenaire-select";
 import { ProduitSearchSelect } from "@/components/ui/produit-search-select";
 import {
   emojiType,
@@ -183,6 +184,11 @@ export default function NewInterventionPage() {
     return TECHNIQUES_ORDER;
   }, [selectedProduit]);
 
+  // Client choisi en haut du formulaire — sert à filtrer les parcelles
+  // visibles dans le ParcelleSearchSelect (UX "trouver vite la bonne parcelle").
+  // Pas persisté côté serveur : le tenantId effectif vient de la parcelle.
+  const [clientId, setClientId] = useState("");
+
   const [toutLeChamp, setToutLeChamp] = useState(true);
   // Mode de saisie de la sous-zone : numérique (m² entré au clavier) ou
   // dessiné sur carte (polygone clippé à la parcelle, surface auto).
@@ -287,6 +293,26 @@ export default function NewInterventionPage() {
           onSubmit={handleSubmit(onSubmit)}
           className="space-y-5 rounded-xl border border-border bg-background p-3 sm:rounded-2xl sm:p-6"
         >
+          <Field label="Date" error={errors.dateOperation?.message}>
+            <Input type="date" {...register("dateOperation")} />
+          </Field>
+
+          <Field
+            label="Client (optionnel)"
+            hint="Si renseigné, filtre les parcelles à celles du client. Laisse vide pour tes parcelles."
+          >
+            <PartenaireSelect
+              value={clientId}
+              onChange={(id) => {
+                setClientId(id);
+                // Reset parcelle si on change de client (sinon l'ID
+                // sélectionné peut ne plus matcher la liste filtrée).
+                setValue("parcelleId", "");
+              }}
+              placeholder="Choisir un client lié…"
+            />
+          </Field>
+
           <Field label="Parcelle" error={errors.parcelleId?.message}>
             <Controller
               control={control}
@@ -297,6 +323,7 @@ export default function NewInterventionPage() {
                   onChange={(id) => onChange(id)}
                   required
                   disabled={noParcelles}
+                  {...(clientId ? { filtreTenantId: clientId } : {})}
                 />
               )}
             />
@@ -351,10 +378,6 @@ export default function NewInterventionPage() {
                 </div>
               )}
             />
-          </Field>
-
-          <Field label="Date" error={errors.dateOperation?.message}>
-            <Input type="date" {...register("dateOperation")} />
           </Field>
 
           <Field
