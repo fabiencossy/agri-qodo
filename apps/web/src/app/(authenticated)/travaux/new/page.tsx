@@ -1,27 +1,29 @@
 "use client";
 
 /**
- * Nouveau travail facturable — `/travaux/new`.
+ * Nouveau travail — `/travaux/new`.
  *
- * Form unifié avec :
+ * Form unifié mobile-first avec :
  * - Métadonnées : titre, date, client (partenaire), parcelle, notes.
- * - Lignes PRODUITS (composant ProduitSearchSelect — création inline OK).
- * - Lignes HEURES (sélecteur employé + durée + taux horaire).
- * - Total CHF estimé en bas.
- *
- * Pas de push Odoo dans cette PR (Phase 1) — juste sauvegarde locale en
- * DRAFT. Le bouton "Valider" passe à VALIDATED, "Facturer Odoo" sera
- * ajouté en PR Phase 2.
+ * - Toggle "Travail interne" (non facturable, cache les prix).
+ * - Lignes PRODUITS (ProduitSearchSelect — création inline OK).
+ * - Lignes HEURES avec heure début / fin → durée auto.
+ *   Présélection de l'employé courant ; possibilité d'ajouter d'autres
+ *   employés (chef d'équipe).
+ * - Total CHF estimé en bas (caché si interne).
+ * - Sticky bottom action bar mobile (Save + Annuler).
  */
-import { ArrowLeft, ClipboardList, Plus, Save, Trash2 } from "lucide-react";
+import { ArrowLeft, ClipboardList, Plus, Save, Trash2, UserCircle } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Breadcrumb } from "@/components/app/breadcrumb";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ParcelleSearchSelect } from "@/components/ui/parcelle-search-select";
+import { PartenaireSelect } from "@/components/ui/partenaire-select";
 import { ProduitSearchSelect } from "@/components/ui/produit-search-select";
+import { useCurrentUser } from "@/lib/auth";
 import { type Produit, useProduits } from "@/lib/produits";
 import {
   type CreateLigneHeureInput,
@@ -44,6 +46,8 @@ interface DraftLigneProduit {
 interface DraftLigneHeure {
   uid: string;
   userId: string;
+  heureDebut?: string;
+  heureFin?: string;
   dureeMinutes: number;
   tauxHoraireCHF?: number | undefined;
   notes?: string | undefined;
@@ -55,50 +59,90 @@ function uid(): string {
   return Math.random().toString(36).slice(2, 10);
 }
 
+function combineDateTime(date: string, time: string): string | undefined {
+  if (!date || !time) return undefined;
+  const iso = `${date}T${time}:00`;
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? undefined : d.toISOString();
+}
+
+function dureeFromTimes(date: string, debut?: string, fin?: string): number | null {
+  const start = combineDateTime(date, debut ?? "");
+  const end = combineDateTime(date, fin ?? "");
+  if (!start || !end) return null;
+  const diff = new Date(end).getTime() - new Date(start).getTime();
+  if (diff <= 0) return null;
+  return Math.round(diff / 60000);
+}
+
 export default function NewTravailPage() {
   const router = useRouter();
   const create = useCreateTravail();
+  const me = useCurrentUser();
   const users = useUsers();
   const produits = useProduits();
 
   const [titre, setTitre] = useState("");
   const [date, setDate] = useState(todayIso());
+  const [partenaireId, setPartenaireId] = useState("");
   const [parcelleId, setParcelleId] = useState("");
+  const [interne, setInterne] = useState(false);
   const [notes, setNotes] = useState("");
   const [lignesProduit, setLignesProduit] = useState<DraftLigneProduit[]>([]);
   const [lignesHeure, setLignesHeure] = useState<DraftLigneHeure[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  const totalProduits = lignesProduit.reduce(
-    (s, l) => s + (l.prixUnitaireCHF ?? 0) * l.quantite,
-    0,
+  // Présélection : ligne heures vide pour l'utilisateur courant.
+  const meId = me.data?.id;
+  useEffect(() => {
+    if (!meId) return;
+    setLignesHeure((prev) =>
+      prev.length === 0 ? [{ uid: uid(), userId: meId, dureeMinutes: 0 }] : prev,
+    );
+  }, [meId]);
+
+  const totalProduits = useMemo(
+    () => lignesProduit.reduce((s, l) => s + (l.prixUnitaireCHF ?? 0) * l.quantite, 0),
+    [lignesProduit],
   );
-  const totalHeures = lignesHeure.reduce(
-    (s, l) => s + (l.tauxHoraireCHF ?? 0) * (l.dureeMinutes / 60),
-    0,
+  const totalHeures = useMemo(
+    () => lignesHeure.reduce((s, l) => s + (l.tauxHoraireCHF ?? 0) * (l.dureeMinutes / 60), 0),
+    [lignesHeure],
   );
-  const totalDureeMin = lignesHeure.reduce((s, l) => s + l.dureeMinutes, 0);
+  const totalDureeMin = useMemo(
+    () => lignesHeure.reduce((s, l) => s + l.dureeMinutes, 0),
+    [lignesHeure],
+  );
+
+  const isChef = me.data?.role === "OWNER";
 
   const addLigneProduit = () => {
     setLignesProduit((prev) => [...prev, { uid: uid(), libelle: "", quantite: 0, unite: "kg" }]);
   };
-
   const updateProduit = (idx: number, patch: Partial<DraftLigneProduit>) => {
     setLignesProduit((prev) => prev.map((l, i) => (i === idx ? { ...l, ...patch } : l)));
   };
-
   const removeProduit = (idx: number) => {
     setLignesProduit((prev) => prev.filter((_, i) => i !== idx));
   };
 
   const addLigneHeure = () => {
-    setLignesHeure((prev) => [...prev, { uid: uid(), userId: "", dureeMinutes: 60 }]);
+    setLignesHeure((prev) => [...prev, { uid: uid(), userId: me.data?.id ?? "", dureeMinutes: 0 }]);
   };
-
   const updateHeure = (idx: number, patch: Partial<DraftLigneHeure>) => {
-    setLignesHeure((prev) => prev.map((l, i) => (i === idx ? { ...l, ...patch } : l)));
+    setLignesHeure((prev) =>
+      prev.map((l, i) => {
+        if (i !== idx) return l;
+        const next = { ...l, ...patch };
+        // Recalcule la durée si début et fin saisis.
+        if (patch.heureDebut !== undefined || patch.heureFin !== undefined) {
+          const d = dureeFromTimes(date, next.heureDebut, next.heureFin);
+          if (d !== null) next.dureeMinutes = d;
+        }
+        return next;
+      }),
+    );
   };
-
   const removeHeure = (idx: number) => {
     setLignesHeure((prev) => prev.filter((_, i) => i !== idx));
   };
@@ -119,7 +163,7 @@ export default function NewTravailPage() {
           unite: l.unite ?? "kg",
         };
         if (l.produitId) out.produitId = l.produitId;
-        if (l.prixUnitaireCHF !== undefined) out.prixUnitaireCHF = l.prixUnitaireCHF;
+        if (!interne && l.prixUnitaireCHF !== undefined) out.prixUnitaireCHF = l.prixUnitaireCHF;
         if (l.notes) out.notes = l.notes;
         return out;
       });
@@ -127,7 +171,11 @@ export default function NewTravailPage() {
       .filter((l) => l.userId && l.dureeMinutes > 0)
       .map((l) => {
         const out: CreateLigneHeureInput = { userId: l.userId, dureeMinutes: l.dureeMinutes };
-        if (l.tauxHoraireCHF !== undefined) out.tauxHoraireCHF = l.tauxHoraireCHF;
+        const debutIso = combineDateTime(date, l.heureDebut ?? "");
+        const finIso = combineDateTime(date, l.heureFin ?? "");
+        if (debutIso) out.heureDebut = debutIso;
+        if (finIso) out.heureFin = finIso;
+        if (!interne && l.tauxHoraireCHF !== undefined) out.tauxHoraireCHF = l.tauxHoraireCHF;
         if (l.notes) out.notes = l.notes;
         return out;
       });
@@ -136,6 +184,8 @@ export default function NewTravailPage() {
       const created = await create.mutateAsync({
         titre: titre.trim(),
         date,
+        interne,
+        ...(partenaireId && !interne ? { partenaireId } : {}),
         ...(parcelleId ? { parcelleId } : {}),
         ...(notes ? { notes } : {}),
         ...(lignesProduitClean.length > 0 ? { lignesProduit: lignesProduitClean } : {}),
@@ -156,43 +206,73 @@ export default function NewTravailPage() {
           { label: "Nouveau" },
         ]}
       />
-      <div className="mx-auto max-w-3xl px-4 py-8">
+      <div className="mx-auto max-w-3xl px-4 pb-32 pt-6 sm:py-8">
         <div className="mb-6 flex items-center gap-3">
           <Link href="/travaux" className="text-foreground/60 hover:text-foreground">
             <ArrowLeft className="h-5 w-5" />
           </Link>
-          <h1 className="flex items-center gap-2 text-3xl font-bold">
-            <ClipboardList className="h-7 w-7 text-green" />
+          <h1 className="flex items-center gap-2 text-2xl font-bold sm:text-3xl">
+            <ClipboardList className="h-6 w-6 text-green sm:h-7 sm:w-7" />
             Nouveau travail
           </h1>
         </div>
 
-        <form onSubmit={onSubmit} className="space-y-6">
+        <form onSubmit={onSubmit} className="space-y-4">
+          {/* ----- Toggle interne en haut ----- */}
+          <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-border bg-background p-4">
+            <input
+              type="checkbox"
+              checked={interne}
+              onChange={(e) => setInterne(e.target.checked)}
+              className="mt-1 h-5 w-5 cursor-pointer accent-green"
+            />
+            <span className="flex-1">
+              <span className="block text-sm font-semibold">Travail interne (non facturable)</span>
+              <span className="mt-0.5 block text-xs text-foreground/60">
+                Pour entretien, formation, déplacement… Pas de client, pas de prix, pas d'export
+                Odoo.
+              </span>
+            </span>
+          </label>
+
           {/* ----- Métadonnées ----- */}
-          <section className="space-y-4 rounded-2xl border border-border bg-background p-6">
+          <section className="space-y-4 rounded-2xl border border-border bg-background p-4 sm:p-6">
             <h2 className="text-sm font-semibold uppercase tracking-wide text-foreground/60">
-              Informations générales
+              Informations
             </h2>
             <Field label="Titre" required>
               <Input
                 value={titre}
                 onChange={(e) => setTitre(e.target.value)}
-                placeholder="Ex : Récolte du champ Loup, Pulvérisation prés Jurassiens…"
+                placeholder="Ex : Récolte champ Loup, Pulvérisation prés…"
                 required
+                className="h-12 text-base"
               />
             </Field>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Date">
-                <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-              </Field>
-              <Field label="Parcelle (optionnel)">
-                <ParcelleSearchSelect
-                  value={parcelleId}
-                  onChange={(id) => setParcelleId(id)}
-                  placeholder="Choisir une parcelle…"
+            <Field label="Date">
+              <Input
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                className="h-12 text-base"
+              />
+            </Field>
+            {!interne && (
+              <Field label="Client (optionnel)">
+                <PartenaireSelect
+                  value={partenaireId}
+                  onChange={setPartenaireId}
+                  placeholder="Choisir un client lié…"
                 />
               </Field>
-            </div>
+            )}
+            <Field label="Parcelle (optionnel)">
+              <ParcelleSearchSelect
+                value={parcelleId}
+                onChange={(id) => setParcelleId(id)}
+                placeholder="Choisir une parcelle…"
+              />
+            </Field>
             <Field label="Notes (optionnel)">
               <textarea
                 className="min-h-20 w-full rounded-lg border border-border bg-background px-3 py-2 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green"
@@ -204,10 +284,10 @@ export default function NewTravailPage() {
           </section>
 
           {/* ----- Lignes produits ----- */}
-          <section className="space-y-3 rounded-2xl border border-border bg-background p-6">
+          <section className="space-y-3 rounded-2xl border border-border bg-background p-4 sm:p-6">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-semibold uppercase tracking-wide text-foreground/60">
-                Produits consommés
+                Produits ({lignesProduit.length})
               </h2>
               <Button type="button" variant="secondary" size="sm" onClick={addLigneProduit}>
                 <Plus className="mr-1 h-4 w-4" />
@@ -216,7 +296,7 @@ export default function NewTravailPage() {
             </div>
             {lignesProduit.length === 0 ? (
               <p className="text-sm text-foreground/50">
-                Aucun produit. Ajoute des semences, engrais, phytos consommés sur ce travail.
+                Aucun produit. Ajoute des semences, engrais, phytos consommés.
               </p>
             ) : (
               <div className="space-y-3">
@@ -227,22 +307,23 @@ export default function NewTravailPage() {
                     produits={produits.data ?? []}
                     onChange={(patch) => updateProduit(idx, patch)}
                     onRemove={() => removeProduit(idx)}
+                    showPrice={!interne}
                   />
                 ))}
               </div>
             )}
-            {totalProduits > 0 && (
+            {!interne && totalProduits > 0 && (
               <p className="text-right text-sm font-medium">
-                Sous-total produits : <span className="font-mono">{formatCHF(totalProduits)}</span>
+                Sous-total : <span className="font-mono">{formatCHF(totalProduits)}</span>
               </p>
             )}
           </section>
 
           {/* ----- Lignes heures ----- */}
-          <section className="space-y-3 rounded-2xl border border-border bg-background p-6">
+          <section className="space-y-3 rounded-2xl border border-border bg-background p-4 sm:p-6">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-semibold uppercase tracking-wide text-foreground/60">
-                Heures de travail
+                Heures ({lignesHeure.length})
               </h2>
               <Button type="button" variant="secondary" size="sm" onClick={addLigneHeure}>
                 <Plus className="mr-1 h-4 w-4" />
@@ -251,8 +332,7 @@ export default function NewTravailPage() {
             </div>
             {lignesHeure.length === 0 ? (
               <p className="text-sm text-foreground/50">
-                Aucune heure. Ajoute le temps passé par chaque employé — ces heures alimenteront
-                automatiquement le timesheet (pas de double saisie).
+                Aucune heure. Ajoute le temps passé — alimente automatiquement le timesheet.
               </p>
             ) : (
               <div className="space-y-3">
@@ -261,16 +341,18 @@ export default function NewTravailPage() {
                     key={l.uid}
                     ligne={l}
                     users={users.data ?? []}
+                    canChangeUser={isChef}
                     onChange={(patch) => updateHeure(idx, patch)}
                     onRemove={() => removeHeure(idx)}
+                    showPrice={!interne}
                   />
                 ))}
               </div>
             )}
             {totalDureeMin > 0 && (
               <p className="text-right text-sm font-medium">
-                Sous-total heures : <span>{formatDuree(totalDureeMin)}</span>
-                {totalHeures > 0 && (
+                Sous-total : <span>{formatDuree(totalDureeMin)}</span>
+                {!interne && totalHeures > 0 && (
                   <span className="ml-2 font-mono">{formatCHF(totalHeures)}</span>
                 )}
               </p>
@@ -278,7 +360,7 @@ export default function NewTravailPage() {
           </section>
 
           {/* ----- Total ----- */}
-          {totalProduits + totalHeures > 0 && (
+          {!interne && totalProduits + totalHeures > 0 && (
             <div className="rounded-2xl border-2 border-green bg-green/5 p-4 text-right">
               <p className="text-sm text-foreground/60">Total estimé HT</p>
               <p className="font-mono text-2xl font-bold text-green-dark">
@@ -289,16 +371,19 @@ export default function NewTravailPage() {
 
           {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
 
-          <div className="flex justify-end gap-2">
-            <Link href="/travaux">
-              <Button type="button" variant="ghost">
-                Annuler
+          {/* ----- Sticky bottom bar mobile ----- */}
+          <div className="fixed inset-x-0 bottom-0 z-10 border-t border-border bg-background/95 px-4 py-3 backdrop-blur sm:static sm:border-0 sm:bg-transparent sm:p-0 sm:pt-2">
+            <div className="mx-auto flex max-w-3xl justify-end gap-2">
+              <Link href="/travaux">
+                <Button type="button" variant="ghost">
+                  Annuler
+                </Button>
+              </Link>
+              <Button type="submit" disabled={create.isPending} className="h-11 px-6">
+                <Save className="mr-1 h-4 w-4" />
+                {create.isPending ? "Sauvegarde…" : "Sauvegarder"}
               </Button>
-            </Link>
-            <Button type="submit" disabled={create.isPending}>
-              <Save className="mr-1 h-4 w-4" />
-              {create.isPending ? "Sauvegarde…" : "Sauvegarder en brouillon"}
-            </Button>
+            </div>
           </div>
         </form>
       </div>
@@ -330,11 +415,13 @@ function LigneProduitRow({
   ligne,
   onChange,
   onRemove,
+  showPrice,
 }: {
   ligne: DraftLigneProduit;
   produits: Produit[];
   onChange: (patch: Partial<DraftLigneProduit>) => void;
   onRemove: () => void;
+  showPrice: boolean;
 }) {
   return (
     <div className="grid gap-2 rounded-xl border border-border bg-muted/20 p-3">
@@ -349,12 +436,12 @@ function LigneProduitRow({
               unite: p?.unite ?? ligne.unite ?? "kg",
             });
           }}
-          placeholder="Choisir un produit du catalogue…"
+          placeholder="Choisir un produit…"
         />
         <button
           type="button"
           onClick={onRemove}
-          className="flex h-11 w-11 items-center justify-center rounded-lg border border-border bg-background text-red-700 hover:bg-red-50"
+          className="flex h-12 w-12 items-center justify-center rounded-lg border border-border bg-background text-red-700 hover:bg-red-50"
           aria-label="Supprimer cette ligne"
         >
           <Trash2 className="h-4 w-4" />
@@ -364,38 +451,46 @@ function LigneProduitRow({
         value={ligne.libelle}
         onChange={(e) => onChange({ libelle: e.target.value })}
         placeholder="Libellé (auto si produit choisi, sinon libre)"
+        className="h-11"
       />
-      <div className="grid grid-cols-3 gap-2">
+      <div className={`grid gap-2 ${showPrice ? "grid-cols-3" : "grid-cols-2"}`}>
         <Input
           type="number"
           step="0.001"
           min="0"
+          inputMode="decimal"
           value={ligne.quantite || ""}
           onChange={(e) => onChange({ quantite: Number(e.target.value) || 0 })}
           placeholder="Qté"
           aria-label="Quantité"
+          className="h-11"
         />
         <Input
           value={ligne.unite ?? ""}
           onChange={(e) => onChange({ unite: e.target.value })}
           placeholder="kg"
           aria-label="Unité"
+          className="h-11"
         />
-        <Input
-          type="number"
-          step="0.01"
-          min="0"
-          value={ligne.prixUnitaireCHF ?? ""}
-          onChange={(e) =>
-            onChange({
-              prixUnitaireCHF: e.target.value ? Number(e.target.value) : undefined,
-            })
-          }
-          placeholder="Prix CHF/u (vide = non facturable)"
-          aria-label="Prix unitaire CHF"
-        />
+        {showPrice && (
+          <Input
+            type="number"
+            step="0.01"
+            min="0"
+            inputMode="decimal"
+            value={ligne.prixUnitaireCHF ?? ""}
+            onChange={(e) =>
+              onChange({
+                prixUnitaireCHF: e.target.value ? Number(e.target.value) : undefined,
+              })
+            }
+            placeholder="CHF/u"
+            aria-label="Prix unitaire CHF"
+            className="h-11"
+          />
+        )}
       </div>
-      {ligne.prixUnitaireCHF && ligne.quantite > 0 && (
+      {showPrice && ligne.prixUnitaireCHF && ligne.quantite > 0 && (
         <p className="text-right text-xs text-foreground/60">
           {formatCHF(ligne.prixUnitaireCHF * ligne.quantite)}
         </p>
@@ -407,89 +502,160 @@ function LigneProduitRow({
 function LigneHeureRow({
   ligne,
   users,
+  canChangeUser,
   onChange,
   onRemove,
+  showPrice,
 }: {
   ligne: DraftLigneHeure;
   users: { id: string; prenom: string; nom: string; email: string }[];
+  canChangeUser: boolean;
   onChange: (patch: Partial<DraftLigneHeure>) => void;
   onRemove: () => void;
+  showPrice: boolean;
 }) {
+  const [mode, setMode] = useState<"times" | "duree">(
+    ligne.heureDebut || ligne.heureFin ? "times" : "duree",
+  );
   const heures = Math.floor(ligne.dureeMinutes / 60);
   const minutes = ligne.dureeMinutes % 60;
+  const userObj = users.find((u) => u.id === ligne.userId);
 
   return (
     <div className="grid gap-2 rounded-xl border border-border bg-muted/20 p-3">
       <div className="grid gap-2 sm:grid-cols-[2fr_auto]">
-        <select
-          className="h-11 w-full rounded-lg border border-border bg-background px-3 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green"
-          value={ligne.userId}
-          onChange={(e) => onChange({ userId: e.target.value })}
-        >
-          <option value="">Choisir un employé…</option>
-          {users.map((u) => (
-            <option key={u.id} value={u.id}>
-              {u.prenom} {u.nom}
-            </option>
-          ))}
-        </select>
+        {canChangeUser ? (
+          <select
+            className="h-12 w-full rounded-lg border border-border bg-background px-3 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green"
+            value={ligne.userId}
+            onChange={(e) => onChange({ userId: e.target.value })}
+          >
+            <option value="">Choisir un employé…</option>
+            {users.map((u) => (
+              <option key={u.id} value={u.id}>
+                {u.prenom} {u.nom}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <div className="flex h-12 items-center gap-2 rounded-lg border border-border bg-muted/30 px-3 text-sm">
+            <UserCircle className="h-4 w-4 text-foreground/60" />
+            <span className="font-medium">
+              {userObj ? `${userObj.prenom} ${userObj.nom}` : "Toi"}
+            </span>
+          </div>
+        )}
         <button
           type="button"
           onClick={onRemove}
-          className="flex h-11 w-11 items-center justify-center rounded-lg border border-border bg-background text-red-700 hover:bg-red-50"
+          className="flex h-12 w-12 items-center justify-center rounded-lg border border-border bg-background text-red-700 hover:bg-red-50"
           aria-label="Supprimer cette ligne"
         >
           <Trash2 className="h-4 w-4" />
         </button>
       </div>
-      <div className="grid grid-cols-3 gap-2">
-        <label className="block">
-          <span className="mb-0.5 block text-xs text-foreground/60">Heures</span>
-          <Input
-            type="number"
-            min="0"
-            max="24"
-            value={heures}
-            onChange={(e) => {
-              const h = Math.max(0, Number(e.target.value) || 0);
-              onChange({ dureeMinutes: h * 60 + minutes });
-            }}
-          />
-        </label>
-        <label className="block">
-          <span className="mb-0.5 block text-xs text-foreground/60">Minutes</span>
-          <Input
-            type="number"
-            min="0"
-            max="59"
-            step="5"
-            value={minutes}
-            onChange={(e) => {
-              const m = Math.max(0, Math.min(59, Number(e.target.value) || 0));
-              onChange({ dureeMinutes: heures * 60 + m });
-            }}
-          />
-        </label>
-        <label className="block">
-          <span className="mb-0.5 block text-xs text-foreground/60">Taux CHF/h</span>
-          <Input
-            type="number"
-            step="0.5"
-            min="0"
-            value={ligne.tauxHoraireCHF ?? ""}
-            onChange={(e) =>
-              onChange({
-                tauxHoraireCHF: e.target.value ? Number(e.target.value) : undefined,
-              })
-            }
-            placeholder="vide = interne"
-          />
-        </label>
+
+      <div className="flex gap-1 rounded-lg bg-muted p-1 text-xs">
+        <button
+          type="button"
+          onClick={() => setMode("times")}
+          className={`flex-1 rounded-md px-2 py-1 ${mode === "times" ? "bg-background font-medium shadow-sm" : "text-foreground/60"}`}
+        >
+          Heure début / fin
+        </button>
+        <button
+          type="button"
+          onClick={() => setMode("duree")}
+          className={`flex-1 rounded-md px-2 py-1 ${mode === "duree" ? "bg-background font-medium shadow-sm" : "text-foreground/60"}`}
+        >
+          Durée libre
+        </button>
       </div>
-      {ligne.tauxHoraireCHF && ligne.dureeMinutes > 0 && (
+
+      {mode === "times" ? (
+        <div className="grid grid-cols-2 gap-2">
+          <label className="block">
+            <span className="mb-0.5 block text-xs text-foreground/60">Début</span>
+            <Input
+              type="time"
+              value={ligne.heureDebut ?? ""}
+              onChange={(e) => onChange({ heureDebut: e.target.value })}
+              className="h-11"
+            />
+          </label>
+          <label className="block">
+            <span className="mb-0.5 block text-xs text-foreground/60">Fin</span>
+            <Input
+              type="time"
+              value={ligne.heureFin ?? ""}
+              onChange={(e) => onChange({ heureFin: e.target.value })}
+              className="h-11"
+            />
+          </label>
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 gap-2">
+          <label className="block">
+            <span className="mb-0.5 block text-xs text-foreground/60">Heures</span>
+            <Input
+              type="number"
+              min="0"
+              max="24"
+              inputMode="numeric"
+              value={heures}
+              onChange={(e) => {
+                const h = Math.max(0, Number(e.target.value) || 0);
+                onChange({ dureeMinutes: h * 60 + minutes });
+              }}
+              className="h-11"
+            />
+          </label>
+          <label className="block">
+            <span className="mb-0.5 block text-xs text-foreground/60">Minutes</span>
+            <Input
+              type="number"
+              min="0"
+              max="59"
+              step="5"
+              inputMode="numeric"
+              value={minutes}
+              onChange={(e) => {
+                const m = Math.max(0, Math.min(59, Number(e.target.value) || 0));
+                onChange({ dureeMinutes: heures * 60 + m });
+              }}
+              className="h-11"
+            />
+          </label>
+        </div>
+      )}
+
+      {showPrice && (
+        <Input
+          type="number"
+          step="0.5"
+          min="0"
+          inputMode="decimal"
+          value={ligne.tauxHoraireCHF ?? ""}
+          onChange={(e) =>
+            onChange({
+              tauxHoraireCHF: e.target.value ? Number(e.target.value) : undefined,
+            })
+          }
+          placeholder="Taux CHF/h (vide = non facturable)"
+          aria-label="Taux horaire CHF"
+          className="h-11"
+        />
+      )}
+
+      {ligne.dureeMinutes > 0 && (
         <p className="text-right text-xs text-foreground/60">
-          {formatDuree(ligne.dureeMinutes)} ·{" "}
-          {formatCHF((ligne.dureeMinutes / 60) * ligne.tauxHoraireCHF)}
+          {formatDuree(ligne.dureeMinutes)}
+          {showPrice && ligne.tauxHoraireCHF && (
+            <>
+              {" · "}
+              {formatCHF((ligne.dureeMinutes / 60) * ligne.tauxHoraireCHF)}
+            </>
+          )}
         </p>
       )}
     </div>

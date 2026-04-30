@@ -2,6 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { Type } from "class-transformer";
 import {
   IsArray,
+  IsBoolean,
   IsDateString,
   IsNumber,
   IsOptional,
@@ -53,6 +54,19 @@ export class CreateLigneHeureDto {
   @ApiProperty({ description: "ID User (employé) qui a effectué les heures." })
   @IsUUID()
   userId!: string;
+
+  @ApiPropertyOptional({
+    description:
+      "Heure de début ISO (datetime). Si fournie avec heureFin, dureeMinutes est recalculée par le backend.",
+  })
+  @IsOptional()
+  @IsDateString()
+  heureDebut?: string;
+
+  @ApiPropertyOptional({ description: "Heure de fin ISO (datetime)." })
+  @IsOptional()
+  @IsDateString()
+  heureFin?: string;
 
   @ApiProperty({ description: "Durée en minutes (180 = 3h).", example: 180 })
   @Type(() => Number)
@@ -108,6 +122,14 @@ export class CreateTravailDto {
   @IsOptional()
   @IsUUID()
   parcelleId?: string;
+
+  @ApiPropertyOptional({
+    description:
+      "Travail interne (entretien, formation, déplacement) : non facturable, non poussé vers Odoo.",
+  })
+  @IsOptional()
+  @IsBoolean()
+  interne?: boolean;
 
   @ApiPropertyOptional()
   @IsOptional()
