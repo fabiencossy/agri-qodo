@@ -1,18 +1,10 @@
 "use client";
 
-import {
-  ArrowLeft,
-  CheckCircle2,
-  ClipboardList,
-  Clock,
-  MapPin,
-  Package,
-  Trash2,
-  XCircle,
-} from "lucide-react";
+import { CheckCircle2, ClipboardList, Clock, MapPin, Package, Trash2, XCircle } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { Breadcrumb } from "@/components/app/breadcrumb";
+import { DetailHeader } from "@/components/app/detail-header";
 import { Button } from "@/components/ui/button";
 import {
   formatCHF,
@@ -84,28 +76,38 @@ export default function TravailDetailPage() {
           { label: t.titre },
         ]}
       />
-      <div className="mx-auto max-w-3xl px-4 py-8">
-        <div className="mb-6 flex items-start gap-3">
-          <Link
-            href="/travaux"
-            className="mt-1 text-foreground/60 hover:text-foreground"
-            aria-label="Retour"
-          >
-            <ArrowLeft className="h-5 w-5" />
-          </Link>
-          <div className="flex-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <h1 className="flex items-center gap-2 text-2xl font-bold sm:text-3xl">
-                <ClipboardList className="h-6 w-6 text-green sm:h-7 sm:w-7" />
-                {t.titre}
-              </h1>
+      <div className="mx-auto max-w-3xl px-2 py-3 sm:px-4 sm:py-6">
+        <DetailHeader
+          backHref="/travaux"
+          icon={ClipboardList}
+          title={t.titre}
+          subtitle={<span className="capitalize">{dateLong(t.date)}</span>}
+          badges={
+            <>
               <span className={`rounded px-2 py-0.5 text-xs font-medium ${STATUT_BADGE[t.statut]}`}>
                 {STATUT_LABEL[t.statut]}
               </span>
-            </div>
-            <p className="mt-1 text-sm capitalize text-foreground/60">{dateLong(t.date)}</p>
-          </div>
-        </div>
+              {t.interne && (
+                <span className="rounded bg-foreground/10 px-2 py-0.5 text-xs font-medium uppercase tracking-wide">
+                  Interne
+                </span>
+              )}
+            </>
+          }
+          menuActions={
+            t.statut === "DRAFT"
+              ? [
+                  {
+                    label: "Supprimer",
+                    icon: Trash2,
+                    variant: "danger",
+                    disabled: del.isPending,
+                    onClick: handleDelete,
+                  },
+                ]
+              : []
+          }
+        />
 
         <section className="mb-4 grid gap-3 rounded-2xl border border-border bg-background p-5 sm:grid-cols-2">
           <Info
@@ -222,7 +224,7 @@ export default function TravailDetailPage() {
 
         <div className="flex flex-wrap items-center gap-2">
           {t.statut === "DRAFT" && (
-            <Button onClick={() => validate.mutate(t.id)} disabled={validate.isPending} size="sm">
+            <Button onClick={() => validate.mutate(t.id)} disabled={validate.isPending}>
               <CheckCircle2 className="mr-1 h-4 w-4" />
               Valider
             </Button>
@@ -230,25 +232,11 @@ export default function TravailDetailPage() {
           {(t.statut === "DRAFT" || t.statut === "VALIDATED") && (
             <Button
               variant="secondary"
-              size="sm"
               onClick={() => cancel.mutate(t.id)}
               disabled={cancel.isPending}
             >
               <XCircle className="mr-1 h-4 w-4" />
-              Annuler
-            </Button>
-          )}
-          <div className="flex-1" />
-          {t.statut === "DRAFT" && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleDelete}
-              disabled={del.isPending}
-              className="text-red-700 hover:bg-red-50"
-            >
-              <Trash2 className="mr-1 h-4 w-4" />
-              Supprimer
+              Annuler ce travail
             </Button>
           )}
         </div>
