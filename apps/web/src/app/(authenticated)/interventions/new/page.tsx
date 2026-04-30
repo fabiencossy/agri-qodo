@@ -269,7 +269,7 @@ export default function NewInterventionPage() {
 
         <form
           onSubmit={handleSubmit(onSubmit)}
-          className="space-y-5 rounded-2xl border border-border bg-background p-6"
+          className="space-y-5 rounded-xl border border-border bg-background p-3 sm:rounded-2xl sm:p-6"
         >
           <Field label="Parcelle" error={errors.parcelleId?.message}>
             <Controller
