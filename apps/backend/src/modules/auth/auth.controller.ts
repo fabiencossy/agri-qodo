@@ -10,6 +10,7 @@ import { LoginDto } from "./dto/login.dto";
 import { ConfirmPasswordResetDto, RequestPasswordResetDto } from "./dto/password-reset.dto";
 import { RefreshDto } from "./dto/refresh.dto";
 import { RegisterDto } from "./dto/register.dto";
+import { VerifyEmailDto } from "./dto/verify-email.dto";
 import { JwtAuthGuard } from "./guards/jwt-auth.guard";
 import type { JwtPayload } from "./types/jwt-payload.type";
 
@@ -101,6 +102,22 @@ export class AuthController {
   })
   async confirmPasswordReset(@Body() dto: ConfirmPasswordResetDto): Promise<void> {
     await this.auth.confirmPasswordReset(dto.token, dto.newPassword);
+  }
+
+  @Post("email/verify")
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: "Confirme la vérification email avec le token reçu par mail." })
+  async verifyEmail(@Body() dto: VerifyEmailDto): Promise<void> {
+    await this.auth.verifyEmail(dto.token);
+  }
+
+  @Post("email/resend")
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "Renvoie un mail de vérification au user courant." })
+  async resendEmailVerification(@CurrentUser() user: JwtPayload): Promise<void> {
+    await this.auth.sendEmailVerification(user.sub, false);
   }
 
   @Post("change-password")

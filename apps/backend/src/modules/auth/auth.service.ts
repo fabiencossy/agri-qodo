@@ -196,6 +196,108 @@ export class AuthService {
   }
 
   /**
+   * Génère un token de vérification email + envoie le mail (welcome
+   * + lien de vérif). Appelé au signup et via resend manuel.
+   */
+  async sendEmailVerification(userId: string, isWelcome = false): Promise<void> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, email: true, prenom: true, emailVerifiedAt: true },
+    });
+    if (!user) return;
+    if (user.emailVerifiedAt) {
+      this.logger.log(`Skip email verif : ${user.email} déjà vérifié`);
+      return;
+    }
+
+    const rawToken = randomBytes(32).toString("base64url");
+    const tokenHash = createHash("sha256").update(rawToken).digest("hex");
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7j
+
+    await this.prisma.emailVerificationToken.create({
+      data: { userId: user.id, tokenHash, expiresAt },
+    });
+
+    const publicUrl = this.config.get("PUBLIC_APP_URL", { infer: true });
+    const verifyUrl = `${publicUrl}/verify-email?token=${rawToken}`;
+
+    const subject = isWelcome
+      ? "Bienvenue sur Agri Qodo — vérifie ton e-mail"
+      : "Vérifie ton e-mail Agri Qodo";
+
+    const greeting = isWelcome
+      ? `<p>Bienvenue sur <strong>Agri Qodo</strong> ${user.prenom} 👋</p>
+         <p>On est ravis de t'accueillir. Une dernière étape : vérifie ton adresse
+         e-mail pour activer toutes les fonctionnalités (notifications partenaires,
+         devis Odoo, factures…).</p>`
+      : `<p>Bonjour ${user.prenom},</p>
+         <p>Clique sur le bouton ci-dessous pour vérifier ton adresse e-mail.</p>`;
+
+    await this.mailer.send({
+      to: user.email,
+      subject,
+      html: `
+        <div style="font-family: -apple-system, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px;">
+          <h2 style="color: #2d6a4f;">${isWelcome ? "Bienvenue 🌾" : "Vérification e-mail"}</h2>
+          ${greeting}
+          <p style="margin: 32px 0;">
+            <a href="${verifyUrl}" style="background: #2d6a4f; color: white; text-decoration: none; padding: 12px 24px; border-radius: 8px; font-weight: 600; display: inline-block;">
+              Vérifier mon e-mail
+            </a>
+          </p>
+          <p style="font-size: 12px; color: #666;">
+            Si le bouton ne fonctionne pas, copie-colle ce lien :<br>
+            <code style="word-break: break-all;">${verifyUrl}</code>
+          </p>
+          <p style="font-size: 12px; color: #666;">
+            Ce lien est valide pendant 7 jours.
+          </p>
+          ${
+            isWelcome
+              ? `
+          <hr style="margin: 32px 0; border: none; border-top: 1px solid #eee;">
+          <p style="font-size: 13px; color: #444;">
+            <strong>Pour démarrer :</strong>
+          </p>
+          <ul style="font-size: 13px; color: #444; padding-left: 20px;">
+            <li>Importe ou dessine tes parcelles dans <em>Parcelles</em></li>
+            <li>Ajoute tes employés dans <em>Utilisateurs</em></li>
+            <li>(Optionnel) Connecte ton Odoo dans <em>Paramètres → Odoo</em> pour la facturation</li>
+          </ul>
+          <p style="font-size: 12px; color: #666;">
+            Une question ? Réponds simplement à ce mail, on est là pour aider.
+          </p>`
+              : ""
+          }
+        </div>
+      `,
+    });
+  }
+
+  /**
+   * Confirme la vérification email avec le token reçu.
+   */
+  async verifyEmail(rawToken: string): Promise<void> {
+    const tokenHash = createHash("sha256").update(rawToken).digest("hex");
+    const record = await this.prisma.emailVerificationToken.findUnique({
+      where: { tokenHash },
+    });
+    if (!record || record.usedAt || record.expiresAt < new Date()) {
+      throw new UnauthorizedException("Lien de vérification invalide ou expiré");
+    }
+    await this.prisma.$transaction(async (tx) => {
+      await tx.user.update({
+        where: { id: record.userId },
+        data: { emailVerifiedAt: new Date() },
+      });
+      await tx.emailVerificationToken.update({
+        where: { id: record.id },
+        data: { usedAt: new Date() },
+      });
+    });
+  }
+
+  /**
    * Confirme le reset : vérifie le token (hash, non expiré, non utilisé),
    * met à jour le mot de passe, marque le token comme consommé et révoque
    * tous les refresh tokens du user.
@@ -313,6 +415,14 @@ export class AuthService {
       }
       throw err;
     }
+
+    // Welcome mail + lien de vérification email — best-effort : si
+    // Resend down, le user reste créé et pourra resend le mail plus tard.
+    this.sendEmailVerification(user.id, /* isWelcome */ true).catch((err) => {
+      this.logger.warn(
+        `Welcome mail échoué pour ${user.email} : ${err instanceof Error ? err.message : err}`,
+      );
+    });
 
     return this.issueTokens({
       sub: user.id,
