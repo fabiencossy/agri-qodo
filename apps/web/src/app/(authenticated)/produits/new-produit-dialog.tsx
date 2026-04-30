@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useCurrentUser } from "@/lib/auth";
 import {
   CATEGORIE_LABEL,
   CATEGORIES_ORDER,
@@ -24,8 +25,11 @@ export function NewProduitDialog({ open, onClose }: { open: boolean; onClose: ()
   const [tauxP, setTauxP] = useState("");
   const [tauxK, setTauxK] = useState("");
   const [unite, setUnite] = useState<ProduitUnite>("KG");
+  const [prixVente, setPrixVente] = useState("");
   const [notes, setNotes] = useState("");
   const create = useCreateProduit();
+  const me = useCurrentUser();
+  const isAdmin = me.data?.role === "OWNER" || me.data?.role === "COMPTABLE";
 
   if (!open) return null;
 
@@ -40,6 +44,7 @@ export function NewProduitDialog({ open, onClose }: { open: boolean; onClose: ()
     setTauxN("");
     setTauxP("");
     setTauxK("");
+    setPrixVente("");
     setNotes("");
   };
 
@@ -57,6 +62,7 @@ export function NewProduitDialog({ open, onClose }: { open: boolean; onClose: ()
         ...(isEngrais && tauxP ? { tauxP: Number(tauxP) } : {}),
         ...(isEngrais && tauxK ? { tauxK: Number(tauxK) } : {}),
         unite,
+        ...(isAdmin && prixVente ? { prixVenteCHF: Number(prixVente) } : {}),
         ...(notes.trim() ? { notes: notes.trim() } : {}),
       },
       {
@@ -168,19 +174,35 @@ export function NewProduitDialog({ open, onClose }: { open: boolean; onClose: ()
             </div>
           )}
 
-          <Field label="Unité">
-            <select
-              value={unite}
-              onChange={(e) => setUnite(e.target.value as ProduitUnite)}
-              className="h-10 w-full rounded-lg border border-border bg-background px-3 text-base"
-            >
-              {UNITES_ORDER.map((u) => (
-                <option key={u} value={u}>
-                  {UNITE_LABEL[u]}
-                </option>
-              ))}
-            </select>
-          </Field>
+          <div className={`grid gap-3 ${isAdmin ? "grid-cols-2" : ""}`}>
+            <Field label="Unité">
+              <select
+                value={unite}
+                onChange={(e) => setUnite(e.target.value as ProduitUnite)}
+                className="h-10 w-full rounded-lg border border-border bg-background px-3 text-base"
+              >
+                {UNITES_ORDER.map((u) => (
+                  <option key={u} value={u}>
+                    {UNITE_LABEL[u]}
+                  </option>
+                ))}
+              </select>
+            </Field>
+
+            {isAdmin && (
+              <Field label="Prix vente CHF/u">
+                <Input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  inputMode="decimal"
+                  value={prixVente}
+                  onChange={(e) => setPrixVente(e.target.value)}
+                  placeholder="0.00"
+                />
+              </Field>
+            )}
+          </div>
 
           <Field label="Notes">
             <textarea

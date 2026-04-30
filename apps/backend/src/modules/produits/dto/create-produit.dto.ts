@@ -60,6 +60,16 @@ export class CreateProduitDto {
   @IsEnum(ProduitUnite)
   unite?: ProduitUnite;
 
+  @ApiPropertyOptional({
+    description:
+      "Prix de vente catalogue CHF HT par unité. Visible/éditable uniquement par OWNER ou COMPTABLE.",
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  prixVenteCHF?: number;
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()

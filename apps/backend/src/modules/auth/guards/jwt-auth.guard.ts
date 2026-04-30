@@ -29,6 +29,7 @@ export class JwtAuthGuard extends AuthGuard("jwt") {
         tenantId: homeTenantId,
         userId: user.sub,
         homeTenantId,
+        role: user.role,
       });
       return true;
     }
@@ -48,6 +49,7 @@ export class JwtAuthGuard extends AuthGuard("jwt") {
       tenantId: activeTenantHeader,
       userId: user.sub,
       homeTenantId,
+      role: user.role,
     });
     return true;
   }
