@@ -631,6 +631,36 @@ function ListView<T>(props: {
   onItemClick?: (item: T) => void;
   groups?: { key: string; label: string; items: T[] }[] | undefined;
 }) {
+  // Groupes collapsibles : par défaut fermés (on doit cliquer pour ouvrir,
+  // c'est le comportement Odoo-like demandé).
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => {
+    if (!props.groups) return new Set();
+    return new Set(props.groups.map((g) => g.key));
+  });
+
+  // Quand la liste de groupes change (ex: regroupement différent), on
+  // ferme les nouveaux groupes par défaut.
+  const groupKeysSig = props.groups?.map((g) => g.key).join("|") ?? "";
+  const lastSig = useRef(groupKeysSig);
+  useEffect(() => {
+    if (lastSig.current === groupKeysSig) return;
+    lastSig.current = groupKeysSig;
+    if (!props.groups) return;
+    setCollapsed(new Set(props.groups.map((g) => g.key)));
+  }, [groupKeysSig, props.groups]);
+
+  const toggle = (key: string) =>
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+
+  const allCollapsed = props.groups ? props.groups.every((g) => collapsed.has(g.key)) : false;
+  const expandAll = () => setCollapsed(new Set());
+  const collapseAll = () => setCollapsed(new Set((props.groups ?? []).map((g) => g.key)));
+
   const hideClass = (h: ListColumn<T>["hideBelow"]) =>
     h === "sm"
       ? "hidden sm:table-cell"
@@ -644,9 +674,19 @@ function ListView<T>(props: {
   if (props.groups) {
     return (
       <div className="overflow-hidden rounded-xl border border-border bg-background">
+        <div className="flex items-center justify-end gap-2 border-b border-border bg-foreground/5 px-3 py-1.5 text-xs">
+          <button
+            type="button"
+            onClick={allCollapsed ? expandAll : collapseAll}
+            className="text-foreground/60 hover:text-foreground"
+          >
+            {allCollapsed ? "Tout ouvrir" : "Tout fermer"}
+          </button>
+        </div>
         <table className="w-full text-sm">
           <thead className="bg-foreground/5 text-left text-xs uppercase tracking-wide text-foreground/60">
             <tr>
+              <th className="w-8 px-2 py-2" aria-hidden />
               {props.columns.map((col) => (
                 <th
                   key={col.key}
@@ -661,12 +701,15 @@ function ListView<T>(props: {
             {props.groups.map((g) => (
               <ListGroup
                 key={g.key}
+                groupKey={g.key}
                 groupLabel={g.label}
                 items={g.items}
                 columns={props.columns}
                 getKey={props.getKey}
                 {...(props.onItemClick ? { onItemClick: props.onItemClick } : {})}
                 hideClass={hideClass}
+                collapsed={collapsed.has(g.key)}
+                onToggle={() => toggle(g.key)}
               />
             ))}
           </tbody>
@@ -716,39 +759,56 @@ function ListView<T>(props: {
 }
 
 function ListGroup<T>(props: {
+  groupKey: string;
   groupLabel: string;
   items: T[];
   columns: ListColumn<T>[];
   getKey: (item: T) => string;
   onItemClick?: (item: T) => void;
   hideClass: (h: ListColumn<T>["hideBelow"]) => string;
+  collapsed: boolean;
+  onToggle: () => void;
 }) {
   return (
     <>
-      <tr className="bg-muted/60">
+      <tr
+        className="cursor-pointer bg-muted/60 hover:bg-muted"
+        onClick={props.onToggle}
+        aria-expanded={!props.collapsed}
+      >
+        <td className="w-8 px-2 py-2 text-foreground/60">
+          <ChevronDown
+            className={`h-4 w-4 transition-transform ${props.collapsed ? "-rotate-90" : ""}`}
+          />
+        </td>
         <td
           colSpan={props.columns.length}
-          className="px-4 py-1.5 text-xs font-semibold uppercase tracking-wide text-foreground/70"
+          className="px-4 py-2 text-sm font-semibold text-foreground"
         >
-          {props.groupLabel} ({props.items.length})
+          {props.groupLabel}{" "}
+          <span className="ml-1 rounded bg-background px-1.5 py-0.5 text-xs font-medium text-foreground/70">
+            {props.items.length}
+          </span>
         </td>
       </tr>
-      {props.items.map((item) => (
-        <tr
-          key={props.getKey(item)}
-          {...(props.onItemClick ? { onClick: () => props.onItemClick?.(item) } : {})}
-          className={`border-t border-border ${props.onItemClick ? "cursor-pointer hover:bg-muted" : ""}`}
-        >
-          {props.columns.map((col) => (
-            <td
-              key={col.key}
-              className={`px-4 py-2 ${col.className ?? ""} ${props.hideClass(col.hideBelow)}`}
-            >
-              {col.cell(item)}
-            </td>
-          ))}
-        </tr>
-      ))}
+      {!props.collapsed &&
+        props.items.map((item) => (
+          <tr
+            key={props.getKey(item)}
+            {...(props.onItemClick ? { onClick: () => props.onItemClick?.(item) } : {})}
+            className={`border-t border-border ${props.onItemClick ? "cursor-pointer hover:bg-muted" : ""}`}
+          >
+            <td className="w-8 px-2 py-2" aria-hidden />
+            {props.columns.map((col) => (
+              <td
+                key={col.key}
+                className={`px-4 py-2 ${col.className ?? ""} ${props.hideClass(col.hideBelow)}`}
+              >
+                {col.cell(item)}
+              </td>
+            ))}
+          </tr>
+        ))}
     </>
   );
 }
