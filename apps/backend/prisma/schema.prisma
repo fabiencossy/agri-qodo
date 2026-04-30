@@ -280,9 +280,10 @@ model User {
   updatedAt    DateTime  @updatedAt @map("updated_at")
 
   tenant        Exploitation        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  refreshTokens RefreshToken[]
-  lignesHeure   LigneTravailHeure[]
-  presences     Presence[]
+  refreshTokens       RefreshToken[]
+  passwordResetTokens PasswordResetToken[]
+  lignesHeure         LigneTravailHeure[]
+  presences           Presence[]
 
   // Email partagé : un comptable / conseiller peut avoir un compte sur
   // plusieurs exploitations. L'unicité est sur (email, tenantId).
@@ -290,6 +291,27 @@ model User {
   @@index([email])
   @@index([tenantId])
   @@map("users")
+}
+
+model PasswordResetToken {
+  id         String    @id @default(uuid())
+  userId     String    @map("user_id")
+  // Hash SHA-256 du token (le token brut est envoyé par mail uniquement,
+  // jamais persisté en clair). Lookup via hash au moment du confirm.
+  tokenHash  String    @unique @map("token_hash")
+  expiresAt  DateTime  @map("expires_at")
+  // Date d'utilisation — un token consommé ne peut plus servir.
+  usedAt     DateTime? @map("used_at")
+  // Trace IP + UA pour audit minimal.
+  requestIp  String?   @map("request_ip")
+  requestUa  String?   @map("request_ua")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("password_reset_tokens")
 }
 
 model RefreshToken {

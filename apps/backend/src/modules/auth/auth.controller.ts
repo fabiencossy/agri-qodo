@@ -1,11 +1,13 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, HttpCode, HttpStatus, Post, Req, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
+import type { Request } from "express";
 import { CurrentUser } from "@/common/decorators/current-user.decorator";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { AuthService } from "./auth.service";
 import { AuthTokensDto } from "./dto/auth-tokens.dto";
 import { ChangePasswordDto } from "./dto/change-password.dto";
 import { LoginDto } from "./dto/login.dto";
+import { ConfirmPasswordResetDto, RequestPasswordResetDto } from "./dto/password-reset.dto";
 import { RefreshDto } from "./dto/refresh.dto";
 import { RegisterDto } from "./dto/register.dto";
 import { JwtAuthGuard } from "./guards/jwt-auth.guard";
@@ -75,6 +77,30 @@ export class AuthController {
   @ApiOperation({ summary: "Déconnexion (révoque tous les refresh tokens)" })
   async logout(@CurrentUser() user: JwtPayload): Promise<void> {
     await this.auth.logout(user.sub);
+  }
+
+  @Post("password-reset/request")
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary:
+      "Demande un reset password — envoie un mail avec un lien (1h, usage unique). Renvoie 204 même si l'email est inconnu pour ne pas leak l'existence d'un compte.",
+  })
+  async requestPasswordReset(
+    @Req() req: Request,
+    @Body() dto: RequestPasswordResetDto,
+  ): Promise<void> {
+    const ip = (req.headers["x-real-ip"] as string) ?? req.ip;
+    const ua = req.headers["user-agent"];
+    await this.auth.requestPasswordReset(dto.email, ip, ua);
+  }
+
+  @Post("password-reset/confirm")
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: "Confirme le reset avec le token reçu + nouveau mot de passe.",
+  })
+  async confirmPasswordReset(@Body() dto: ConfirmPasswordResetDto): Promise<void> {
+    await this.auth.confirmPasswordReset(dto.token, dto.newPassword);
   }
 
   @Post("change-password")
