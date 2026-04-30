@@ -1,202 +1,445 @@
 /**
- * Seed minimal pour le développement local + le compte de démo public.
+ * Seed prod / démo enrichi.
  *
- * Crée deux exploitations / comptes :
- *   - Compte dev : marie@ferme-rolet.test / DemoPassword123! (Ferme Rolet)
- *   - Compte démo public : test@test.ch / test
- *     (compte simple à partager à des testeurs externes — pas pour la prod)
+ * Cible 1 — Compte dev local (Marie Rolet) : isolé, jamais touché par les
+ * autres seeds. Sert au développement local.
  *
- * Lancer : `pnpm --filter @agri-qodo/backend exec ts-node prisma/seed.ts`
+ * Cible 2 — Tenant **partagé "Démo Agri Qodo"** :
+ *   - admin@admin.ch / admin       → rôle OWNER (accès complet)
+ *   - demo@demo.ch / demo          → rôle EMPLOYE (lecture + saisie limitée)
+ *   Tous deux sur le **même tenant**, donc voient les mêmes données.
+ *
+ * Données fictives sur le tenant démo : 10 parcelles autour d'Yverdon,
+ * cheptel mixte (laitières + génisses + veaux + chevaux + brebis + porcs),
+ * cultures, interventions historiques, travaux + lignes heures.
+ *
+ * Idempotent : si le tenant démo existe déjà, son contenu est purgé puis
+ * recréé. Le tenant dev (Marie) n'est jamais touché.
+ *
+ * Lancer : `pnpm --filter @agri-qodo/backend db:seed`
+ *  ou en prod : `docker compose exec backend tsx prisma/seed.ts`
  */
-import { type AnimalCategorie, Canton, PrismaClient, ZoneAgricole } from "@prisma/client";
+import {
+  type AnimalCategorie,
+  Canton,
+  PrismaClient,
+  TravailStatut,
+  UserRole,
+  ZoneAgricole,
+} from "@prisma/client";
 import * as bcrypt from "bcrypt";
-import { randomBytes } from "node:crypto";
 
 const prisma = new PrismaClient();
 
-interface DemoCheptelEntry {
-  categorie: AnimalCategorie;
-  nombre: number;
-}
+// ============================================================================
+// COMPTE DEV (Marie Rolet) — isolé, juste user + tenant minimal
+// ============================================================================
 
-interface DemoTenant {
-  code: string;
-  nom: string;
-  canton: Canton;
-  numeroUfam: string;
-  npa: string;
-  localite: string;
-  emailContact: string;
-  user: { email: string; password: string; prenom: string; nom: string };
-  parcelles: Array<{
-    nom: string;
-    surfaceM2: number;
-    zone: ZoneAgricole;
-    geomGeoJson: string;
-    culture?: { espece: string; campagne: number; dateSemis: Date };
-  }>;
-  cheptel: DemoCheptelEntry[];
-}
+const DEV_TENANT = {
+  code: "AQ-VD-1247-DEV",
+  nom: "Ferme Rolet (dev)",
+  canton: Canton.VD,
+  numeroUfam: "1247",
+  npa: "1141",
+  localite: "Sévery",
+  emailContact: "marie@ferme-rolet.test",
+  user: {
+    email: "marie@ferme-rolet.test",
+    password: "DemoPassword123!",
+    prenom: "Marie",
+    nom: "Rolet",
+  },
+};
 
-const DEMO_TENANTS: DemoTenant[] = [
-  {
-    code: "AQ-VD-1247-DEMO",
-    nom: "Ferme de démo (Rolet)",
-    canton: Canton.VD,
-    numeroUfam: "1247",
-    npa: "1141",
-    localite: "Sévery",
-    emailContact: "marie@ferme-rolet.test",
-    user: {
-      email: "marie@ferme-rolet.test",
-      password: "DemoPassword123!",
-      prenom: "Marie",
-      nom: "Rolet",
+async function seedDevTenant(): Promise<void> {
+  const tenant = await prisma.exploitation.upsert({
+    where: { code: DEV_TENANT.code },
+    update: {},
+    create: {
+      code: DEV_TENANT.code,
+      nom: DEV_TENANT.nom,
+      canton: DEV_TENANT.canton,
+      numeroUfam: DEV_TENANT.numeroUfam,
+      npa: DEV_TENANT.npa,
+      localite: DEV_TENANT.localite,
+      emailContact: DEV_TENANT.emailContact,
     },
-    parcelles: [],
-    cheptel: [],
+  });
+  const passwordHash = await bcrypt.hash(DEV_TENANT.user.password, 10);
+  await prisma.user.upsert({
+    where: { email_tenantId: { email: DEV_TENANT.user.email, tenantId: tenant.id } },
+    update: {},
+    create: {
+      email: DEV_TENANT.user.email,
+      passwordHash,
+      prenom: DEV_TENANT.user.prenom,
+      nom: DEV_TENANT.user.nom,
+      role: UserRole.OWNER,
+      tenantId: tenant.id,
+    },
+  });
+  console.log(`✓ Dev : ${DEV_TENANT.user.email} / ${DEV_TENANT.user.password}`);
+}
+
+// ============================================================================
+// TENANT DÉMO PARTAGÉ — admin + demo sur le même tenant
+// ============================================================================
+
+const DEMO_CODE = "AQ-VD-DEMO-PUBLIC";
+
+interface DemoParcelle {
+  nom: string;
+  surfaceM2: number;
+  zone: ZoneAgricole;
+  geomGeoJson: string;
+  culture?: { espece: string; campagne: number; dateSemis: Date };
+}
+
+const DEMO_PARCELLES: DemoParcelle[] = [
+  {
+    nom: "Champ du Bas",
+    surfaceM2: 38_400,
+    zone: ZoneAgricole.ZA,
+    geomGeoJson: JSON.stringify({
+      type: "MultiPolygon",
+      coordinates: [
+        [
+          [
+            [6.6342, 46.7782],
+            [6.6378, 46.7782],
+            [6.6383, 46.7798],
+            [6.6346, 46.78],
+            [6.6342, 46.7782],
+          ],
+        ],
+      ],
+    }),
+    culture: { espece: "ble_panifiable", campagne: 2026, dateSemis: new Date("2025-10-12") },
   },
   {
-    code: "AQ-VD-ADMIN-PUBLIC",
-    nom: "Admin Agri Qodo",
-    canton: Canton.VD,
-    numeroUfam: "0001",
-    npa: "1000",
-    localite: "Lausanne",
-    emailContact: "admin@admin.ch",
-    user: { email: "admin@admin.ch", password: "admin", prenom: "Admin", nom: "Qodo" },
-    parcelles: [],
-    cheptel: [],
+    nom: "Pré du Moulin",
+    surfaceM2: 21_500,
+    zone: ZoneAgricole.ZA,
+    geomGeoJson: JSON.stringify({
+      type: "MultiPolygon",
+      coordinates: [
+        [
+          [
+            [6.6395, 46.777],
+            [6.642, 46.7771],
+            [6.6422, 46.7785],
+            [6.6398, 46.7787],
+            [6.6395, 46.777],
+          ],
+        ],
+      ],
+    }),
+    culture: { espece: "prairie_temporaire", campagne: 2026, dateSemis: new Date("2025-04-15") },
   },
   {
-    code: "AQ-VD-DEMO-PUBLIC",
-    nom: "Démo Agri Qodo",
-    canton: Canton.VD,
-    numeroUfam: "0000",
-    npa: "1400",
-    localite: "Yverdon-les-Bains",
-    emailContact: "demo@demo.ch",
-    user: { email: "demo@demo.ch", password: "demo", prenom: "Demo", nom: "Agri Qodo" },
-    // Parcelles dessinées approximativement autour d'Yverdon (vu carte CH).
-    // GeoJSON MultiPolygon WGS84.
-    parcelles: [
-      {
-        nom: "Champ du Bas",
-        surfaceM2: 38_400,
-        zone: ZoneAgricole.ZA,
-        geomGeoJson: JSON.stringify({
-          type: "MultiPolygon",
-          coordinates: [
-            [
-              [
-                [6.6342, 46.7782],
-                [6.6378, 46.7782],
-                [6.6383, 46.7798],
-                [6.6346, 46.78],
-                [6.6342, 46.7782],
-              ],
-            ],
+    nom: "La Combe",
+    surfaceM2: 64_200,
+    zone: ZoneAgricole.ZA,
+    geomGeoJson: JSON.stringify({
+      type: "MultiPolygon",
+      coordinates: [
+        [
+          [
+            [6.631, 46.7755],
+            [6.636, 46.7752],
+            [6.6365, 46.777],
+            [6.6315, 46.7773],
+            [6.631, 46.7755],
           ],
-        }),
-        culture: {
-          espece: "ble_panifiable",
-          campagne: 2026,
-          dateSemis: new Date("2025-10-12"),
-        },
-      },
-      {
-        nom: "Pré du Moulin",
-        surfaceM2: 21_500,
-        zone: ZoneAgricole.ZA,
-        geomGeoJson: JSON.stringify({
-          type: "MultiPolygon",
-          coordinates: [
-            [
-              [
-                [6.6395, 46.777],
-                [6.642, 46.7771],
-                [6.6422, 46.7785],
-                [6.6398, 46.7787],
-                [6.6395, 46.777],
-              ],
-            ],
+        ],
+      ],
+    }),
+    culture: { espece: "mais_ensilage", campagne: 2026, dateSemis: new Date("2026-04-22") },
+  },
+  {
+    nom: "Le Crêt",
+    surfaceM2: 17_800,
+    zone: ZoneAgricole.ZA,
+    geomGeoJson: JSON.stringify({
+      type: "MultiPolygon",
+      coordinates: [
+        [
+          [
+            [6.6438, 46.7795],
+            [6.6462, 46.7796],
+            [6.6464, 46.7808],
+            [6.644, 46.7809],
+            [6.6438, 46.7795],
           ],
-        }),
-        culture: {
-          espece: "prairie_temporaire",
-          campagne: 2026,
-          dateSemis: new Date("2025-04-15"),
-        },
-      },
-      {
-        nom: "La Combe",
-        surfaceM2: 64_200,
-        zone: ZoneAgricole.ZA,
-        geomGeoJson: JSON.stringify({
-          type: "MultiPolygon",
-          coordinates: [
-            [
-              [
-                [6.631, 46.7755],
-                [6.636, 46.7752],
-                [6.6365, 46.777],
-                [6.6315, 46.7773],
-                [6.631, 46.7755],
-              ],
-            ],
+        ],
+      ],
+    }),
+    culture: { espece: "colza", campagne: 2026, dateSemis: new Date("2025-08-25") },
+  },
+  {
+    nom: "Vers les Bois",
+    surfaceM2: 32_700,
+    zone: ZoneAgricole.ZA,
+    geomGeoJson: JSON.stringify({
+      type: "MultiPolygon",
+      coordinates: [
+        [
+          [
+            [6.6285, 46.7795],
+            [6.6315, 46.7796],
+            [6.6318, 46.7812],
+            [6.6288, 46.7811],
+            [6.6285, 46.7795],
           ],
-        }),
-        culture: {
-          espece: "mais_ensilage",
-          campagne: 2026,
-          dateSemis: new Date("2026-04-22"),
-        },
-      },
-    ],
-    cheptel: [
-      { categorie: "VACHE_LAITIERE", nombre: 28 },
-      { categorie: "GENISSE", nombre: 12 },
-      { categorie: "VEAU", nombre: 6 },
-    ],
+        ],
+      ],
+    }),
+    culture: { espece: "orge_printemps", campagne: 2026, dateSemis: new Date("2026-03-10") },
+  },
+  {
+    nom: "La Touvière",
+    surfaceM2: 45_300,
+    zone: ZoneAgricole.ZP,
+    geomGeoJson: JSON.stringify({
+      type: "MultiPolygon",
+      coordinates: [
+        [
+          [
+            [6.638, 46.7745],
+            [6.6418, 46.7747],
+            [6.642, 46.7762],
+            [6.6382, 46.7763],
+            [6.638, 46.7745],
+          ],
+        ],
+      ],
+    }),
+    culture: { espece: "prairie_permanente", campagne: 2026, dateSemis: new Date("2020-04-01") },
+  },
+  {
+    nom: "Champ Bénézit",
+    surfaceM2: 28_900,
+    zone: ZoneAgricole.ZA,
+    geomGeoJson: JSON.stringify({
+      type: "MultiPolygon",
+      coordinates: [
+        [
+          [
+            [6.6485, 46.7775],
+            [6.6512, 46.7777],
+            [6.6515, 46.7791],
+            [6.6488, 46.7793],
+            [6.6485, 46.7775],
+          ],
+        ],
+      ],
+    }),
+    culture: { espece: "tournesol", campagne: 2026, dateSemis: new Date("2026-04-05") },
+  },
+  {
+    nom: "Les Esserts",
+    surfaceM2: 51_200,
+    zone: ZoneAgricole.ZA,
+    geomGeoJson: JSON.stringify({
+      type: "MultiPolygon",
+      coordinates: [
+        [
+          [
+            [6.6253, 46.7762],
+            [6.6288, 46.7763],
+            [6.629, 46.7779],
+            [6.6256, 46.7781],
+            [6.6253, 46.7762],
+          ],
+        ],
+      ],
+    }),
+    culture: { espece: "betterave_sucre", campagne: 2026, dateSemis: new Date("2026-04-12") },
+  },
+  {
+    nom: "Sur la Roche",
+    surfaceM2: 12_400,
+    zone: ZoneAgricole.ZA,
+    geomGeoJson: JSON.stringify({
+      type: "MultiPolygon",
+      coordinates: [
+        [
+          [
+            [6.645, 46.7818],
+            [6.6471, 46.7819],
+            [6.6473, 46.783],
+            [6.6452, 46.7831],
+            [6.645, 46.7818],
+          ],
+        ],
+      ],
+    }),
+    culture: { espece: "pomme_de_terre", campagne: 2026, dateSemis: new Date("2026-04-18") },
+  },
+  {
+    nom: "Le Verger",
+    surfaceM2: 9_800,
+    zone: ZoneAgricole.ZA,
+    geomGeoJson: JSON.stringify({
+      type: "MultiPolygon",
+      coordinates: [
+        [
+          [
+            [6.6348, 46.7745],
+            [6.6368, 46.7746],
+            [6.637, 46.7758],
+            [6.635, 46.7759],
+            [6.6348, 46.7745],
+          ],
+        ],
+      ],
+    }),
   },
 ];
 
-async function seedTenant(t: DemoTenant): Promise<void> {
-  const tenant = await prisma.exploitation.upsert({
-    where: { code: t.code },
-    update: {},
-    create: {
-      code: t.code,
-      nom: t.nom,
-      canton: t.canton,
-      numeroUfam: t.numeroUfam,
-      npa: t.npa,
-      localite: t.localite,
-      emailContact: t.emailContact,
+// Cheptel : 35 laitières + 12 génisses + 8 veaux + ovins + chevaux + porcs
+const DEMO_VACHES_LAITIERES_NOMS = [
+  "Marguerite",
+  "Bella",
+  "Cassiopée",
+  "Daisy",
+  "Étoile",
+  "Fleur",
+  "Gaïa",
+  "Héloïse",
+  "Iris",
+  "Joconde",
+  "Kalinka",
+  "Luna",
+  "Mimosa",
+  "Naïa",
+  "Ondine",
+  "Perle",
+  "Quenelle",
+  "Rébecca",
+  "Suzon",
+  "Tulipe",
+  "Ursule",
+  "Vénus",
+  "Wendy",
+  "Xena",
+  "Yseult",
+  "Zélie",
+  "Aurore",
+  "Berthe",
+  "Camille",
+  "Diane",
+  "Élise",
+  "Fanny",
+  "Gabrielle",
+  "Hortense",
+  "Inès",
+];
+
+const DEMO_CHEPTEL: Array<{
+  categorie: AnimalCategorie;
+  nombre: number;
+  nommer?: boolean;
+  usage?: string;
+  bvd?: string;
+  label?: string;
+}> = [
+  {
+    categorie: "VACHE_LAITIERE",
+    nombre: 35,
+    nommer: true,
+    usage: "laitiere",
+    bvd: "frei",
+    label: "ips",
+  },
+  { categorie: "GENISSE", nombre: 12, usage: "reproduction", bvd: "frei", label: "ips" },
+  { categorie: "VEAU", nombre: 8, usage: "jeune", bvd: "frei" },
+  { categorie: "TAUREAU", nombre: 1, nommer: true, usage: "reproduction", bvd: "frei" },
+  { categorie: "BREBIS", nombre: 28, usage: "laitiere", label: "bio" },
+  { categorie: "BELIER", nombre: 2, usage: "reproduction" },
+  { categorie: "AGNEAU", nombre: 14, usage: "jeune" },
+  { categorie: "CHEVAL_ADULTE", nombre: 3, nommer: true, usage: "loisir" },
+  { categorie: "PORC", nombre: 18, usage: "engraissement" },
+  { categorie: "TRUIE", nombre: 4, usage: "reproduction" },
+  { categorie: "POULE_PONDEUSE", nombre: 80, label: "bio" },
+  { categorie: "POULET", nombre: 220, usage: "engraissement" },
+  { categorie: "CHEVRE", nombre: 6, usage: "laitiere", label: "bio" },
+  { categorie: "ABEILLE_RUCHE", nombre: 4 },
+];
+
+const DEMO_CHEVAUX_NOMS = ["Tornado", "Galopin", "Pâquerette"];
+
+function bdtaNumberFor(i: number): string {
+  // CH 120.{4 chiffres}.{1 chiffre} — format BDTA
+  const seq = String(i).padStart(4, "0");
+  return `CH 120.1304.${seq}`;
+}
+
+async function purgeDemoTenant(): Promise<string | null> {
+  const existing = await prisma.exploitation.findUnique({ where: { code: DEMO_CODE } });
+  if (!existing) return null;
+  // Cascade : Animal/Parcelle/Travail/etc ont onDelete: Cascade.
+  // Pour les modèles sans cascade explicite, on nettoie à la main :
+  await prisma.ligneTravailHeure.deleteMany({ where: { travail: { tenantId: existing.id } } });
+  await prisma.ligneTravailProduit.deleteMany({ where: { travail: { tenantId: existing.id } } });
+  await prisma.travail.deleteMany({ where: { tenantId: existing.id } });
+  await prisma.intervention.deleteMany({ where: { ownerTenantId: existing.id } });
+  await prisma.culture.deleteMany({ where: { tenantId: existing.id } });
+  await prisma.animal.deleteMany({ where: { tenantId: existing.id } });
+  await prisma.sortieSrpa.deleteMany({ where: { tenantId: existing.id } });
+  await prisma.parcelle.deleteMany({ where: { tenantId: existing.id } });
+  await prisma.user.deleteMany({ where: { tenantId: existing.id } });
+  await prisma.exploitation.delete({ where: { id: existing.id } });
+  console.log(`✓ Tenant démo purgé (${DEMO_CODE})`);
+  return existing.id;
+}
+
+async function seedDemoTenant(): Promise<void> {
+  await purgeDemoTenant();
+
+  const tenant = await prisma.exploitation.create({
+    data: {
+      code: DEMO_CODE,
+      nom: "Ferme de Démo",
+      canton: Canton.VD,
+      numeroUfam: "9999",
+      numeroBdta: "CH-1304",
+      adresse: "Route des Champs 12",
+      npa: "1400",
+      localite: "Yverdon-les-Bains",
+      emailContact: "demo@demo.ch",
+      telephone: "+41 24 123 45 67",
+      visibleInDirectory: true,
     },
   });
 
-  const passwordHash = await bcrypt.hash(t.user.password, 10);
-  await prisma.user.upsert({
-    where: { email: t.user.email },
-    update: {},
-    create: {
-      email: t.user.email,
-      passwordHash,
-      prenom: t.user.prenom,
-      nom: t.user.nom,
-      role: "OWNER",
+  // ---- Users : OWNER + EMPLOYE sur le même tenant -----------------------
+  const adminHash = await bcrypt.hash("admin", 10);
+  const demoHash = await bcrypt.hash("demo", 10);
+  await prisma.user.create({
+    data: {
+      email: "admin@admin.ch",
+      passwordHash: adminHash,
+      prenom: "Alice",
+      nom: "Admin",
+      role: UserRole.OWNER,
+      tenantId: tenant.id,
+    },
+  });
+  await prisma.user.create({
+    data: {
+      email: "demo@demo.ch",
+      passwordHash: demoHash,
+      prenom: "Demo",
+      nom: "Employé",
+      role: UserRole.EMPLOYE,
       tenantId: tenant.id,
     },
   });
 
-  for (const p of t.parcelles) {
-    // Idempotence : on cherche par (tenantId, nom) pour éviter doublons à
-    // chaque relance.
-    const existing = await prisma.parcelle.findFirst({
-      where: { tenantId: tenant.id, nom: p.nom },
-    });
-    if (existing) continue;
+  // ---- Parcelles + cultures --------------------------------------------
+  const parcelleIds: Record<string, string> = {};
+  for (const p of DEMO_PARCELLES) {
     const created = await prisma.$queryRaw<Array<{ id: string }>>`
       INSERT INTO parcelles (id, tenant_id, nom, surface_m2, zone, geom, created_at, updated_at)
       VALUES (
@@ -212,7 +455,9 @@ async function seedTenant(t: DemoTenant): Promise<void> {
       RETURNING id::text
     `;
     const parcelleId = created[0]?.id;
-    if (parcelleId && p.culture) {
+    if (!parcelleId) continue;
+    parcelleIds[p.nom] = parcelleId;
+    if (p.culture) {
       await prisma.culture.create({
         data: {
           tenantId: tenant.id,
@@ -225,30 +470,157 @@ async function seedTenant(t: DemoTenant): Promise<void> {
     }
   }
 
-  for (const c of t.cheptel) {
-    const already = await prisma.animal.count({
-      where: { tenantId: tenant.id, categorie: c.categorie },
-    });
-    const todo = c.nombre - already;
-    if (todo <= 0) continue;
-    await prisma.animal.createMany({
-      data: Array.from({ length: todo }, () => ({
-        tenantId: tenant.id,
-        categorie: c.categorie,
-      })),
-    });
+  // ---- Cheptel ---------------------------------------------------------
+  let bdtaCounter = 1000;
+  for (const c of DEMO_CHEPTEL) {
+    for (let i = 0; i < c.nombre; i++) {
+      let nom: string | null = null;
+      let numeroBoucle: string | null = null;
+      let dateNaissance: Date | null = null;
+      const isBovin = ["VACHE_LAITIERE", "GENISSE", "VEAU", "TAUREAU"].includes(c.categorie);
+      if (c.nommer) {
+        if (c.categorie === "VACHE_LAITIERE") {
+          nom = DEMO_VACHES_LAITIERES_NOMS[i] ?? `Vache ${i + 1}`;
+        } else if (c.categorie === "TAUREAU") {
+          nom = "Hercule";
+        } else if (c.categorie === "CHEVAL_ADULTE") {
+          nom = DEMO_CHEVAUX_NOMS[i] ?? `Cheval ${i + 1}`;
+        }
+      }
+      if (isBovin) {
+        bdtaCounter++;
+        numeroBoucle = bdtaNumberFor(bdtaCounter);
+        // Âge plausible : laitières 3-8 ans, génisses 1-2 ans, veaux 0-1 an
+        const ageMois =
+          c.categorie === "VACHE_LAITIERE"
+            ? 36 + Math.floor(Math.random() * 60)
+            : c.categorie === "GENISSE"
+              ? 12 + Math.floor(Math.random() * 12)
+              : c.categorie === "VEAU"
+                ? Math.floor(Math.random() * 8)
+                : 36 + Math.floor(Math.random() * 24);
+        dateNaissance = new Date(Date.now() - ageMois * 30 * 86_400_000);
+      }
+      await prisma.animal.create({
+        data: {
+          tenantId: tenant.id,
+          categorie: c.categorie,
+          nom,
+          numeroBoucle,
+          dateNaissance,
+          sexe:
+            c.categorie === "TAUREAU" || c.categorie === "BELIER" || c.categorie === "BOUC"
+              ? "M"
+              : "F",
+          ...(c.usage ? { usage: c.usage } : {}),
+          ...(c.bvd ? { statutBvd: c.bvd } : {}),
+          ...(c.label ? { secteurLabel: c.label } : {}),
+        },
+      });
+    }
   }
 
-  console.log(`Seed OK : ${tenant.code} → ${t.user.email} / ${t.user.password}`);
+  // ---- Travaux : qq exemples -------------------------------------------
+  const adminUser = await prisma.user.findFirst({
+    where: { tenantId: tenant.id, email: "admin@admin.ch" },
+  });
+  const demoUser = await prisma.user.findFirst({
+    where: { tenantId: tenant.id, email: "demo@demo.ch" },
+  });
+  if (adminUser && demoUser) {
+    const today = new Date();
+    const daysAgo = (d: number) => new Date(today.getTime() - d * 86_400_000);
+    const travauxData = [
+      {
+        titre: "Récolte du Champ du Bas",
+        date: daysAgo(2),
+        parcelleNom: "Champ du Bas",
+        statut: TravailStatut.VALIDATED,
+        interne: false,
+        heures: [
+          { userId: adminUser.id, dureeMinutes: 240, taux: 85 },
+          { userId: demoUser.id, dureeMinutes: 180, taux: 45 },
+        ],
+      },
+      {
+        titre: "Pulvérisation Vers les Bois",
+        date: daysAgo(7),
+        parcelleNom: "Vers les Bois",
+        statut: TravailStatut.VALIDATED,
+        interne: false,
+        heures: [{ userId: demoUser.id, dureeMinutes: 90, taux: 45 }],
+      },
+      {
+        titre: "Entretien tracteur",
+        date: daysAgo(5),
+        statut: TravailStatut.DRAFT,
+        interne: true,
+        heures: [{ userId: adminUser.id, dureeMinutes: 120 }],
+      },
+      {
+        titre: "Semis maïs La Combe",
+        date: daysAgo(15),
+        parcelleNom: "La Combe",
+        statut: TravailStatut.INVOICED,
+        interne: false,
+        heures: [
+          { userId: adminUser.id, dureeMinutes: 360, taux: 85 },
+          { userId: demoUser.id, dureeMinutes: 360, taux: 45 },
+        ],
+      },
+      {
+        titre: "Formation Suisse-Bilanz",
+        date: daysAgo(30),
+        statut: TravailStatut.VALIDATED,
+        interne: true,
+        heures: [{ userId: demoUser.id, dureeMinutes: 480 }],
+      },
+      {
+        titre: "Fauchage Pré du Moulin",
+        date: daysAgo(1),
+        parcelleNom: "Pré du Moulin",
+        statut: TravailStatut.DRAFT,
+        interne: false,
+        heures: [{ userId: demoUser.id, dureeMinutes: 210, taux: 45 }],
+      },
+    ];
+
+    for (const t of travauxData) {
+      const parcelleId = t.parcelleNom ? parcelleIds[t.parcelleNom] : null;
+      await prisma.travail.create({
+        data: {
+          tenantId: tenant.id,
+          titre: t.titre,
+          date: t.date,
+          statut: t.statut,
+          interne: t.interne,
+          ...(parcelleId ? { parcelleId } : {}),
+          lignesHeure: {
+            create: t.heures.map((h) => ({
+              userId: h.userId,
+              dureeMinutes: h.dureeMinutes,
+              ...(h.taux ? { tauxHoraireCHF: h.taux } : {}),
+            })),
+          },
+        },
+      });
+    }
+  }
+
+  console.log(`✓ Démo : 1 tenant + 2 users + ${DEMO_PARCELLES.length} parcelles +`);
+  console.log(`         cheptel mixte (~${DEMO_CHEPTEL.reduce((s, c) => s + c.nombre, 0)}) +`);
+  console.log(`         6 travaux avec heures réparties`);
+  console.log(`  → admin@admin.ch / admin   (OWNER)`);
+  console.log(`  → demo@demo.ch / demo      (EMPLOYE)`);
 }
 
+// ============================================================================
+// MAIN
+// ============================================================================
+
 async function main(): Promise<void> {
-  for (const t of DEMO_TENANTS) {
-    await seedTenant(t);
-  }
-  console.log(
-    `Code aléatoire pour info : AQ-VD-1247-${randomBytes(2).toString("hex").toUpperCase()}`,
-  );
+  await seedDevTenant();
+  await seedDemoTenant();
 }
 
 main()
