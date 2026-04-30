@@ -65,6 +65,26 @@ export class CreateInterventionDto {
   @MaxLength(200)
   produit?: string;
 
+  @ApiPropertyOptional({
+    description:
+      "ID Matériel du catalogue (outil/machine utilisé : charrue, semoir, pulvé, ensileuse…). " +
+      "En cas B (parcelle d'un partenaire), sert à générer la ligne sale.order Odoo facturée.",
+  })
+  @IsOptional()
+  @IsUUID()
+  materielId?: string;
+
+  @ApiPropertyOptional({
+    description:
+      "Surface effective travaillée en hectares. Quantité facturée quand le matériel est tarifé à l'hectare. Calculée auto depuis geomGeoJson ou parcelle si absent.",
+    example: 1.25,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 4 })
+  @Min(0)
+  surfaceHa?: number;
+
   @ApiPropertyOptional({ example: 25.5 })
   @IsOptional()
   @Type(() => Number)
@@ -89,6 +109,8 @@ export class CreateInterventionDto {
       "Doit être inclus dans la parcelle (validation ST_Within). Si fourni, " +
       "`surfaceTravailleeM2` est recalculée automatiquement depuis le polygone. " +
       "Permet de représenter spatialement le plan d'assolement (blé sur la moitié est, orge sur la moitié ouest, …).",
+    type: "object",
+    additionalProperties: true,
   })
   @IsOptional()
   @IsObject()

@@ -295,4 +295,64 @@ export class OdooPushService {
       linesCount: orderLines.length,
     };
   }
+
+  /**
+   * Variante best-effort de `pushTravail` pour les déclenchements
+   * automatiques (cas B après save d'intervention). Ne throw jamais —
+   * log l'échec et renvoie null. Le Travail reste DRAFT sans
+   * odooSaleOrderId, l'utilisateur peut re-pousser manuellement.
+   */
+  async tryPushTravailQuotation(travailId: string): Promise<PushTravailResult | null> {
+    try {
+      return await this.pushTravail(travailId);
+    } catch (err) {
+      this.logger.warn(
+        `Push Odoo auto échoué pour travail ${travailId} : ${err instanceof Error ? err.message : err}`,
+      );
+      return null;
+    }
+  }
+
+  /**
+   * Confirme un devis Odoo (sale.order draft) pour qu'il devienne une
+   * commande client (state='sale'). Appelé automatiquement quand le
+   * Travail passe DRAFT → VALIDATED.
+   *
+   * Idempotent côté Odoo : action_confirm sur un sale.order déjà
+   * confirmé est un no-op. Best-effort : on ne throw pas pour ne pas
+   * bloquer la validation locale.
+   */
+  async tryConfirmSaleOrder(
+    travailId: string,
+  ): Promise<{ confirmed: boolean; odooSaleOrderId: number | null }> {
+    const { tenantId } = this.tenantContext.get();
+    const travail = await this.prisma.travail.findFirst({
+      where: { id: travailId, tenantId },
+      select: { odooSaleOrderId: true },
+    });
+    if (!travail?.odooSaleOrderId) {
+      return { confirmed: false, odooSaleOrderId: null };
+    }
+
+    let client: OdooClient;
+    try {
+      client = await this.odooClientManager.forTenant(tenantId);
+    } catch (err) {
+      this.logger.warn(
+        `Confirm sale.order : pas de client Odoo pour tenant ${tenantId} : ${err instanceof Error ? err.message : err}`,
+      );
+      return { confirmed: false, odooSaleOrderId: travail.odooSaleOrderId };
+    }
+
+    try {
+      await client.callKw("sale.order", "action_confirm", [[travail.odooSaleOrderId]]);
+      this.logger.log(`Sale.order #${travail.odooSaleOrderId} confirmé (travail ${travailId})`);
+      return { confirmed: true, odooSaleOrderId: travail.odooSaleOrderId };
+    } catch (err) {
+      this.logger.warn(
+        `Confirm sale.order #${travail.odooSaleOrderId} échoué : ${err instanceof Error ? err.message : err}`,
+      );
+      return { confirmed: false, odooSaleOrderId: travail.odooSaleOrderId };
+    }
+  }
 }

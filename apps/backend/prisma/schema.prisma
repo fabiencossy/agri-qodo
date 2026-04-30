@@ -175,6 +175,29 @@ enum ProduitUnite {
   DOSE // doses (semences calibrées, certains phytos)
 }
 
+// Matériel = prestation/opération facturable rendue sur le terrain
+// (≠ Produit qui est un intrant consommé). Exemples : labour, semis,
+// pulvérisation, ensilage, presse à balles. Mappé sur un product.product
+// Odoo de type "service" pour la facturation à l'hectare/m³/heure.
+enum MaterielCategorie {
+  TRAVAIL_DU_SOL // charrue, herse, vibroculteur, déchaumeuse
+  SEMIS // semoir céréale, semoir mono-graine, semoir direct
+  FERTILISATION // épandeur engrais, tonne à lisier, distributeur
+  PROTECTION // pulvérisateur, pompe à traiter, désherbeur méca
+  RECOLTE // moissonneuse, ensileuse, presse, autochargeuse, arracheuse
+  IRRIGATION // enrouleur, rampe, goutte-à-goutte
+  TRANSPORT // benne, plateau, semi
+  AUTRE
+}
+
+enum MaterielUnite {
+  HA // à l'hectare (le plus courant pour les travaux du sol)
+  M3 // au m³ (transport, ensilage)
+  T // à la tonne (récolte, transport)
+  H // à l'heure (location matériel)
+  FORFAIT // au forfait (déplacement, mise en route)
+}
+
 // ====================================================================
 // Tenant racine + utilisateurs
 // ====================================================================
@@ -223,6 +246,7 @@ model Exploitation {
   sortiesSrpa           SortieSrpa[]
   ruleSets              RuleSet[]
   produitsCustom        Produit[]
+  materiels             Materiel[]
   partnerLinksOwned     PartnerLink[]  @relation("PartnerLinkOwner")
   partnerLinksPartner   PartnerLink[]  @relation("PartnerLinkPartner")
   travaux               Travail[]      @relation("TravailTenant")
@@ -381,6 +405,18 @@ model Intervention {
   // Permet d'autopropulser : SEMIS+produit → Culture, FUMURE+produit → bilan N/P.
   produitId           String?                                 @map("produit_id")
   produit             String? // libellé libre, ou copie du libellé Produit pour traçabilité
+  // Matériel/outil utilisé pour l'opération (charrue, semoir, pulvé, ensileuse…).
+  // En cas B (intervention sur parcelle d'un partenaire), sert aussi de
+  // ligne sale.order Odoo facturée par le prestataire.
+  materielId          String?                                 @map("materiel_id")
+  // Surface effective travaillée en hectares — utilisée comme quantité
+  // facturée quand `materiel.unite = HA`. Calculée auto depuis `geom`
+  // (ST_Area / 10000) ou depuis `parcelle.surface` si geom = null.
+  surfaceHa           Decimal?                                @map("surface_ha") @db.Decimal(10, 4)
+  // Cas B (parcelle d'un partenaire) : lien 1-1 vers le Travail créé chez
+  // le prestataire pour porter le sale.order Odoo. Permet de re-pousser /
+  // annuler / modifier en cascade. Null en cas A (parcelle perso).
+  linkedTravailId     String?                                 @unique @map("linked_travail_id")
   quantite            Decimal?                                @db.Decimal(12, 3)
   // Surface réellement concernée par l'intervention en m². NULL = toute
   // la parcelle (cas par défaut). Si `geom` est fournie, cette surface est
@@ -405,12 +441,14 @@ model Intervention {
   rejectedReason      String?                                 @map("rejected_reason")
   createdAt           DateTime                                @default(now()) @map("created_at")
 
-  ownerTenant  Exploitation @relation("InterventionOwner", fields: [ownerTenantId], references: [id], onDelete: Cascade)
-  authorTenant Exploitation @relation("InterventionAuthor", fields: [authorTenantId], references: [id], onDelete: Cascade)
-  parcelle     Parcelle     @relation(fields: [parcelleId], references: [id], onDelete: Cascade)
-  produitRef   Produit?     @relation(fields: [produitId], references: [id], onDelete: SetNull)
-  culture      Culture?     @relation(fields: [cultureId], references: [id], onDelete: SetNull)
-  planApport   PlanApport? // 1-1 si réalisé depuis un plan
+  ownerTenant   Exploitation @relation("InterventionOwner", fields: [ownerTenantId], references: [id], onDelete: Cascade)
+  authorTenant  Exploitation @relation("InterventionAuthor", fields: [authorTenantId], references: [id], onDelete: Cascade)
+  parcelle      Parcelle     @relation(fields: [parcelleId], references: [id], onDelete: Cascade)
+  produitRef    Produit?     @relation(fields: [produitId], references: [id], onDelete: SetNull)
+  materielRef   Materiel?    @relation(fields: [materielId], references: [id], onDelete: SetNull)
+  culture       Culture?     @relation(fields: [cultureId], references: [id], onDelete: SetNull)
+  linkedTravail Travail?     @relation("InterventionTravailLink", fields: [linkedTravailId], references: [id], onDelete: SetNull)
+  planApport    PlanApport? // 1-1 si réalisé depuis un plan
 
   @@index([ownerTenantId])
   @@index([authorTenantId])
@@ -418,6 +456,7 @@ model Intervention {
   @@index([dateOperation])
   @@index([validationStatus])
   @@index([produitId])
+  @@index([materielId])
   @@index([cultureId])
   @@map("interventions")
 }
@@ -605,6 +644,46 @@ model Produit {
   @@map("produits")
 }
 
+// ====================================================================
+// Matériel (prestations facturables) — opération réalisée avec une
+// machine sur une parcelle. Mappé Odoo → product.product type="service".
+// Utilisé : (1) sur une Intervention pour préciser l'outil utilisé,
+// (2) en cas B (parcelle d'un partenaire), pour générer la ligne sale.order
+// dans Odoo (quantité = surface en hectares, prix = prixUnitaireCHF).
+// ====================================================================
+model Materiel {
+  id              String            @id @default(uuid())
+  // null = catalogue global agri-qodo (read-only). Sinon, matériel custom
+  // de l'exploitation (ex tarif négocié, machine spécifique).
+  tenantId        String?           @map("tenant_id")
+  // Code stable (kebab-case) pour upsert seed + référence externe.
+  // Ex : "labour-charrue", "semis-cereale", "ensilage-mais".
+  code            String            @unique
+  libelle         String
+  categorie       MaterielCategorie
+  unite           MaterielUnite     @default(HA)
+  // Tarif par défaut CHF HT par unité (HA / M3 / T / H / FORFAIT). Modifiable
+  // ligne par ligne sur le Travail/Intervention. Null = à saisir au cas par cas.
+  prixUnitaireCHF Decimal?          @map("prix_unitaire_chf") @db.Decimal(12, 2)
+  // Lien Odoo : product.product de type "service". Renseigné par sync_odoo
+  // ou créé automatiquement au 1er push d'une Intervention/Travail
+  // utilisant ce matériel.
+  odooProductId   Int?              @map("odoo_product_id")
+  odooSyncedAt    DateTime?         @map("odoo_synced_at")
+  notes           String?
+  actif           Boolean           @default(true)
+  createdAt       DateTime          @default(now()) @map("created_at")
+  updatedAt       DateTime          @updatedAt @map("updated_at")
+
+  tenant        Exploitation?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  interventions Intervention[]
+
+  @@unique([tenantId, odooProductId], name: "tenant_odoo_materiel_unique")
+  @@index([tenantId])
+  @@index([categorie])
+  @@map("materiels")
+}
+
 model PartnerLink {
   id              String            @id @default(uuid())
   ownerTenantId   String            @map("owner_tenant_id")
@@ -684,6 +763,11 @@ model Travail {
 
   lignesProduit LigneTravailProduit[]
   lignesHeure   LigneTravailHeure[]
+
+  // Cas B : Intervention saisie chez le client à laquelle ce Travail
+  // a été automatiquement rattaché (1-1). Permet de re-pousser le
+  // sale.order quand la zone/quantité est modifiée côté client.
+  linkedIntervention Intervention? @relation("InterventionTravailLink")
 
   @@index([tenantId])
   @@index([partenaireId])

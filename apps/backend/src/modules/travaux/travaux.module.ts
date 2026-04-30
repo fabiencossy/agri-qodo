@@ -8,6 +8,6 @@ import { TravauxService } from "./travaux.service";
   imports: [OdooModule],
   controllers: [TravauxController],
   providers: [TravauxService, OdooPushService],
-  exports: [TravauxService],
+  exports: [TravauxService, OdooPushService],
 })
 export class TravauxModule {}

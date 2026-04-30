@@ -4,7 +4,6 @@ import {
   Beef,
   Briefcase,
   ClipboardList,
-  Clock,
   type LucideIcon,
   MapPin,
   Plus,
@@ -13,7 +12,6 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import type { Route } from "next";
-import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 
 interface FabAction {
@@ -21,104 +19,36 @@ interface FabAction {
   label: string;
   description?: string;
   icon: LucideIcon;
-  color?: string;
 }
 
 /**
- * Action principale par route. Affichée en grand carré au top de l'overlay.
- * Le préfixe le plus long match en priorité (ex: /animaux/[id] → /animaux).
+ * Deux actions principales du module Activités, identiques sur toutes
+ * les pages — pivot UX "gros doigts". Tout le reste (parcelle, cheptel,
+ * SRPA) descend en accès secondaire compact.
  */
-const PRIMARY_ACTION_BY_ROUTE: Record<string, FabAction> = {
-  "/parcelles": {
-    href: "/parcelles/new",
-    label: "Nouvelle parcelle",
-    description: "Dessiner une nouvelle parcelle sur la carte",
-    icon: MapPin,
-    color: "bg-emerald-100 text-emerald-700",
-  },
-  "/interventions": {
-    href: "/interventions/new",
-    label: "Saisir une intervention",
-    description: "Semis, fumure, phyto, récolte…",
-    icon: Sprout,
-    color: "bg-green-100 text-green-700",
-  },
-  "/animaux": {
-    href: "/animaux",
-    label: "Importer BDTA",
-    description: "Importer le CSV BDTA / Identitas",
-    icon: Beef,
-    color: "bg-amber-100 text-amber-700",
-  },
-  "/srpa": {
-    href: "/srpa/new",
-    label: "Saisir une sortie SRPA",
-    description: "Pâturage du jour",
-    icon: ClipboardList,
-    color: "bg-sky-100 text-sky-700",
-  },
-  "/travaux": {
-    href: "/travaux/new",
-    label: "Saisir un travail",
-    description: "Travail facturable ou interne",
-    icon: Briefcase,
-    color: "bg-violet-100 text-violet-700",
-  },
-  "/mes-heures": {
-    href: "/travaux/new",
-    label: "Saisir des heures",
-    description: "Via un travail (timesheet)",
-    icon: Clock,
-    color: "bg-indigo-100 text-indigo-700",
-  },
+const PRIMARY_INTERVENTION: FabAction = {
+  href: "/interventions/new",
+  label: "Faire une intervention",
+  description: "Carnet des champs : labour, semis, fumure, phyto, récolte…",
+  icon: Sprout,
 };
 
-const ALL_ACTIONS: FabAction[] = [
-  {
-    href: "/interventions/new",
-    label: "Intervention",
-    icon: Sprout,
-    color: "bg-green-100 text-green-700",
-  },
-  {
-    href: "/parcelles/new",
-    label: "Parcelle",
-    icon: MapPin,
-    color: "bg-emerald-100 text-emerald-700",
-  },
-  {
-    href: "/travaux/new",
-    label: "Travail",
-    icon: Briefcase,
-    color: "bg-violet-100 text-violet-700",
-  },
-  {
-    href: "/srpa/new",
-    label: "Sortie SRPA",
-    icon: ClipboardList,
-    color: "bg-sky-100 text-sky-700",
-  },
-  {
-    href: "/animaux",
-    label: "Cheptel BDTA",
-    icon: Beef,
-    color: "bg-amber-100 text-amber-700",
-  },
-  { href: "/mes-heures", label: "Mes heures", icon: Clock, color: "bg-indigo-100 text-indigo-700" },
-];
+const PRIMARY_TRAVAIL: FabAction = {
+  href: "/travaux/new",
+  label: "Saisir un travail",
+  description: "Prestation pour un client ou interne (mécanique, transport).",
+  icon: Briefcase,
+};
 
-function findPrimary(pathname: string): FabAction | null {
-  const matches = Object.entries(PRIMARY_ACTION_BY_ROUTE)
-    .filter(([route]) => pathname.startsWith(route))
-    .sort((a, b) => b[0].length - a[0].length);
-  return matches[0]?.[1] ?? null;
-}
+const SECONDARY_ACTIONS: FabAction[] = [
+  { href: "/parcelles/new", label: "Parcelle", icon: MapPin },
+  { href: "/srpa/new", label: "Sortie SRPA", icon: ClipboardList },
+  { href: "/animaux", label: "Cheptel BDTA", icon: Beef },
+];
 
 export function Fab() {
   const [open, setOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
-  const pathname = usePathname();
-  const primary = findPrimary(pathname);
 
   useEffect(() => {
     setMounted(true);
@@ -136,8 +66,6 @@ export function Fab() {
       document.body.style.overflow = "";
     };
   }, [open]);
-
-  const secondary = ALL_ACTIONS.filter((a) => a.href !== primary?.href);
 
   return (
     <>
@@ -166,9 +94,7 @@ export function Fab() {
             style={{ animation: "slideUp 250ms cubic-bezier(0.16, 1, 0.3, 1)" }}
           >
             <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-lg font-bold">
-                {primary ? "Action rapide" : "Que veux-tu créer ?"}
-              </h2>
+              <h2 className="text-lg font-bold">Que veux-tu saisir&nbsp;?</h2>
               <button
                 type="button"
                 onClick={() => setOpen(false)}
@@ -179,40 +105,34 @@ export function Fab() {
               </button>
             </div>
 
-            {primary && (
-              <Link
-                href={primary.href}
+            <div className="grid gap-3 sm:grid-cols-2">
+              <PrimaryCard
+                action={PRIMARY_INTERVENTION}
+                accent="green"
                 onClick={() => setOpen(false)}
-                className={`mb-4 flex items-start gap-4 rounded-2xl border-2 border-green/30 ${primary.color ?? "bg-green/5"} p-5 transition-colors hover:border-green hover:brightness-95 active:scale-[0.99]`}
-              >
-                <span className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-2xl bg-background shadow-sm">
-                  <primary.icon className="h-7 w-7" />
-                </span>
-                <span className="flex-1">
-                  <span className="block text-lg font-bold">{primary.label}</span>
-                  {primary.description && (
-                    <span className="mt-0.5 block text-sm opacity-80">{primary.description}</span>
-                  )}
-                </span>
-                <span className="self-center text-xl">→</span>
-              </Link>
-            )}
+              />
+              <PrimaryCard
+                action={PRIMARY_TRAVAIL}
+                accent="violet"
+                onClick={() => setOpen(false)}
+              />
+            </div>
 
-            <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-foreground/50">
-              {primary ? "Autres saisies" : "Toutes les saisies"}
+            <p className="mb-2 mt-5 text-xs font-semibold uppercase tracking-wider text-foreground/50">
+              Autres saisies
             </p>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-              {secondary.map((action) => {
+            <div className="grid grid-cols-3 gap-2">
+              {SECONDARY_ACTIONS.map((action) => {
                 const Icon = action.icon;
                 return (
                   <Link
-                    key={`${action.href}-${action.label}`}
+                    key={action.href}
                     href={action.href}
                     onClick={() => setOpen(false)}
-                    className={`flex flex-col items-center justify-center gap-2 rounded-2xl border border-border ${action.color ?? "bg-muted/30"} p-4 text-center transition-all hover:border-foreground/20 hover:shadow-md active:scale-95`}
+                    className="flex flex-col items-center justify-center gap-1.5 rounded-xl border border-border bg-muted/30 p-3 text-center text-xs transition-all hover:border-foreground/20 hover:shadow-sm active:scale-95"
                   >
-                    <Icon className="h-7 w-7" />
-                    <span className="text-sm font-medium">{action.label}</span>
+                    <Icon className="h-5 w-5" />
+                    <span>{action.label}</span>
                   </Link>
                 );
               })}
@@ -242,5 +162,41 @@ export function Fab() {
         }
       `}</style>
     </>
+  );
+}
+
+function PrimaryCard({
+  action,
+  accent,
+  onClick,
+}: {
+  action: FabAction;
+  accent: "green" | "violet";
+  onClick: () => void;
+}) {
+  const Icon = action.icon;
+  const styles =
+    accent === "green"
+      ? "border-green/30 bg-green/5 hover:border-green text-foreground"
+      : "border-violet-300/60 bg-violet-50 hover:border-violet-500 text-foreground dark:bg-violet-950/30 dark:border-violet-800";
+  const iconBg = accent === "green" ? "bg-green text-white" : "bg-violet-600 text-white";
+  return (
+    <Link
+      href={action.href}
+      onClick={onClick}
+      className={`flex flex-col items-start gap-3 rounded-2xl border-2 p-5 transition-all hover:shadow-md active:scale-[0.99] ${styles}`}
+    >
+      <span
+        className={`flex h-14 w-14 items-center justify-center rounded-2xl shadow-sm ${iconBg}`}
+      >
+        <Icon className="h-7 w-7" />
+      </span>
+      <span className="block">
+        <span className="block text-base font-bold">{action.label}</span>
+        {action.description && (
+          <span className="mt-0.5 block text-xs text-foreground/70">{action.description}</span>
+        )}
+      </span>
+    </Link>
   );
 }

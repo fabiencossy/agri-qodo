@@ -4,11 +4,18 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { InterventionType, type Prisma, ProduitCategorie, ValidationStatus } from "@prisma/client";
+import {
+  InterventionType,
+  type Prisma,
+  ProduitCategorie,
+  TravailStatut,
+  ValidationStatus,
+} from "@prisma/client";
 import area from "@turf/area";
 import { randomUUID } from "node:crypto";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { TenantContextService } from "@/common/tenant/tenant-context.service";
+import { OdooPushService } from "@/modules/travaux/odoo-push.service";
 import type {
   CreateInterventionDto,
   InterventionGeoJsonGeometry,
@@ -20,6 +27,7 @@ export class InterventionsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly tenantContext: TenantContextService,
+    private readonly odooPush: OdooPushService,
   ) {}
 
   /**
@@ -44,6 +52,86 @@ export class InterventionsService {
     });
   }
 
+  /**
+   * Interventions PENDING reçues d'un partenaire sur une de mes parcelles.
+   * Le tenant courant est le propriétaire (ownerTenantId), un autre tenant
+   * a saisi (authorTenantId !== owner). Le propriétaire doit décider de
+   * VALIDER, REFUSER ou modifier l'intervention avant qu'elle entre dans
+   * son carnet.
+   */
+  listPending() {
+    const { tenantId } = this.tenantContext.get();
+    return this.prisma.intervention.findMany({
+      where: {
+        ownerTenantId: tenantId,
+        validationStatus: ValidationStatus.PENDING,
+      },
+      orderBy: { dateOperation: "desc" },
+      include: {
+        ...this.includeRelations,
+        authorTenant: { select: { id: true, nom: true, code: true } },
+      },
+    });
+  }
+
+  /** Valide une intervention PENDING reçue d'un partenaire. Owner only. */
+  async validatePending(id: string) {
+    const { tenantId } = this.tenantContext.get();
+    const existing = await this.prisma.intervention.findFirst({
+      where: { id, ownerTenantId: tenantId },
+      select: { id: true, validationStatus: true },
+    });
+    if (!existing) throw new NotFoundException("Intervention introuvable");
+    if (existing.validationStatus !== ValidationStatus.PENDING) {
+      throw new BadRequestException("Seules les interventions PENDING peuvent être validées");
+    }
+    await this.prisma.intervention.update({
+      where: { id },
+      data: { validationStatus: ValidationStatus.VALIDATED, validatedAt: new Date() },
+    });
+    return this.getById(id);
+  }
+
+  /**
+   * Refuse une intervention PENDING. Annule en parallèle le Travail
+   * prestataire associé (si DRAFT — sinon on laisse, le prestataire
+   * gérera côté Odoo).
+   */
+  async rejectPending(id: string, reason: string | undefined) {
+    const { tenantId } = this.tenantContext.get();
+    const existing = await this.prisma.intervention.findFirst({
+      where: { id, ownerTenantId: tenantId },
+      select: { id: true, validationStatus: true, linkedTravailId: true },
+    });
+    if (!existing) throw new NotFoundException("Intervention introuvable");
+    if (existing.validationStatus !== ValidationStatus.PENDING) {
+      throw new BadRequestException("Seules les interventions PENDING peuvent être refusées");
+    }
+    await this.prisma.$transaction(async (tx) => {
+      await tx.intervention.update({
+        where: { id },
+        data: {
+          validationStatus: ValidationStatus.REJECTED,
+          rejectedReason: reason ?? null,
+        },
+      });
+      // Annule le Travail prestataire associé s'il est en DRAFT.
+      if (existing.linkedTravailId) {
+        const travail = await tx.travail.findUnique({
+          where: { id: existing.linkedTravailId },
+          select: { statut: true },
+        });
+        if (travail?.statut === "DRAFT") {
+          await tx.travail.update({
+            where: { id: existing.linkedTravailId },
+            data: { statut: "CANCELLED" },
+          });
+        }
+      }
+    });
+    return this.getById(id);
+  }
+
   async getById(id: string) {
     const { tenantId } = this.tenantContext.get();
     const intervention = await this.prisma.intervention.findFirst({
@@ -60,8 +148,11 @@ export class InterventionsService {
   }
 
   private readonly includeRelations = {
-    parcelle: { select: { id: true, nom: true } },
+    parcelle: { select: { id: true, nom: true, tenantId: true } },
     produitRef: { select: { id: true, libelle: true, categorie: true, especeCode: true } },
+    materielRef: {
+      select: { id: true, libelle: true, categorie: true, unite: true, prixUnitaireCHF: true },
+    },
     culture: { select: { id: true, espece: true, variete: true, campagne: true } },
   } satisfies Prisma.InterventionInclude;
 
@@ -146,9 +237,31 @@ export class InterventionsService {
       throw new BadRequestException("Produit introuvable ou inactif");
     }
 
+    // Matériel optionnel — outil/machine utilisé. Catalogue global ou tenant.
+    if (dto.materielId) {
+      const materiel = await this.prisma.materiel.findFirst({
+        where: {
+          id: dto.materielId,
+          actif: true,
+          OR: [{ tenantId: null }, { tenantId }],
+        },
+        select: { id: true },
+      });
+      if (!materiel) throw new BadRequestException("Matériel introuvable ou inactif");
+    }
+
+    // Surface en hectares — si non fournie, on calcule depuis geom (priorité)
+    // ou depuis la parcelle entière. Sert à la facturation matériel à l'ha.
+    const surfaceHaResolu =
+      dto.surfaceHa !== undefined
+        ? dto.surfaceHa
+        : surfaceFromGeom !== undefined
+          ? surfaceFromGeom / 10000
+          : Number(parcelle.surfaceM2) / 10000;
+
     // SEMIS = déclencheur de Culture. Carnet = source unique : pas de
     // saisie séparée. Le produit doit être une SEMENCE avec especeCode.
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       let cultureId: string | null = null;
       if (dto.type === InterventionType.SEMIS && produit) {
         if (produit.categorie !== ProduitCategorie.SEMENCE) {
@@ -188,6 +301,8 @@ export class InterventionsService {
           dateOperation,
           produitId: produit?.id ?? null,
           produit: dto.produit ?? produit?.libelle ?? null,
+          materielId: dto.materielId ?? null,
+          surfaceHa: surfaceHaResolu,
           quantite: dto.quantite ?? null,
           unite: dto.unite ?? null,
           surfaceTravailleeM2: surfaceFinale,
@@ -209,8 +324,130 @@ export class InterventionsService {
         );
       }
 
-      return created;
+      // Cas B (intervention sur parcelle d'un partenaire) : on crée
+      // automatiquement un Travail facturable chez le prestataire (=
+      // tenant courant), avec partenaireId = propriétaire de la parcelle.
+      let casBTravailId: string | null = null;
+      if (validationStatus === ValidationStatus.PENDING) {
+        casBTravailId = await this.createCasBTravail(tx, {
+          interventionId: created.id,
+          authorTenantId,
+          partenaireId: ownerTenantId,
+          parcelleId: dto.parcelleId,
+          type: dto.type,
+          dateOperation,
+          materielId: dto.materielId,
+          surfaceHa: surfaceHaResolu,
+          produit,
+          produitQuantite: dto.quantite,
+          produitUnite: dto.unite,
+          notes: dto.notes,
+        });
+
+        return {
+          intervention: await tx.intervention.findUniqueOrThrow({
+            where: { id: created.id },
+            include: this.includeRelations,
+          }),
+          casBTravailId,
+        };
+      }
+
+      return { intervention: created, casBTravailId };
     });
+
+    // Hors transaction : push automatique du devis Odoo en cas B.
+    // Best-effort — si Odoo est down ou mal configuré, le Travail reste
+    // DRAFT sans odooSaleOrderId, l'utilisateur peut le re-pousser
+    // manuellement depuis /travaux/[id].
+    if (result.casBTravailId) {
+      await this.odooPush.tryPushTravailQuotation(result.casBTravailId);
+      // Recharge l'intervention pour exposer le linkedTravailId à jour
+      // (le travail a maintenant son odooSaleOrderId).
+      return this.prisma.intervention.findUniqueOrThrow({
+        where: { id: result.intervention.id },
+        include: this.includeRelations,
+      });
+    }
+
+    return result.intervention;
+  }
+
+  /**
+   * Crée le Travail prestataire en cas B (intervention sur parcelle de
+   * partenaire). À appeler dans la transaction de `create()` après que
+   * l'intervention a été insérée. Met à jour `intervention.linkedTravailId`.
+   */
+  private async createCasBTravail(
+    tx: Prisma.TransactionClient,
+    args: {
+      interventionId: string;
+      authorTenantId: string;
+      partenaireId: string;
+      parcelleId: string;
+      type: InterventionType;
+      dateOperation: Date;
+      materielId: string | undefined;
+      surfaceHa: number;
+      produit: { id: string; libelle: string } | null;
+      produitQuantite: number | undefined;
+      produitUnite: string | undefined;
+      notes: string | undefined;
+    },
+  ): Promise<string> {
+    const parcelle = await tx.parcelle.findUnique({
+      where: { id: args.parcelleId },
+      select: { nom: true },
+    });
+    const titreType = args.type.replace(/_/g, " ").toLowerCase();
+    const titre = `${titreType.charAt(0).toUpperCase()}${titreType.slice(1)} — ${parcelle?.nom ?? "parcelle"}`;
+
+    const lignesProduit: Prisma.LigneTravailProduitCreateWithoutTravailInput[] = [];
+
+    if (args.materielId) {
+      const m = await tx.materiel.findUnique({
+        where: { id: args.materielId },
+        select: { libelle: true, unite: true, prixUnitaireCHF: true },
+      });
+      if (m) {
+        lignesProduit.push({
+          libelle: m.libelle,
+          quantite: args.surfaceHa,
+          unite: m.unite.toLowerCase(),
+          prixUnitaireCHF: m.prixUnitaireCHF,
+        });
+      }
+    }
+
+    if (args.produit && args.produitQuantite !== undefined && args.produitQuantite > 0) {
+      lignesProduit.push({
+        libelle: args.produit.libelle,
+        quantite: args.produitQuantite,
+        unite: args.produitUnite ?? "kg",
+        produit: { connect: { id: args.produit.id } },
+      });
+    }
+
+    const travail = await tx.travail.create({
+      data: {
+        tenantId: args.authorTenantId,
+        partenaireId: args.partenaireId,
+        parcelleId: args.parcelleId,
+        titre,
+        date: args.dateOperation,
+        statut: TravailStatut.DRAFT,
+        notes: args.notes ?? null,
+        ...(lignesProduit.length > 0 ? { lignesProduit: { create: lignesProduit } } : {}),
+      },
+      select: { id: true },
+    });
+
+    await tx.intervention.update({
+      where: { id: args.interventionId },
+      data: { linkedTravailId: travail.id },
+    });
+
+    return travail.id;
   }
 
   /**
@@ -288,11 +525,26 @@ export class InterventionsService {
         );
       }
 
+      // Si materielId fourni, on valide qu'il existe (global ou tenant).
+      if (dto.materielId) {
+        const materiel = await tx.materiel.findFirst({
+          where: {
+            id: dto.materielId,
+            actif: true,
+            OR: [{ tenantId: null }, { tenantId }],
+          },
+          select: { id: true },
+        });
+        if (!materiel) throw new BadRequestException("Matériel introuvable ou inactif");
+      }
+
       await tx.intervention.update({
         where: { id },
         data: {
           ...(newDate !== null ? { dateOperation: newDate } : {}),
           ...(dto.produit !== undefined ? { produit: dto.produit } : {}),
+          ...(dto.materielId !== undefined ? { materielId: dto.materielId || null } : {}),
+          ...(dto.surfaceHa !== undefined ? { surfaceHa: dto.surfaceHa } : {}),
           ...(dto.quantite !== undefined ? { quantite: dto.quantite } : {}),
           ...(dto.unite !== undefined ? { unite: dto.unite } : {}),
           ...(surfaceFromGeom !== undefined

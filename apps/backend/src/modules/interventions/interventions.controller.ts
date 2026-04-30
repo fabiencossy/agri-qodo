@@ -34,6 +34,15 @@ export class InterventionsController {
     return this.interventions.list();
   }
 
+  @Get("pending")
+  @ApiOperation({
+    summary:
+      "Liste les interventions PENDING saisies par un partenaire sur une de mes parcelles — à valider/refuser/modifier.",
+  })
+  listPending() {
+    return this.interventions.listPending();
+  }
+
   @Get("with-geom")
   @ApiOperation({
     summary:
@@ -69,6 +78,24 @@ export class InterventionsController {
   })
   update(@Param("id", ParseUUIDPipe) id: string, @Body() dto: UpdateInterventionDto) {
     return this.interventions.update(id, dto);
+  }
+
+  @Post(":id/validate")
+  @ApiOperation({
+    summary:
+      "Valider une intervention PENDING reçue d'un partenaire (owner only). Passe à VALIDATED.",
+  })
+  validate(@Param("id", ParseUUIDPipe) id: string) {
+    return this.interventions.validatePending(id);
+  }
+
+  @Post(":id/reject")
+  @ApiOperation({
+    summary:
+      "Refuser une intervention PENDING reçue d'un partenaire (owner only). Passe à REJECTED. Le Travail prestataire est annulé.",
+  })
+  reject(@Param("id", ParseUUIDPipe) id: string, @Body() body: { reason?: string }) {
+    return this.interventions.rejectPending(id, body.reason);
   }
 
   @Delete(":id")

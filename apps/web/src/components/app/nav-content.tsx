@@ -4,9 +4,7 @@ import {
   BarChart3,
   Beef,
   BookOpen,
-  Briefcase,
   ClipboardList,
-  Clock,
   Cog,
   FlaskConical,
   Handshake,
@@ -16,8 +14,9 @@ import {
   type LucideIcon,
   MapPin,
   Package,
-  Sprout,
+  Tractor,
   Users,
+  Wrench,
 } from "lucide-react";
 import Link from "next/link";
 import type { Route } from "next";
@@ -37,11 +36,9 @@ interface NavLink {
 const NAVIGATION: NavLink[] = [
   { href: "/app", label: "Accueil", icon: Home },
   { href: "/parcelles", label: "Parcelles", icon: MapPin },
-  { href: "/interventions", label: "Carnet des champs", icon: Sprout },
+  { href: "/activites", label: "Activités", icon: Tractor },
   { href: "/animaux", label: "Cheptel", icon: Beef },
   { href: "/srpa", label: "SRPA — sorties pâturage", icon: ClipboardList },
-  { href: "/travaux", label: "Travaux", icon: Briefcase, requiresOdoo: true },
-  { href: "/mes-heures", label: "Mes heures", icon: Clock, requiresOdoo: true },
 ];
 
 const PILOTAGE: NavLink[] = [
@@ -55,6 +52,7 @@ const ADMINISTRATION: NavLink[] = [
   { href: "/utilisateurs", label: "Utilisateurs", icon: Users },
   { href: "/partenaires", label: "Partenaires", icon: Handshake },
   { href: "/produits", label: "Catalogue produits", icon: Package },
+  { href: "/materiels", label: "Catalogue matériel", icon: Wrench },
   { href: "/parametres", label: "Paramètres", icon: Cog },
 ];
 

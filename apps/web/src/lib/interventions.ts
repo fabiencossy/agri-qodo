@@ -55,6 +55,19 @@ export interface Intervention {
     categorie: string;
     especeCode: string | null;
   } | null;
+  /** Matériel utilisé (outil/machine) — null si saisi sans matériel précis. */
+  materielId: string | null;
+  materielRef: {
+    id: string;
+    libelle: string;
+    categorie: string;
+    unite: string;
+    prixUnitaireCHF: string | null;
+  } | null;
+  /** Surface effective travaillée en hectares — sert à la facturation cas B. */
+  surfaceHa: string | null;
+  /** Cas B : ID du Travail créé chez le prestataire pour facturer Odoo. */
+  linkedTravailId: string | null;
   quantite: string | null;
   unite: string | null;
   surfaceTravailleeM2: string | null;
@@ -76,6 +89,10 @@ export interface CreateInterventionInput {
   dateOperation: string;
   produitId?: string;
   produit?: string;
+  /** ID Matériel utilisé (charrue, semoir, pulvé, ensileuse…). En cas B, sert à facturer Odoo. */
+  materielId?: string;
+  /** Surface effective en hectares — quantité facturée si matériel tarifé HA. */
+  surfaceHa?: number;
   quantite?: number;
   unite?: string;
   surfaceTravailleeM2?: number;
@@ -133,6 +150,44 @@ export function useCreateIntervention() {
   return useMutation({
     mutationFn: (input: CreateInterventionInput) =>
       api<Intervention>("/api/interventions", { method: "POST", body: input }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: QUERY_KEY });
+    },
+  });
+}
+
+/** Variante d'Intervention enrichie de l'auteur, renvoyée par /pending. */
+export interface PendingIntervention extends Intervention {
+  authorTenant: { id: string; nom: string; code: string };
+}
+
+/** Interventions PENDING reçues d'un partenaire — à valider/refuser. */
+export function useInterventionsPending() {
+  return useQuery({
+    queryKey: ["interventions", "pending"] as const,
+    queryFn: () => api<PendingIntervention[]>("/api/interventions/pending"),
+  });
+}
+
+export function useValidateIntervention() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      api<Intervention>(`/api/interventions/${id}/validate`, { method: "POST" }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: QUERY_KEY });
+    },
+  });
+}
+
+export function useRejectIntervention() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason?: string }) =>
+      api<Intervention>(`/api/interventions/${id}/reject`, {
+        method: "POST",
+        body: { reason },
+      }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: QUERY_KEY });
     },
