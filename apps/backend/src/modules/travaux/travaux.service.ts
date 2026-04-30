@@ -13,6 +13,7 @@ import type {
   CreateLigneProduitDto,
   CreateTravailDto,
 } from "./dto/create-travail.dto";
+import { OdooPushService } from "./odoo-push.service";
 import type { UpdateTravailDto } from "./dto/update-travail.dto";
 
 @Injectable()
@@ -20,6 +21,7 @@ export class TravauxService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly tenantContext: TenantContextService,
+    private readonly odooPush: OdooPushService,
   ) {}
 
   private readonly include = {
@@ -188,7 +190,7 @@ export class TravauxService {
     const { tenantId } = this.tenantContext.get();
     const travail = await this.prisma.travail.findFirst({
       where: { id, tenantId },
-      select: { id: true, statut: true },
+      select: { id: true, statut: true, odooSaleOrderId: true },
     });
     if (!travail) throw new NotFoundException("Travail introuvable");
     if (travail.statut !== TravailStatut.DRAFT) {
@@ -198,6 +200,15 @@ export class TravauxService {
       where: { id },
       data: { statut: TravailStatut.VALIDATED },
     });
+
+    // Si le devis Odoo a été créé (cas B auto ou push manuel), on
+    // confirme côté Odoo pour transformer le devis en commande client
+    // (state='draft' → 'sale'). Best-effort : un échec Odoo ne bloque
+    // pas la validation locale.
+    if (travail.odooSaleOrderId) {
+      await this.odooPush.tryConfirmSaleOrder(id);
+    }
+
     return this.getById(id);
   }
 

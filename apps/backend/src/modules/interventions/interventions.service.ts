@@ -15,6 +15,7 @@ import area from "@turf/area";
 import { randomUUID } from "node:crypto";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { TenantContextService } from "@/common/tenant/tenant-context.service";
+import { OdooPushService } from "@/modules/travaux/odoo-push.service";
 import type {
   CreateInterventionDto,
   InterventionGeoJsonGeometry,
@@ -26,6 +27,7 @@ export class InterventionsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly tenantContext: TenantContextService,
+    private readonly odooPush: OdooPushService,
   ) {}
 
   /**
@@ -48,6 +50,86 @@ export class InterventionsService {
       take: 200,
       include: this.includeRelations,
     });
+  }
+
+  /**
+   * Interventions PENDING reçues d'un partenaire sur une de mes parcelles.
+   * Le tenant courant est le propriétaire (ownerTenantId), un autre tenant
+   * a saisi (authorTenantId !== owner). Le propriétaire doit décider de
+   * VALIDER, REFUSER ou modifier l'intervention avant qu'elle entre dans
+   * son carnet.
+   */
+  listPending() {
+    const { tenantId } = this.tenantContext.get();
+    return this.prisma.intervention.findMany({
+      where: {
+        ownerTenantId: tenantId,
+        validationStatus: ValidationStatus.PENDING,
+      },
+      orderBy: { dateOperation: "desc" },
+      include: {
+        ...this.includeRelations,
+        authorTenant: { select: { id: true, nom: true, code: true } },
+      },
+    });
+  }
+
+  /** Valide une intervention PENDING reçue d'un partenaire. Owner only. */
+  async validatePending(id: string) {
+    const { tenantId } = this.tenantContext.get();
+    const existing = await this.prisma.intervention.findFirst({
+      where: { id, ownerTenantId: tenantId },
+      select: { id: true, validationStatus: true },
+    });
+    if (!existing) throw new NotFoundException("Intervention introuvable");
+    if (existing.validationStatus !== ValidationStatus.PENDING) {
+      throw new BadRequestException("Seules les interventions PENDING peuvent être validées");
+    }
+    await this.prisma.intervention.update({
+      where: { id },
+      data: { validationStatus: ValidationStatus.VALIDATED, validatedAt: new Date() },
+    });
+    return this.getById(id);
+  }
+
+  /**
+   * Refuse une intervention PENDING. Annule en parallèle le Travail
+   * prestataire associé (si DRAFT — sinon on laisse, le prestataire
+   * gérera côté Odoo).
+   */
+  async rejectPending(id: string, reason: string | undefined) {
+    const { tenantId } = this.tenantContext.get();
+    const existing = await this.prisma.intervention.findFirst({
+      where: { id, ownerTenantId: tenantId },
+      select: { id: true, validationStatus: true, linkedTravailId: true },
+    });
+    if (!existing) throw new NotFoundException("Intervention introuvable");
+    if (existing.validationStatus !== ValidationStatus.PENDING) {
+      throw new BadRequestException("Seules les interventions PENDING peuvent être refusées");
+    }
+    await this.prisma.$transaction(async (tx) => {
+      await tx.intervention.update({
+        where: { id },
+        data: {
+          validationStatus: ValidationStatus.REJECTED,
+          rejectedReason: reason ?? null,
+        },
+      });
+      // Annule le Travail prestataire associé s'il est en DRAFT.
+      if (existing.linkedTravailId) {
+        const travail = await tx.travail.findUnique({
+          where: { id: existing.linkedTravailId },
+          select: { statut: true },
+        });
+        if (travail?.statut === "DRAFT") {
+          await tx.travail.update({
+            where: { id: existing.linkedTravailId },
+            data: { statut: "CANCELLED" },
+          });
+        }
+      }
+    });
+    return this.getById(id);
   }
 
   async getById(id: string) {
@@ -179,7 +261,7 @@ export class InterventionsService {
 
     // SEMIS = déclencheur de Culture. Carnet = source unique : pas de
     // saisie séparée. Le produit doit être une SEMENCE avec especeCode.
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       let cultureId: string | null = null;
       if (dto.type === InterventionType.SEMIS && produit) {
         if (produit.categorie !== ProduitCategorie.SEMENCE) {
@@ -245,14 +327,9 @@ export class InterventionsService {
       // Cas B (intervention sur parcelle d'un partenaire) : on crée
       // automatiquement un Travail facturable chez le prestataire (=
       // tenant courant), avec partenaireId = propriétaire de la parcelle.
-      // Lignes Travail :
-      //   - 1 ligne matériel (libellé + qty = surfaceHa, prix unitaire)
-      //   - 1 ligne intrant (produit consommé, si présent + quantité)
-      // Le Travail est en DRAFT — l'utilisateur le pousse vers Odoo
-      // depuis /travaux/[id] avec le bouton existant. Ne déclenche pas
-      // d'appel Odoo sync ici (transaction DB courte, robustesse).
+      let casBTravailId: string | null = null;
       if (validationStatus === ValidationStatus.PENDING) {
-        await this.createCasBTravail(tx, {
+        casBTravailId = await this.createCasBTravail(tx, {
           interventionId: created.id,
           authorTenantId,
           partenaireId: ownerTenantId,
@@ -267,15 +344,33 @@ export class InterventionsService {
           notes: dto.notes,
         });
 
-        // Recharge l'intervention avec linkedTravailId à jour pour le retour API.
-        return tx.intervention.findUniqueOrThrow({
-          where: { id: created.id },
-          include: this.includeRelations,
-        });
+        return {
+          intervention: await tx.intervention.findUniqueOrThrow({
+            where: { id: created.id },
+            include: this.includeRelations,
+          }),
+          casBTravailId,
+        };
       }
 
-      return created;
+      return { intervention: created, casBTravailId };
     });
+
+    // Hors transaction : push automatique du devis Odoo en cas B.
+    // Best-effort — si Odoo est down ou mal configuré, le Travail reste
+    // DRAFT sans odooSaleOrderId, l'utilisateur peut le re-pousser
+    // manuellement depuis /travaux/[id].
+    if (result.casBTravailId) {
+      await this.odooPush.tryPushTravailQuotation(result.casBTravailId);
+      // Recharge l'intervention pour exposer le linkedTravailId à jour
+      // (le travail a maintenant son odooSaleOrderId).
+      return this.prisma.intervention.findUniqueOrThrow({
+        where: { id: result.intervention.id },
+        include: this.includeRelations,
+      });
+    }
+
+    return result.intervention;
   }
 
   /**
@@ -299,7 +394,7 @@ export class InterventionsService {
       produitUnite: string | undefined;
       notes: string | undefined;
     },
-  ): Promise<void> {
+  ): Promise<string> {
     const parcelle = await tx.parcelle.findUnique({
       where: { id: args.parcelleId },
       select: { nom: true },
@@ -351,6 +446,8 @@ export class InterventionsService {
       where: { id: args.interventionId },
       data: { linkedTravailId: travail.id },
     });
+
+    return travail.id;
   }
 
   /**

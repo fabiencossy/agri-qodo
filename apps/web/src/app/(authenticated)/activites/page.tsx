@@ -1,8 +1,9 @@
 "use client";
 
-import { Briefcase, Clock, Sprout } from "lucide-react";
+import { Briefcase, ClipboardCheck, Clock, Sprout } from "lucide-react";
 import Link from "next/link";
 import { Breadcrumb } from "@/components/app/breadcrumb";
+import { useInterventionsPending } from "@/lib/interventions";
 
 /**
  * Page d'accueil du module **Activités** — point d'entrée unique pour les
@@ -19,6 +20,9 @@ import { Breadcrumb } from "@/components/app/breadcrumb";
  * secondaire à parcourir.
  */
 export default function ActivitesPage() {
+  const pending = useInterventionsPending();
+  const pendingCount = pending.data?.length ?? 0;
+
   return (
     <>
       <Breadcrumb items={[{ label: "Accueil", href: "/app" }, { label: "Activités" }]} />
@@ -68,7 +72,31 @@ export default function ActivitesPage() {
           </Link>
         </div>
 
-        <div className="mt-8 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border bg-muted/30 p-4 text-sm">
+        {pendingCount > 0 && (
+          <Link
+            href="/interventions/pending"
+            className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border-2 border-amber-300 bg-amber-50 p-4 text-sm transition-colors hover:border-amber-500 hover:bg-amber-100 active:scale-[0.99] dark:border-amber-800 dark:bg-amber-950/30 dark:hover:bg-amber-950/50"
+          >
+            <div className="flex items-center gap-3">
+              <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500 text-white">
+                <ClipboardCheck className="h-5 w-5" />
+              </span>
+              <div>
+                <p className="font-semibold text-amber-900 dark:text-amber-200">
+                  {pendingCount} intervention{pendingCount > 1 ? "s" : ""} à valider
+                </p>
+                <p className="text-xs text-amber-800/80 dark:text-amber-300/80">
+                  Saisies par tes partenaires sur tes parcelles — accepte, refuse ou modifie.
+                </p>
+              </div>
+            </div>
+            <span className="rounded-full bg-amber-500 px-3 py-1 text-sm font-bold text-white">
+              {pendingCount}
+            </span>
+          </Link>
+        )}
+
+        <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border bg-muted/30 p-4 text-sm">
           <div className="flex items-center gap-3">
             <Clock className="h-5 w-5 text-foreground/60" />
             <span className="text-foreground/70">Voir mes heures travaillées cette semaine</span>

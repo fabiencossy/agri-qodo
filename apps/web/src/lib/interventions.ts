@@ -156,6 +156,44 @@ export function useCreateIntervention() {
   });
 }
 
+/** Variante d'Intervention enrichie de l'auteur, renvoyée par /pending. */
+export interface PendingIntervention extends Intervention {
+  authorTenant: { id: string; nom: string; code: string };
+}
+
+/** Interventions PENDING reçues d'un partenaire — à valider/refuser. */
+export function useInterventionsPending() {
+  return useQuery({
+    queryKey: ["interventions", "pending"] as const,
+    queryFn: () => api<PendingIntervention[]>("/api/interventions/pending"),
+  });
+}
+
+export function useValidateIntervention() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      api<Intervention>(`/api/interventions/${id}/validate`, { method: "POST" }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: QUERY_KEY });
+    },
+  });
+}
+
+export function useRejectIntervention() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason?: string }) =>
+      api<Intervention>(`/api/interventions/${id}/reject`, {
+        method: "POST",
+        body: { reason },
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: QUERY_KEY });
+    },
+  });
+}
+
 export function useDeleteIntervention() {
   const qc = useQueryClient();
   return useMutation({
