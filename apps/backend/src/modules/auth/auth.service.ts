@@ -1,6 +1,7 @@
-import { Injectable, UnauthorizedException } from "@nestjs/common";
+import { ConflictException, Injectable, UnauthorizedException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { JwtService } from "@nestjs/jwt";
+import { type Canton, Prisma, UserRole } from "@prisma/client";
 import * as bcrypt from "bcrypt";
 import { createHash, randomBytes } from "node:crypto";
 import { PrismaService } from "@/common/prisma/prisma.service";
@@ -111,6 +112,67 @@ export class AuthService {
     await this.prisma.refreshToken.updateMany({
       where: { userId, revokedAt: null },
       data: { revokedAt: new Date() },
+    });
+  }
+
+  /**
+   * Création d'une nouvelle exploitation + utilisateur OWNER + login
+   * direct. Sert au signup public depuis la landing.
+   *
+   * - Une transaction atomique : Exploitation + User créés ou rien.
+   * - Code exploitation auto-généré format `AQ-{canton}-{token4}`.
+   * - Conflit si l'email est déjà pris pour cette exploitation (= toujours,
+   *   car nouvelle exploitation = aucun user existant à ce stade) — donc
+   *   on garde l'erreur P2002 mappée en 409.
+   */
+  async register(input: {
+    email: string;
+    password: string;
+    prenom: string;
+    nom: string;
+    exploitationNom: string;
+    canton: Canton;
+  }): Promise<AuthTokens> {
+    const passwordHash = await bcrypt.hash(input.password, 10);
+    const code = `AQ-${input.canton}-${randomBytes(2).toString("hex").toUpperCase()}`;
+
+    let user;
+    try {
+      user = await this.prisma.$transaction(async (tx) => {
+        const exploitation = await tx.exploitation.create({
+          data: {
+            code,
+            nom: input.exploitationNom.trim(),
+            canton: input.canton,
+            emailContact: input.email.trim().toLowerCase(),
+          },
+        });
+        return tx.user.create({
+          data: {
+            email: input.email.trim().toLowerCase(),
+            passwordHash,
+            prenom: input.prenom.trim(),
+            nom: input.nom.trim(),
+            role: UserRole.OWNER,
+            tenantId: exploitation.id,
+          },
+        });
+      });
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+        throw new ConflictException(
+          "Un compte existe déjà avec cet email pour cette exploitation.",
+        );
+      }
+      throw err;
+    }
+
+    return this.issueTokens({
+      sub: user.id,
+      tenantId: user.tenantId,
+      email: user.email,
+      role: user.role,
+      tenantIds: [user.tenantId],
     });
   }
 

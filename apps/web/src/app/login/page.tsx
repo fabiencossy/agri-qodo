@@ -2,6 +2,7 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { ShieldCheck, Sparkles } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { useForm } from "react-hook-form";
@@ -163,7 +164,13 @@ export default function LoginPage() {
           </Button>
         </form>
 
-        <p className="mt-6 text-center text-xs text-foreground/50">
+        <p className="mt-6 text-center text-sm">
+          Pas encore de compte ?{" "}
+          <Link href="/signup" className="font-medium text-green underline">
+            Créer mon exploitation
+          </Link>
+        </p>
+        <p className="mt-2 text-center text-xs text-foreground/50">
           Stockage local des données — vous pouvez travailler hors ligne.
         </p>
       </div>
