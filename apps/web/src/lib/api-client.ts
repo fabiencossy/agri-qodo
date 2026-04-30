@@ -98,8 +98,22 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
       const newTokens = await refreshTokens();
       headers.Authorization = `Bearer ${newTokens.accessToken}`;
       res = await fetch(url, init);
-    } catch {
+      // Si la 2e tentative retourne aussi 401 → le refresh JWT est valide
+      // mais le user/tenant n'existe plus en DB (ex: tenant purgé). On
+      // force le logout pour éviter une boucle.
+      if (res.status === 401) {
+        clearStoredTokens();
+        if (typeof window !== "undefined" && !window.location.pathname.startsWith("/login")) {
+          window.location.assign("/login");
+        }
+        throw new AuthError("Session invalide — tenant introuvable");
+      }
+    } catch (err) {
+      if (err instanceof AuthError) throw err;
       clearStoredTokens();
+      if (typeof window !== "undefined" && !window.location.pathname.startsWith("/login")) {
+        window.location.assign("/login");
+      }
       throw new AuthError();
     }
   }
