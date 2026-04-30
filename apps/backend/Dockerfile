@@ -22,8 +22,12 @@ RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml .npmrc ./
 COPY apps/backend/package.json apps/backend/
 COPY packages/domain/package.json packages/domain/
+COPY packages/odoo-client/package.json packages/odoo-client/
 
-RUN pnpm install --frozen-lockfile --filter @agri-qodo/backend... --filter @agri-qodo/domain
+RUN pnpm install --frozen-lockfile \
+  --filter @agri-qodo/backend... \
+  --filter @agri-qodo/domain \
+  --filter @agri-qodo/odoo-client
 
 # -----------------------------------------------------------
 # Stage 2 — build (Prisma generate + nest build)
@@ -33,10 +37,14 @@ WORKDIR /app
 
 COPY tsconfig.base.json ./
 COPY packages/domain/ packages/domain/
+COPY packages/odoo-client/ packages/odoo-client/
 COPY apps/backend/ apps/backend/
 
-# Build du package domain (CJS) puis du backend.
+# Build des packages workspace (CJS) puis du backend. odoo-client doit
+# être buildé AVANT le backend car le backend l'importe en runtime via
+# `dist/`.
 RUN pnpm --filter @agri-qodo/domain build \
+  && pnpm --filter @agri-qodo/odoo-client build \
   && pnpm --filter @agri-qodo/backend exec prisma generate \
   && pnpm --filter @agri-qodo/backend build
 
@@ -62,6 +70,8 @@ COPY --from=builder /app/apps/backend/prisma ./apps/backend/prisma
 COPY --from=builder /app/apps/backend/package.json ./apps/backend/
 COPY --from=builder /app/packages/domain/dist ./packages/domain/dist
 COPY --from=builder /app/packages/domain/package.json ./packages/domain/
+COPY --from=builder /app/packages/odoo-client/dist ./packages/odoo-client/dist
+COPY --from=builder /app/packages/odoo-client/package.json ./packages/odoo-client/
 
 EXPOSE 3001
 
