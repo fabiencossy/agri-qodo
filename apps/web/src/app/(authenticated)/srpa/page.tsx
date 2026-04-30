@@ -1,10 +1,11 @@
 "use client";
 
-import { ClipboardList, Plus, Trash2 } from "lucide-react";
+import { ClipboardList, Download, Plus, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useMemo } from "react";
 import { Breadcrumb } from "@/components/app/breadcrumb";
 import { PageHeader } from "@/components/app/page-header";
+import { downloadCsv } from "@/lib/export-csv";
 import { Button } from "@/components/ui/button";
 import {
   emojiCategorie,
@@ -52,6 +53,23 @@ export default function SrpaPage() {
               ? `${sorties.data.length} sortie${sorties.data.length > 1 ? "s" : ""} enregistrée${sorties.data.length > 1 ? "s" : ""}`
               : "Chargement…"
           }
+          menuActions={[
+            {
+              label: "Exporter en CSV",
+              icon: Download,
+              disabled: !sorties.data || sorties.data.length === 0,
+              onClick: () => {
+                if (!sorties.data) return;
+                downloadCsv("srpa", sorties.data, [
+                  { header: "Date", value: (s) => s.date.slice(0, 10) },
+                  { header: "Catégorie", value: (s) => libelleCategorie(s.categorie) },
+                  { header: "Nombre d'animaux", value: (s) => s.nombreAnimaux ?? "" },
+                  { header: "Durée (minutes)", value: (s) => s.dureeMinutes ?? "" },
+                  { header: "Notes", value: (s) => s.notes ?? "" },
+                ]);
+              },
+            },
+          ]}
         />
 
         {sorties.isError && (

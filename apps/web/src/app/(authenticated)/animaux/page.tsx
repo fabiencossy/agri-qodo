@@ -7,7 +7,7 @@
  * recherche Odoo-like, filtres, regroupements, favoris). En haut :
  * total UGB + bouton import BDTA. Plus de "vue compteurs" séparée.
  */
-import { Beef, Upload } from "lucide-react";
+import { Beef, Download, Upload } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
@@ -15,6 +15,7 @@ import { ImportBdtaDialog } from "@/components/animaux/import-bdta-dialog";
 import { Breadcrumb } from "@/components/app/breadcrumb";
 import { PageHeader } from "@/components/app/page-header";
 import { Button } from "@/components/ui/button";
+import { downloadCsv } from "@/lib/export-csv";
 import {
   type FilterOption,
   type GroupByOption,
@@ -296,6 +297,38 @@ export default function CheptelPage() {
               label: "Importer depuis BDTA",
               icon: Upload,
               onClick: () => setImportOpen(true),
+            },
+            {
+              label: "Exporter en CSV",
+              icon: Download,
+              disabled: animaux.length === 0,
+              onClick: () => {
+                downloadCsv("cheptel", animaux, [
+                  { header: "N° boucle", value: (a) => a.numeroBoucle ?? "" },
+                  { header: "Nom", value: (a) => a.nom ?? "" },
+                  { header: "Catégorie", value: (a) => libelleCategorie(a.categorie) },
+                  {
+                    header: "Famille",
+                    value: (a) => FAMILLE_BY_CATEGORIE[a.categorie],
+                  },
+                  {
+                    header: "Sexe",
+                    value: (a) => (a.sexe === "M" ? "Mâle" : a.sexe === "F" ? "Femelle" : ""),
+                  },
+                  {
+                    header: "Date de naissance",
+                    value: (a) => (a.dateNaissance ? a.dateNaissance.slice(0, 10) : ""),
+                  },
+                  {
+                    header: "Date de mort",
+                    value: (a) => (a.dateMort ? a.dateMort.slice(0, 10) : ""),
+                  },
+                  { header: "Usage", value: (a) => libelleUsage(a.usage) },
+                  { header: "Label", value: (a) => libelleLabel(a.secteurLabel) },
+                  { header: "Statut BVD", value: (a) => a.statutBvd ?? "" },
+                  { header: "Actif", value: (a) => (a.isActive ? "oui" : "non") },
+                ]);
+              },
             },
           ]}
         />

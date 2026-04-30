@@ -1,12 +1,13 @@
 "use client";
 
-import { FileUp, LayoutGrid, Map as MapIcon, MapPin, Plus, Trash2 } from "lucide-react";
+import { Download, FileUp, LayoutGrid, Map as MapIcon, MapPin, Plus, Trash2 } from "lucide-react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useState } from "react";
 import { Breadcrumb } from "@/components/app/breadcrumb";
 import { PageHeader } from "@/components/app/page-header";
 import { Button } from "@/components/ui/button";
+import { downloadCsv } from "@/lib/export-csv";
 import {
   formatSurface,
   libelleZone,
@@ -83,6 +84,25 @@ export default function ParcellesPage() {
               label: "Importer un fichier",
               icon: FileUp,
               href: "/parcelles/import",
+            },
+            {
+              label: "Exporter en CSV",
+              icon: Download,
+              disabled: !parcelles.data || parcelles.data.length === 0,
+              onClick: () => {
+                if (!parcelles.data) return;
+                downloadCsv("parcelles", parcelles.data, [
+                  { header: "Nom", value: (p) => p.nom },
+                  { header: "Surface (m²)", value: (p) => p.surfaceM2 },
+                  {
+                    header: "Surface (ha)",
+                    value: (p) => (Number(p.surfaceM2) / 10000).toFixed(2),
+                  },
+                  { header: "Zone", value: (p) => libelleZone(p.zone) },
+                  { header: "Identifiant cadastral", value: (p) => p.identifiantCadastral ?? "" },
+                  { header: "Notes", value: (p) => p.notes ?? "" },
+                ]);
+              },
             },
           ]}
         />

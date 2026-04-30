@@ -7,11 +7,12 @@
  * Le travail = mission/prestation/opération avec lignes produits +
  * lignes heures. Cf project_agri_qodo_travaux_timesheet.
  */
-import { ClipboardList, Plus } from "lucide-react";
+import { ClipboardList, Download, Plus } from "lucide-react";
 import Link from "next/link";
 import { useMemo } from "react";
 import { Breadcrumb } from "@/components/app/breadcrumb";
 import { PageHeader } from "@/components/app/page-header";
+import { downloadCsv } from "@/lib/export-csv";
 import { Button } from "@/components/ui/button";
 import {
   type FilterOption,
@@ -168,6 +169,30 @@ export default function TravauxPage() {
           title="Travaux"
           icon={ClipboardList}
           subtitle="Produits + heures dans une seule saisie. Facturation Odoo automatique."
+          menuActions={[
+            {
+              label: "Exporter en CSV",
+              icon: Download,
+              disabled: travaux.length === 0,
+              onClick: () => {
+                downloadCsv("travaux", travaux, [
+                  { header: "Date", value: (t) => t.date.slice(0, 10) },
+                  { header: "Titre", value: (t) => t.titre },
+                  { header: "Client", value: (t) => t.partenaire?.nom ?? "" },
+                  { header: "Parcelle", value: (t) => t.parcelle?.nom ?? "" },
+                  { header: "Statut", value: (t) => STATUT_LABEL[t.statut] },
+                  { header: "Interne", value: (t) => (t.interne ? "oui" : "non") },
+                  {
+                    header: "Heures totales",
+                    value: (t) =>
+                      formatDuree(t.lignesHeure.reduce((s, l) => s + l.dureeMinutes, 0)),
+                  },
+                  { header: "Total CHF HT", value: (t) => totalTravailCHF(t).toFixed(2) },
+                  { header: "Notes", value: (t) => t.notes ?? "" },
+                ]);
+              },
+            },
+          ]}
         />
 
         {travauxQuery.isError && (
