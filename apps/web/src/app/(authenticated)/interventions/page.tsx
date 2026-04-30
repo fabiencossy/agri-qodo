@@ -1,10 +1,11 @@
 "use client";
 
-import { Plus, Sprout, Trash2 } from "lucide-react";
+import { Download, Plus, Sprout, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { Breadcrumb } from "@/components/app/breadcrumb";
 import { PageHeader } from "@/components/app/page-header";
 import { Button } from "@/components/ui/button";
+import { downloadCsv } from "@/lib/export-csv";
 import {
   colorType,
   emojiType,
@@ -37,6 +38,32 @@ export default function InterventionsPage() {
               ? `${interventions.data.length} intervention${interventions.data.length > 1 ? "s" : ""}`
               : "Chargement…"
           }
+          menuActions={[
+            {
+              label: "Exporter en CSV",
+              icon: Download,
+              disabled: !interventions.data || interventions.data.length === 0,
+              onClick: () => {
+                if (!interventions.data) return;
+                downloadCsv("interventions", interventions.data, [
+                  {
+                    header: "Date",
+                    value: (iv) => new Date(iv.dateOperation).toISOString().slice(0, 10),
+                  },
+                  { header: "Type", value: (iv) => libelleType(iv.type) },
+                  { header: "Parcelle", value: (iv) => iv.parcelle?.nom ?? "" },
+                  { header: "Produit", value: (iv) => iv.produit ?? "" },
+                  { header: "Quantité", value: (iv) => iv.quantite ?? "" },
+                  { header: "Unité", value: (iv) => iv.unite ?? "" },
+                  {
+                    header: "Surface travaillée (m²)",
+                    value: (iv) => iv.surfaceTravailleeM2 ?? "",
+                  },
+                  { header: "Notes", value: (iv) => iv.notes ?? "" },
+                ]);
+              },
+            },
+          ]}
         />
 
         {interventions.isError && (

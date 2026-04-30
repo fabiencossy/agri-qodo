@@ -18,6 +18,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock,
+  Download,
   LayoutGrid,
   Plus,
 } from "lucide-react";
@@ -26,6 +27,7 @@ import { useMemo, useState } from "react";
 import { Breadcrumb } from "@/components/app/breadcrumb";
 import { PageHeader } from "@/components/app/page-header";
 import { Button } from "@/components/ui/button";
+import { downloadCsv } from "@/lib/export-csv";
 import {
   formatCHF,
   formatDuree,
@@ -138,6 +140,33 @@ export default function MesHeuresPage() {
           title="Mes heures"
           icon={Clock}
           subtitle="Tes heures viennent automatiquement des travaux. Pas de double saisie."
+          menuActions={[
+            {
+              label: "Exporter en CSV",
+              icon: Download,
+              disabled: lignes.length === 0,
+              onClick: () => {
+                downloadCsv("mes-heures", lignes, [
+                  { header: "Date", value: (l) => l.travail.date.slice(0, 10) },
+                  { header: "Travail", value: (l) => l.travail.titre },
+                  { header: "Client", value: (l) => l.travail.partenaire?.nom ?? "" },
+                  { header: "Parcelle", value: (l) => l.travail.parcelle?.nom ?? "" },
+                  { header: "Durée", value: (l) => formatDuree(l.dureeMinutes) },
+                  { header: "Durée (minutes)", value: (l) => l.dureeMinutes },
+                  { header: "Taux CHF/h", value: (l) => l.tauxHoraireCHF ?? "" },
+                  {
+                    header: "Total CHF",
+                    value: (l) =>
+                      l.tauxHoraireCHF
+                        ? ((l.dureeMinutes / 60) * Number(l.tauxHoraireCHF)).toFixed(2)
+                        : "",
+                  },
+                  { header: "Statut travail", value: (l) => STATUT_LABEL[l.travail.statut] },
+                  { header: "Notes", value: (l) => l.notes ?? "" },
+                ]);
+              },
+            },
+          ]}
           rightSlot={
             <div className="inline-flex rounded-lg border border-border bg-background p-1">
               <button
