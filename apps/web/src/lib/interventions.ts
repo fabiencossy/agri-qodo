@@ -93,6 +93,8 @@ export interface CreateInterventionInput {
   materielId?: string;
   /** Surface effective en hectares — quantité facturée si matériel tarifé HA. */
   surfaceHa?: number;
+  /** Rendement à l'hectare (optionnel). Typique sur RECOLTE — unité héritée de `unite`. */
+  rendementParHa?: number;
   quantite?: number;
   unite?: string;
   surfaceTravailleeM2?: number;

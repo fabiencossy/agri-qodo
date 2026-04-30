@@ -92,18 +92,20 @@ export default function ActivitesPage() {
 
           <Link
             href="/travaux/new"
-            className="group flex flex-col items-start gap-4 rounded-3xl border-2 border-violet-300/60 bg-violet-50 p-6 transition-all hover:border-violet-500 hover:shadow-lg active:scale-[0.99] sm:p-8 dark:bg-violet-950/30 dark:border-violet-800"
+            className="group flex flex-col items-start gap-4 rounded-3xl border-2 border-violet-200 bg-white p-6 transition-all hover:border-violet-500 hover:shadow-lg active:scale-[0.99] sm:p-8 dark:border-violet-800 dark:bg-zinc-900"
           >
             <span className="flex h-20 w-20 items-center justify-center rounded-2xl bg-violet-600 text-white shadow-md transition-transform group-hover:scale-105 sm:h-24 sm:w-24">
               <Briefcase className="h-10 w-10 sm:h-12 sm:w-12" />
             </span>
             <span className="block">
-              <span className="block text-xl font-bold sm:text-2xl">Saisir une prestation</span>
-              <span className="mt-1 block text-sm text-foreground/70 sm:text-base">
+              <span className="block text-xl font-bold text-foreground sm:text-2xl">
+                Saisir une prestation
+              </span>
+              <span className="mt-1 block text-sm text-foreground/80 sm:text-base">
                 Prestation pour un client (balles rondes, transport…) ou interne (mécanique).
               </span>
             </span>
-            <span className="mt-auto inline-flex items-center gap-2 text-sm font-medium text-violet-700 dark:text-violet-300">
+            <span className="mt-auto inline-flex items-center gap-2 text-sm font-semibold text-violet-700 dark:text-violet-300">
               Pour un client ou interne <span aria-hidden>→</span>
             </span>
           </Link>
@@ -157,9 +159,9 @@ export default function ActivitesPage() {
             </Link>
             <Link
               href="/travaux"
-              className="rounded-xl border border-border bg-violet-50 p-3 text-center transition-colors hover:border-violet-300 hover:bg-violet-100 dark:bg-violet-950/30 dark:hover:bg-violet-950/50"
+              className="rounded-xl border border-violet-200 bg-white p-3 text-center transition-colors hover:border-violet-400 hover:bg-violet-50 dark:border-violet-800 dark:bg-zinc-900 dark:hover:bg-violet-950/30"
             >
-              <div className="text-2xl font-bold text-violet-700 sm:text-3xl dark:text-violet-300">
+              <div className="text-2xl font-bold text-violet-800 sm:text-3xl dark:text-violet-200">
                 {travauxSemaine.length}
               </div>
               <div className="mt-0.5 text-xs text-foreground/70">

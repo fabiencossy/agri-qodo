@@ -94,6 +94,17 @@ export class CreateInterventionDto {
 
   @ApiPropertyOptional({
     description:
+      "Rendement à l'hectare (optionnel). Typique sur RECOLTE : 80 q/ha de blé, 12 t/ha de maïs. Unité héritée de `unite`.",
+    example: 80,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 3 })
+  @Min(0)
+  rendementParHa?: number;
+
+  @ApiPropertyOptional({
+    description:
       "Surface réellement concernée en m². Omettre ou null = toute la parcelle. Si `geomGeoJson` est fourni, cette valeur est ignorée et recalculée depuis le polygone.",
     example: 5000,
   })

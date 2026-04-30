@@ -135,11 +135,59 @@ function mapCategorie(...labels: Array<string | undefined>): MaterielCategorie {
 export class MaterielsOdooSyncService {
   private readonly logger = new Logger(MaterielsOdooSyncService.name);
 
+  // Cache mémoire (par tenant) du mapping unité agri-qodo → uom.uom Odoo.
+  // Évite les lookup uom.uom à chaque création de produit.
+  private readonly uomCache = new Map<string, Map<MaterielUnite, number>>();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly tenantContext: TenantContextService,
     private readonly odooClientManager: OdooClientManager,
   ) {}
+
+  /**
+   * Résout l'id `uom.uom` Odoo correspondant à l'unité agri-qodo. Lookup
+   * tolérant sur le nom (Odoo expose "Hectare(s)", "m³", "Tonne(s)",
+   * "Heure(s)", "Unité(s)"). Cache en mémoire par tenant pour éviter le
+   * lookup répété.
+   */
+  private async resolveUomId(
+    client: import("@agri-qodo/odoo-client").OdooClient,
+    tenantId: string,
+    unite: MaterielUnite,
+  ): Promise<number | null> {
+    let cache = this.uomCache.get(tenantId);
+    if (!cache) {
+      cache = new Map();
+      this.uomCache.set(tenantId, cache);
+    }
+    const cached = cache.get(unite);
+    if (cached !== undefined) return cached || null;
+
+    const candidates: Record<MaterielUnite, string[]> = {
+      HA: ["Hectare(s)", "Hectare", "ha"],
+      M3: ["m³", "m3", "Mètre(s) cube", "Mètre cube"],
+      T: ["Tonne(s)", "Tonne", "t"],
+      H: ["Heure(s)", "Heure", "hour", "h"],
+      FORFAIT: ["Unité(s)", "Units", "Unit"],
+    };
+    for (const name of candidates[unite]) {
+      try {
+        const found = await client.searchRead<{ id: number }>("uom.uom", [["name", "=", name]], {
+          fields: ["id"],
+          limit: 1,
+        });
+        if (found.length > 0 && found[0]) {
+          cache.set(unite, found[0].id);
+          return found[0].id;
+        }
+      } catch {
+        // Continue trying next candidate
+      }
+    }
+    cache.set(unite, 0); // 0 = not found, on cache pour ne pas relooker
+    return null;
+  }
 
   private assertAdmin(): void {
     const ctx = this.tenantContext.tryGet();
@@ -252,6 +300,10 @@ export class MaterielsOdooSyncService {
 
     const client = await this.odooClientManager.forTenant(tenantId);
 
+    // Résout l'unité de mesure Odoo correspondant à matériel.unite.
+    // Si introuvable, on laisse Odoo prendre l'unité par défaut.
+    const uomId = await this.resolveUomId(client, tenantId, materiel.unite);
+
     let odooId: number;
     try {
       odooId = await client.create("product.product", {
@@ -261,6 +313,9 @@ export class MaterielsOdooSyncService {
         // Code interne traçable côté Odoo — repère que ce service a été
         // créé par agri-qodo.
         default_code: `AQ-${materiel.code}`,
+        // Unité de mesure (uom.uom Odoo) — sert à afficher "ha" / "m³" /
+        // "t" / "h" sur le sale.order au lieu du défaut "Unité(s)".
+        ...(uomId ? { uom_id: uomId, uom_po_id: uomId } : {}),
       });
     } catch (err) {
       this.logger.error(
