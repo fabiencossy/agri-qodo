@@ -282,6 +282,12 @@ model User {
   // tard. Pour l'instant on n'aborte rien si null, mais on affiche un
   // banner UI "Vérifie ton email".
   emailVerifiedAt DateTime? @map("email_verified_at")
+  // Consentement CGU + politique de confidentialité (nFADP/RGPD).
+  // null = pas accepté (cas users créés avant la mise en place).
+  // version = identifiant de la version acceptée (ex "2026-04-30") —
+  // re-prompt si nouvelle version publiée.
+  cguAcceptedAt   DateTime? @map("cgu_accepted_at")
+  cguVersion      String?   @map("cgu_version")
   createdAt    DateTime  @default(now()) @map("created_at")
   updatedAt    DateTime  @updatedAt @map("updated_at")
 
