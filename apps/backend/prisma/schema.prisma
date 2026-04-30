@@ -432,7 +432,12 @@ model Animal {
   numeroBoucle  String?         @unique @map("numero_boucle") // n° BDTA pour bovins
   nom           String?
   categorie     AnimalCategorie
+  sexe          String?         // M | F
   dateNaissance DateTime?       @map("date_naissance")
+  dateMort      DateTime?       @map("date_mort") // null = vivant
+  usage         String?         // laitiere | allaitante | engraissement | reproduction | jeune | autre
+  secteurLabel  String?         @map("secteur_label") // bio | ips | per | conventionnel | suisse-garantie | autre
+  statutBvd     String?         @map("statut_bvd") // frei | suspect | positif | vaccine | exempt
   lotId         String?         @map("lot_id")
   isActive      Boolean         @default(true) @map("is_active")
   // Verrou optimiste pour résolution de conflits offline
