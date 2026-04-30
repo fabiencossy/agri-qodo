@@ -11,7 +11,7 @@ import { useCurrentTenant } from "@/lib/auth";
 export function TopBar({ onMenuClick }: { onMenuClick: () => void }) {
   const tenant = useCurrentTenant();
   return (
-    <header className="sticky top-0 z-30 h-14 border-b border-border bg-background/80 backdrop-blur lg:hidden">
+    <header className="sticky top-0 z-[8000] h-14 border-b border-border bg-background/80 backdrop-blur lg:hidden">
       <div className="flex h-full items-center gap-3 px-4">
         <button
           onClick={onMenuClick}

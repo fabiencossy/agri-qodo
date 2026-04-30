@@ -42,7 +42,6 @@ const NAVIGATION: NavLink[] = [
   { href: "/srpa", label: "SRPA — sorties pâturage", icon: ClipboardList },
   { href: "/travaux", label: "Travaux", icon: Briefcase, requiresOdoo: true },
   { href: "/mes-heures", label: "Mes heures", icon: Clock, requiresOdoo: true },
-  { href: "/produits", label: "Catalogue produits", icon: Package },
 ];
 
 const PILOTAGE: NavLink[] = [
@@ -55,6 +54,7 @@ const PILOTAGE: NavLink[] = [
 const ADMINISTRATION: NavLink[] = [
   { href: "/utilisateurs", label: "Utilisateurs", icon: Users },
   { href: "/partenaires", label: "Partenaires", icon: Handshake },
+  { href: "/produits", label: "Catalogue produits", icon: Package },
   { href: "/parametres", label: "Paramètres", icon: Cog },
 ];
 
