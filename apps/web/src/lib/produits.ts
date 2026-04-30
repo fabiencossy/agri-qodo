@@ -86,6 +86,25 @@ export function useDeleteProduit() {
   });
 }
 
+export interface SyncOdooProduitsResult {
+  total: number;
+  created: number;
+  updated: number;
+  skipped: number;
+  errors: Array<{ odooId: number; raison: string }>;
+}
+
+/** Lance la synchro `product.product` depuis Odoo. Admin only côté backend. */
+export function useSyncProduitsOdoo() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api<SyncOdooProduitsResult>("/api/produits/sync-odoo", { method: "POST" }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: KEY });
+    },
+  });
+}
+
 export const CATEGORIE_LABEL: Record<ProduitCategorie, string> = {
   SEMENCE: "Semences",
   ENGRAIS_MINERAL: "Engrais minéraux",

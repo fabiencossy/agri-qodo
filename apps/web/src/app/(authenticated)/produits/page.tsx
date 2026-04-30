@@ -1,18 +1,22 @@
 "use client";
 
-import { Package, Plus, Trash2 } from "lucide-react";
+import { Package, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Breadcrumb } from "@/components/app/breadcrumb";
+import { PageHeader } from "@/components/app/page-header";
 import { Button } from "@/components/ui/button";
 import { useCurrentUser } from "@/lib/auth";
+import { useOdooConnected } from "@/lib/odoo-config";
 import {
   CATEGORIE_LABEL,
   CATEGORIES_ORDER,
   type Produit,
   type ProduitCategorie,
+  type SyncOdooProduitsResult,
   UNITE_LABEL,
   useDeleteProduit,
   useProduits,
+  useSyncProduitsOdoo,
 } from "@/lib/produits";
 import { NewProduitDialog } from "./new-produit-dialog";
 
@@ -23,10 +27,19 @@ function formatCHF(n: number): string {
 export default function ProduitsPage() {
   const [filtre, setFiltre] = useState<ProduitCategorie | "ALL">("ALL");
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [syncResult, setSyncResult] = useState<SyncOdooProduitsResult | null>(null);
   const produits = useProduits(filtre === "ALL" ? undefined : filtre);
   const deleteMut = useDeleteProduit();
+  const syncOdoo = useSyncProduitsOdoo();
   const me = useCurrentUser();
+  const odoo = useOdooConnected();
   const isAdmin = me.data?.role === "OWNER" || me.data?.role === "COMPTABLE";
+
+  const handleSyncOdoo = () => {
+    syncOdoo.mutate(undefined, {
+      onSuccess: (r) => setSyncResult(r),
+    });
+  };
 
   const grouped = useMemo(() => {
     const map = new Map<ProduitCategorie, Produit[]>();
@@ -49,23 +62,60 @@ export default function ProduitsPage() {
   return (
     <>
       <Breadcrumb items={[{ label: "Accueil", href: "/app" }, { label: "Catalogue produits" }]} />
-      <div className="mx-auto max-w-5xl px-4 py-8">
-        <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
-          <div>
-            <h1 className="flex items-center gap-2 text-3xl font-bold">
-              <Package className="h-7 w-7 text-green" />
-              Catalogue produits
-            </h1>
-            <p className="mt-1 text-foreground/70">
-              Semences, engrais et phytos disponibles à la saisie. Crée tes propres références pour
-              des variétés spécifiques ou mélanges maison.
+      <div className="mx-auto max-w-5xl px-2 py-4 sm:px-4 sm:py-8">
+        <PageHeader
+          title="Catalogue produits"
+          icon={Package}
+          subtitle="Semences, engrais, phytos. Crée tes références ou synchronise depuis Odoo."
+          rightSlot={
+            <Button onClick={() => setDialogOpen(true)} size="sm">
+              <Plus className="h-4 w-4 sm:mr-1" />
+              <span className="hidden sm:inline">Nouveau</span>
+            </Button>
+          }
+          menuActions={
+            isAdmin && odoo.connected
+              ? [
+                  {
+                    label: syncOdoo.isPending
+                      ? "Synchronisation en cours…"
+                      : "Synchroniser depuis Odoo",
+                    icon: RefreshCw,
+                    disabled: syncOdoo.isPending,
+                    onClick: handleSyncOdoo,
+                  },
+                ]
+              : []
+          }
+        />
+
+        {syncResult && (
+          <div className="mb-4 rounded-xl border border-green/30 bg-green/5 p-4 text-sm">
+            <p className="font-medium text-green-dark">
+              ✓ Sync Odoo terminée : {syncResult.created} créés · {syncResult.updated} mis à jour ·{" "}
+              {syncResult.skipped} ignorés
+              {syncResult.total > 0 && ` (sur ${syncResult.total} produits Odoo)`}
             </p>
+            {syncResult.errors.length > 0 && (
+              <details className="mt-2 text-xs text-foreground/70">
+                <summary className="cursor-pointer">{syncResult.errors.length} erreur(s)</summary>
+                <ul className="mt-1 list-disc pl-5">
+                  {syncResult.errors.slice(0, 5).map((e, i) => (
+                    <li key={i}>
+                      Odoo #{e.odooId} : {e.raison}
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            )}
           </div>
-          <Button onClick={() => setDialogOpen(true)}>
-            <Plus className="mr-2 h-4 w-4" />
-            Nouveau produit perso
-          </Button>
-        </div>
+        )}
+
+        {syncOdoo.isError && (
+          <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+            Sync Odoo échouée. Vérifie la config dans Paramètres → Odoo.
+          </div>
+        )}
 
         <div className="mb-4 flex flex-wrap gap-2">
           <FiltreChip active={filtre === "ALL"} onClick={() => setFiltre("ALL")} label="Tous" />

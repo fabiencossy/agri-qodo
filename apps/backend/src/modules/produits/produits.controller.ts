@@ -18,6 +18,7 @@ import { ProduitCategorie } from "@prisma/client";
 import { JwtAuthGuard } from "@/modules/auth/guards/jwt-auth.guard";
 import { CreateProduitDto } from "./dto/create-produit.dto";
 import { UpdateProduitDto } from "./dto/update-produit.dto";
+import { OdooSyncService } from "./odoo-sync.service";
 import { ProduitsService } from "./produits.service";
 
 @ApiTags("produits")
@@ -25,7 +26,10 @@ import { ProduitsService } from "./produits.service";
 @UseGuards(JwtAuthGuard)
 @Controller("produits")
 export class ProduitsController {
-  constructor(private readonly service: ProduitsService) {}
+  constructor(
+    private readonly service: ProduitsService,
+    private readonly odooSync: OdooSyncService,
+  ) {}
 
   @Get()
   @ApiOperation({
@@ -48,6 +52,15 @@ export class ProduitsController {
   @ApiOperation({ summary: "Crée un produit perso (tenant)." })
   create(@Body() dto: CreateProduitDto) {
     return this.service.create(dto);
+  }
+
+  @Post("sync-odoo")
+  @ApiOperation({
+    summary:
+      "Synchronise le catalogue depuis Odoo (product.product). Admin uniquement. Crée les nouveaux + met à jour les existants par odooProductId.",
+  })
+  syncOdoo() {
+    return this.odooSync.syncProduits();
   }
 
   @Patch(":id")
