@@ -88,14 +88,49 @@ enum TechniqueEpandage {
 }
 
 enum AnimalCategorie {
+  // Bovins
   VACHE_LAITIERE
+  VACHE_ALLAITANTE
   GENISSE
   VEAU
   TAUREAU
   BOEUF
   AUTRE_BOVIN
+  // Ovins
+  BREBIS
+  AGNEAU
+  BELIER
+  // Caprins
+  CHEVRE
+  CABRI
+  BOUC
+  // Équidés
+  CHEVAL_ADULTE
+  POULAIN
+  ANE
+  // Cervidés
+  CERF
+  DAIM
+  // Camélidés
+  LAMA
+  ALPAGA
+  // Porcs (détaillés)
   PORC
+  TRUIE
+  PORCELET
+  // Volailles
   POULET
+  POULE_PONDEUSE
+  DINDE
+  OIE
+  CANARD
+  PINTADE
+  CAILLE
+  // Petits élevages
+  LAPIN
+  ABEILLE_RUCHE
+  // Autres
+  BISON
   AUTRE
 }
 
