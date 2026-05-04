@@ -182,10 +182,21 @@ export class PresencesService {
     });
   }
 
-  /** Modification manuelle d'une présence (admin ou self pour les notes/type). */
+  /**
+   * Modification manuelle d'une présence (admin ou self). Recalcule
+   * `dureeMinutes` automatiquement si `dateDebut` et/ou `dateFin`
+   * changent. Permet la correction de saisies passées (oubli de
+   * pointage, erreur d'heure).
+   */
   async update(
     id: string,
-    dto: { type?: import("@prisma/client").PresenceType; travailId?: string; notes?: string },
+    dto: {
+      type?: import("@prisma/client").PresenceType;
+      dateDebut?: string;
+      dateFin?: string;
+      travailId?: string;
+      notes?: string;
+    },
   ) {
     const ctx = this.tenantContext.get();
     const existing = await this.prisma.presence.findFirst({
@@ -193,10 +204,33 @@ export class PresencesService {
     });
     if (!existing) throw new NotFoundException("Présence introuvable");
     if (dto.travailId) await this.assertTravail(dto.travailId);
+
+    // Calcul de la nouvelle durée si l'une des bornes change. On part
+    // toujours des valeurs résultantes (existing fallback) pour gérer
+    // le cas où on ne touche qu'une seule borne.
+    const nextDebut = dto.dateDebut !== undefined ? new Date(dto.dateDebut) : existing.dateDebut;
+    const nextFin =
+      dto.dateFin !== undefined ? (dto.dateFin ? new Date(dto.dateFin) : null) : existing.dateFin;
+    let dureeMinutes: number | null = existing.dureeMinutes;
+    if (dto.dateDebut !== undefined || dto.dateFin !== undefined) {
+      if (nextFin && nextDebut) {
+        const diff = nextFin.getTime() - nextDebut.getTime();
+        if (diff < 0) {
+          throw new BadRequestException("La date de fin doit être après la date de début.");
+        }
+        dureeMinutes = Math.round(diff / 60000);
+      } else {
+        dureeMinutes = null;
+      }
+    }
+
     return this.prisma.presence.update({
       where: { id },
       data: {
         ...(dto.type !== undefined ? { type: dto.type } : {}),
+        ...(dto.dateDebut !== undefined ? { dateDebut: nextDebut } : {}),
+        ...(dto.dateFin !== undefined ? { dateFin: nextFin } : {}),
+        ...(dto.dateDebut !== undefined || dto.dateFin !== undefined ? { dureeMinutes } : {}),
         ...(dto.travailId !== undefined ? { travailId: dto.travailId || null } : {}),
         ...(dto.notes !== undefined ? { notes: dto.notes || null } : {}),
       },
