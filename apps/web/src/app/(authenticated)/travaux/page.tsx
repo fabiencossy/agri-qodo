@@ -208,6 +208,7 @@ export default function TravauxPage() {
           defaultView="list"
           data={travaux}
           columns={columns}
+          dateField={(t) => t.date}
           onItemClick={(t) => router.push(`/travaux/${t.id}` as never)}
           renderKanbanCard={(t) => (
             <div>

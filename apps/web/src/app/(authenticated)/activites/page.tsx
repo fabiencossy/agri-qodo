@@ -194,6 +194,7 @@ export default function ActivitesPage() {
             renderCard={renderInterventionCard}
             renderKanbanCard={renderInterventionCard}
             getKey={(iv) => iv.id}
+            dateField={(iv) => iv.dateOperation}
             onItemClick={(iv) => router.push(`/interventions/${iv.id}` as never)}
             searchFields={interventionSearchFields}
             searchPlaceholder="Rechercher type, parcelle, produit, culture, notes…"
@@ -218,6 +219,7 @@ export default function ActivitesPage() {
             renderCard={renderTravailCard}
             renderKanbanCard={renderTravailCard}
             getKey={(t) => t.id}
+            dateField={(t) => t.date}
             onItemClick={(t) => router.push(`/travaux/${t.id}` as never)}
             searchFields={travailSearchFields}
             searchPlaceholder="Rechercher titre, client, parcelle…"
