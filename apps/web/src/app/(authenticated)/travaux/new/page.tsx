@@ -22,9 +22,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ParcelleSearchSelect } from "@/components/ui/parcelle-search-select";
 import { PartenaireSelect } from "@/components/ui/partenaire-select";
-import { ProduitSearchSelect } from "@/components/ui/produit-search-select";
 import { useCurrentUser } from "@/lib/auth";
-import { type Produit, useProduits } from "@/lib/produits";
 import {
   type CreateLigneHeureInput,
   type CreateLigneProduitInput,
@@ -84,7 +82,6 @@ export default function NewTravailPage() {
   const update = useUpdateTravail();
   const me = useCurrentUser();
   const users = useUsers();
-  const produits = useProduits();
 
   // Mode édition : ?edit={travailId} → pré-remplit le form depuis l'API.
   const editId = searchParams.get("edit") ?? undefined;
@@ -158,10 +155,6 @@ export default function NewTravailPage() {
     );
   }, [meId, isEditMode]);
 
-  const totalProduits = useMemo(
-    () => lignesProduit.reduce((s, l) => s + (l.prixUnitaireCHF ?? 0) * l.quantite, 0),
-    [lignesProduit],
-  );
   const totalHeures = useMemo(
     () => lignesHeure.reduce((s, l) => s + (l.tauxHoraireCHF ?? 0) * (l.dureeMinutes / 60), 0),
     [lignesHeure],
@@ -172,16 +165,6 @@ export default function NewTravailPage() {
   );
 
   const isChef = me.data?.role === "OWNER";
-
-  const addLigneProduit = () => {
-    setLignesProduit((prev) => [...prev, { uid: uid(), libelle: "", quantite: 0, unite: "kg" }]);
-  };
-  const updateProduit = (idx: number, patch: Partial<DraftLigneProduit>) => {
-    setLignesProduit((prev) => prev.map((l, i) => (i === idx ? { ...l, ...patch } : l)));
-  };
-  const removeProduit = (idx: number) => {
-    setLignesProduit((prev) => prev.filter((_, i) => i !== idx));
-  };
 
   const addLigneHeure = () => {
     setLignesHeure((prev) => [...prev, { uid: uid(), userId: me.data?.id ?? "", dureeMinutes: 0 }]);
@@ -283,114 +266,81 @@ export default function NewTravailPage() {
           </h1>
         </div>
 
-        <form onSubmit={onSubmit} className="space-y-4">
-          {/* ----- Toggle interne en haut ----- */}
-          <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-border bg-background p-4">
+        <form
+          onSubmit={onSubmit}
+          className="space-y-4 rounded-2xl border border-border bg-background p-4 sm:p-6"
+        >
+          {/* Formulaire d'une traite façon qodo-clock — pas de sous-sections,
+            tous les champs s'enchaînent. Suppression de la section "Produits"
+            (review 2026-05-04 : "pas besoin de rajouter des produit, juste
+            des heures"). */}
+          <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-border bg-muted/30 p-3">
             <input
               type="checkbox"
               checked={interne}
               onChange={(e) => setInterne(e.target.checked)}
-              className="mt-1 h-5 w-5 cursor-pointer accent-green"
+              className="mt-0.5 h-5 w-5 cursor-pointer accent-green"
             />
             <span className="flex-1">
               <span className="block text-sm font-semibold">Travail interne (non facturable)</span>
               <span className="mt-0.5 block text-xs text-foreground/60">
-                Pour entretien, formation, déplacement… Pas de client, pas de prix, pas d'export
-                Odoo.
+                Entretien, formation, déplacement… Pas de client, pas de prix, tâche Odoo simple.
               </span>
             </span>
           </label>
 
-          {/* ----- Métadonnées : Date → Client → Parcelle → Titre → Notes ----- */}
-          <section className="space-y-4 rounded-2xl border border-border bg-background p-4 sm:p-6">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-foreground/60">
-              Informations
-            </h2>
-            <Field label="Date">
-              <Input
-                type="date"
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-                className="h-12 text-base"
-              />
-            </Field>
-            {!interne && (
-              <Field label="Client (optionnel)">
-                <PartenaireSelect
-                  value={partenaireId}
-                  onChange={setPartenaireId}
-                  placeholder="Choisir un client lié…"
-                />
-              </Field>
-            )}
-            <Field label="Parcelle (optionnel)">
-              <ParcelleSearchSelect
-                value={parcelleId}
-                onChange={(id) => setParcelleId(id)}
-                placeholder="Choisir une parcelle…"
-              />
-            </Field>
-            <Field label="Titre / description" required>
-              <Input
-                value={titre}
-                onChange={(e) => setTitre(e.target.value)}
-                placeholder="Ex : Récolte champ Loup, Pulvérisation prés…"
-                required
-                className="h-12 text-base"
-              />
-            </Field>
-            <Field label="Notes (optionnel)">
-              <textarea
-                className="min-h-20 w-full rounded-lg border border-border bg-background px-3 py-2 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green"
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                placeholder="Conditions, particularités…"
-              />
-            </Field>
-          </section>
+          <Field label="Date">
+            <Input
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              className="h-12 text-base"
+            />
+          </Field>
 
-          {/* ----- Lignes produits ----- */}
-          <section className="space-y-3 rounded-2xl border border-border bg-background p-4 sm:p-6">
-            <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-foreground/60">
-                Produits ({lignesProduit.length})
-              </h2>
-              <Button type="button" variant="secondary" size="sm" onClick={addLigneProduit}>
-                <Plus className="mr-1 h-4 w-4" />
-                Ajouter
-              </Button>
-            </div>
-            {lignesProduit.length === 0 ? (
-              <p className="text-sm text-foreground/50">
-                Aucun produit. Ajoute des semences, engrais, phytos consommés.
-              </p>
-            ) : (
-              <div className="space-y-3">
-                {lignesProduit.map((l, idx) => (
-                  <LigneProduitRow
-                    key={l.uid}
-                    ligne={l}
-                    produits={produits.data ?? []}
-                    onChange={(patch) => updateProduit(idx, patch)}
-                    onRemove={() => removeProduit(idx)}
-                    showPrice={!interne}
-                  />
-                ))}
-              </div>
-            )}
-            {!interne && totalProduits > 0 && (
-              <p className="text-right text-sm font-medium">
-                Sous-total : <span className="font-mono">{formatCHF(totalProduits)}</span>
-              </p>
-            )}
-          </section>
+          {!interne && (
+            <Field label="Client (optionnel)">
+              <PartenaireSelect
+                value={partenaireId}
+                onChange={setPartenaireId}
+                placeholder="Choisir un client lié…"
+              />
+            </Field>
+          )}
 
-          {/* ----- Lignes heures ----- */}
-          <section className="space-y-3 rounded-2xl border border-border bg-background p-4 sm:p-6">
+          <Field label="Parcelle (optionnel)">
+            <ParcelleSearchSelect
+              value={parcelleId}
+              onChange={(id) => setParcelleId(id)}
+              placeholder="Choisir une parcelle…"
+            />
+          </Field>
+
+          <Field label="Titre / description" required>
+            <Input
+              value={titre}
+              onChange={(e) => setTitre(e.target.value)}
+              placeholder="Ex : Récolte champ Loup, Pulvérisation prés…"
+              required
+              className="h-12 text-base"
+            />
+          </Field>
+
+          <Field label="Notes (optionnel)">
+            <textarea
+              className="min-h-20 w-full rounded-lg border border-border bg-background px-3 py-2 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Conditions, particularités…"
+            />
+          </Field>
+
+          {/* Heures — section flat, sans titre uppercase, juste un label */}
+          <div className="space-y-3 border-t border-border pt-4">
             <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-foreground/60">
-                Heures ({lignesHeure.length})
-              </h2>
+              <span className="text-sm font-medium">
+                Heures{lignesHeure.length > 0 ? ` (${lignesHeure.length})` : ""}
+              </span>
               <Button type="button" variant="secondary" size="sm" onClick={addLigneHeure}>
                 <Plus className="mr-1 h-4 w-4" />
                 Ajouter
@@ -423,14 +373,14 @@ export default function NewTravailPage() {
                 )}
               </p>
             )}
-          </section>
+          </div>
 
-          {/* ----- Total ----- */}
-          {!interne && totalProduits + totalHeures > 0 && (
+          {/* Total — uniquement si facturable */}
+          {!interne && totalHeures > 0 && (
             <div className="rounded-2xl border-2 border-green bg-green/5 p-4 text-right">
               <p className="text-sm text-foreground/60">Total estimé HT</p>
               <p className="font-mono text-2xl font-bold text-green-dark">
-                {formatCHF(totalProduits + totalHeures)}
+                {formatCHF(totalHeures)}
               </p>
             </div>
           )}
@@ -478,94 +428,6 @@ function Field({
       </span>
       {children}
     </label>
-  );
-}
-
-function LigneProduitRow({
-  ligne,
-  onChange,
-  onRemove,
-  showPrice,
-}: {
-  ligne: DraftLigneProduit;
-  produits: Produit[];
-  onChange: (patch: Partial<DraftLigneProduit>) => void;
-  onRemove: () => void;
-  showPrice: boolean;
-}) {
-  return (
-    <div className="grid gap-2 rounded-xl border border-border bg-muted/20 p-3">
-      <div className="grid gap-2 sm:grid-cols-[2fr_auto]">
-        <ProduitSearchSelect
-          categorie="AUTRE"
-          value={ligne.produitId ?? ""}
-          onChange={(id, p) => {
-            onChange({
-              produitId: id || undefined,
-              libelle: p?.libelle ?? ligne.libelle,
-              unite: p?.unite ?? ligne.unite ?? "kg",
-            });
-          }}
-          placeholder="Choisir un produit…"
-        />
-        <button
-          type="button"
-          onClick={onRemove}
-          className="flex h-12 w-12 items-center justify-center rounded-lg border border-border bg-background text-red-700 hover:bg-red-50"
-          aria-label="Supprimer cette ligne"
-        >
-          <Trash2 className="h-4 w-4" />
-        </button>
-      </div>
-      <Input
-        value={ligne.libelle}
-        onChange={(e) => onChange({ libelle: e.target.value })}
-        placeholder="Libellé (auto si produit choisi, sinon libre)"
-        className="h-11"
-      />
-      <div className={`grid gap-2 ${showPrice ? "grid-cols-3" : "grid-cols-2"}`}>
-        <Input
-          type="number"
-          step="0.001"
-          min="0"
-          inputMode="decimal"
-          value={ligne.quantite || ""}
-          onChange={(e) => onChange({ quantite: Number(e.target.value) || 0 })}
-          placeholder="Qté"
-          aria-label="Quantité"
-          className="h-11"
-        />
-        <Input
-          value={ligne.unite ?? ""}
-          onChange={(e) => onChange({ unite: e.target.value })}
-          placeholder="kg"
-          aria-label="Unité"
-          className="h-11"
-        />
-        {showPrice && (
-          <Input
-            type="number"
-            step="0.01"
-            min="0"
-            inputMode="decimal"
-            value={ligne.prixUnitaireCHF ?? ""}
-            onChange={(e) =>
-              onChange({
-                prixUnitaireCHF: e.target.value ? Number(e.target.value) : undefined,
-              })
-            }
-            placeholder="CHF/u"
-            aria-label="Prix unitaire CHF"
-            className="h-11"
-          />
-        )}
-      </div>
-      {showPrice && ligne.prixUnitaireCHF && ligne.quantite > 0 && (
-        <p className="text-right text-xs text-foreground/60">
-          {formatCHF(ligne.prixUnitaireCHF * ligne.quantite)}
-        </p>
-      )}
-    </div>
   );
 }
 
