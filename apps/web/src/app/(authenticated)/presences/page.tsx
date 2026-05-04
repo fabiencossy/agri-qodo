@@ -13,6 +13,7 @@
  */
 
 import { Clock, Pencil, Play, Square, Trash2 } from "lucide-react";
+import { useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Breadcrumb } from "@/components/app/breadcrumb";
 import { PageHeader } from "@/components/app/page-header";
@@ -60,11 +61,21 @@ export default function PresencesPage() {
   const clockOut = useClockOut();
   const deletePresence = useDeletePresence();
 
-  // Champs vides par défaut (review 2026-05-04 : "rien préremplir !"). Si
-  // l'utilisateur clique Play sans rien remplir, le backend prend
-  // automatiquement l'heure actuelle. Les champs servent uniquement à
-  // saisir une présence rétroactive ou à corriger l'heure de fin.
-  const [date, setDate] = useState("");
+  // Date pré-remplie au jour courant (review 2026-05-04 "mets la date du
+  // jour"). Heures restent vides : si l'utilisateur clique Play sans rien
+  // remplir, le backend prend automatiquement l'heure actuelle. Les
+  // champs Heure servent à saisir une présence rétroactive ou à
+  // corriger l'heure de fin.
+  // ?date=YYYY-MM-DD dans l'URL surcharge le défaut (ex: bouton
+  // "+ Ajouter une saisie" depuis /mes-heures qui passe la date du jour
+  // sélectionné dans la grille hebdo).
+  const searchParams = useSearchParams();
+  const dateParam = searchParams?.get("date");
+  const initialDate =
+    dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam)
+      ? dateParam
+      : new Date().toISOString().slice(0, 10);
+  const [date, setDate] = useState(initialDate);
   const [heureDebut, setHeureDebut] = useState("");
   const [heureFin, setHeureFin] = useState("");
 

@@ -22,7 +22,6 @@ import {
   Download,
   LayoutGrid,
   Plus,
-  Tractor,
 } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
@@ -347,7 +346,7 @@ function SemaineView({
         {selectedItems.length === 0 ? (
           <div className="flex flex-col items-center gap-3 px-4 py-10 text-center text-sm text-foreground/50">
             <p>Aucune heure saisie ce jour.</p>
-            <Link href={`/travaux/new?date=${effectiveDayKey}` as never}>
+            <Link href={`/presences?date=${effectiveDayKey}` as never}>
               <Button size="sm">
                 <Plus className="mr-1 h-4 w-4" />
                 Ajouter une saisie
@@ -363,7 +362,7 @@ function SemaineView({
             </ul>
             <div className="border-t border-border bg-muted/10 px-4 py-2 text-right">
               <Link
-                href={`/travaux/new?date=${effectiveDayKey}` as never}
+                href={`/presences?date=${effectiveDayKey}` as never}
                 className="inline-flex items-center gap-1 text-xs font-medium text-green hover:text-green-dark"
               >
                 <Plus className="h-3 w-3" />
@@ -439,10 +438,10 @@ function ListeView({
     return (
       <div className="rounded-xl border border-dashed border-border bg-muted/30 p-8 text-center">
         <p className="mb-3 text-sm text-foreground/60">Aucune heure pour cette semaine.</p>
-        <Link href="/travaux/new">
+        <Link href="/presences">
           <Button variant="secondary">
-            <Tractor className="mr-1 h-4 w-4" />
-            Créer un travail
+            <Plus className="mr-1 h-4 w-4" />
+            Pointer mes heures
           </Button>
         </Link>
       </div>
