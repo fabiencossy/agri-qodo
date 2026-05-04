@@ -267,6 +267,12 @@ model Exploitation {
   /// Pratique pour les ETA qui travaillent sous une seule étiquette.
   defaultProjetTravauxTiersId String? @map("default_projet_travaux_tiers_id")
   defaultProjetTravauxTiers   Projet? @relation("DefaultProjetTravauxTiers", fields: [defaultProjetTravauxTiersId], references: [id], onDelete: SetNull)
+  /// Suivi des heures sur toutes les activités (PRD fusion v0.2 §3.2).
+  /// Quand true (défaut) : champs heures + employé(s) présents sur les
+  /// 3 onglets (Carnet, Travail tiers, Travail interne) — l'OWNER peut
+  /// suivre ce que chaque employé a fait. Quand false : champs heures
+  /// masqués, le carnet redevient purement agronomique.
+  suiviHeuresActif     Boolean @default(true) @map("suivi_heures_actif")
 
   @@map("exploitations")
 }

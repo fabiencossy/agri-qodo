@@ -65,15 +65,16 @@ Pour donner une sensation d'unité :
 - **Date** (`dateOperation` ou `date`)
 - **Parcelle** (optionnelle — facultative pour Travail tiers et Pointage)
 - **Notes**
-- **Personne(s)** (multi-employés sur Carnet, validé §4 question #5)
-- **Heures** (HHMM compact qodo-clock — déjà dispo `HhmmTimeInput`)
+- **Personne(s) + heures** — **présents sur les 3 onglets** (Carnet, Travail tiers, Travail interne). Permet à l'OWNER de suivre ce que chaque employé a fait au quotidien, peu importe le type d'activité. **Décision Fabien 2026-05-04**.
+- **Toggle paramètre** `suiviHeuresActif` (Exploitation, défaut `true`) — quand désactivé, les champs heures + employé(s) sont masqués partout. Utile pour un agriculteur seul qui ne veut pas saisir d'heures.
+- **HHMM compact qodo-clock** (`HhmmTimeInput` déjà dispo).
 
 ### 3.3 Champs spécifiques
 
-- **Carnet** : type intervention, produit, matériel, surface, rendement (si récolte), géom (sous-zone), technique épandage (si fumure organique).
-- **Travaux tiers** : client (Exploitation partenaire), projet (selon settings), lignes produits, lignes heures, taux horaire.
-- **Travail interne** : projet (selon settings), lignes produits/heures, mais **pas** de client.
-- **Pointage** : juste début/fin/durée, lien optionnel vers un travail.
+- **Carnet** : type intervention, produit, matériel, surface, rendement (si récolte), géom (sous-zone), technique épandage (si fumure organique). + heures (si setting actif) → stockées dans `InterventionParticipant.dureeMinutes`.
+- **Travaux tiers** : client (Exploitation partenaire), projet (selon settings), lignes produits, taux horaire. + heures (si setting actif) → stockées dans `LigneTravailHeure` (existant).
+- **Travail interne** : projet (selon settings), lignes produits, **pas** de client. + heures (si setting actif) → `LigneTravailHeure`.
+- **Pointage** (mode dégradé du toggle) : si setting actif et utilisateur veut juste pointer sans contexte → `Presence` (existant). Si setting OFF, le pointage horaire reste accessible mais comme entrée dédiée.
 
 ---
 
@@ -131,6 +132,12 @@ model InterventionParticipant {
 model Travail {
   // ...existant...
   customFields Json? @map("custom_fields") // §4 q4
+}
+
+model Exploitation {
+  // ...existant (noterTempsParProjet, defaultProjetTravauxTiersId)...
+  // Toggle global heures. Défaut true (back-compat tenants existants).
+  suiviHeuresActif Boolean @default(true) @map("suivi_heures_actif")
 }
 
 // Aucun drop, aucun rename, aucune contrainte modifiée.

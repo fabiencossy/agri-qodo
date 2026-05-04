@@ -2,10 +2,17 @@
 -- Migration additive et non destructive : aucun drop, aucun rename.
 -- 1) customFields JSON sur interventions et travaux (q4 PRD).
 -- 2) Table intervention_participants pour multi-employés (q5 PRD).
+-- 3) Setting tenant suiviHeuresActif (heures partout + toggle param).
 
 -- 1. customFields
 ALTER TABLE "interventions" ADD COLUMN "custom_fields" JSONB;
 ALTER TABLE "travaux"       ADD COLUMN "custom_fields" JSONB;
+
+-- 3. Setting tenant : afficher / masquer les heures sur toutes les
+-- activités (Carnet, Travail tiers, Travail interne). True par défaut
+-- pour les nouveaux tenants ET pour les tenants existants (back-compat).
+ALTER TABLE "exploitations"
+    ADD COLUMN "suivi_heures_actif" BOOLEAN NOT NULL DEFAULT true;
 
 -- 2. InterventionParticipant
 CREATE TABLE "intervention_participants" (
