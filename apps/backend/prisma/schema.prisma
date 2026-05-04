@@ -829,6 +829,10 @@ model Travail {
   // Une fois poussé vers Odoo, on garde la trace du sale.order créé pour
   // pouvoir réconcilier (et bloquer la modification).
   odooSaleOrderId Int?       @map("odoo_sale_order_id")
+  // Pour les travaux interne (interne=true), on ne crée pas de devis
+  // mais une project.task avec le détail (heures, employés, parcelle…)
+  // dans le chatter Odoo. Sert à tracer côté Odoo sans facturer.
+  odooTaskId      Int?       @map("odoo_task_id")
   invoicedAt   DateTime?     @map("invoiced_at")
   createdAt    DateTime      @default(now()) @map("created_at")
   updatedAt    DateTime      @updatedAt @map("updated_at")

@@ -12,11 +12,20 @@ import { TenantContextService } from "@/common/tenant/tenant-context.service";
 import { OdooClientManager } from "@/modules/odoo/odoo-client-manager.service";
 
 /**
- * Résultat du push : url Odoo + id sale.order, pour que le frontend
- * puisse afficher un lien direct vers le devis dans Odoo.
+ * Résultat du push : url Odoo + id sale.order ou project.task, pour
+ * que le frontend puisse afficher un lien direct.
+ *
+ * Travail externe (avec partenaire/client OU non interne) → sale.order
+ * brouillon. `odooSaleOrderId` set, `odooTaskId` null.
+ *
+ * Travail interne (`interne=true`) → project.task simple. Pas de
+ * facturation. `odooTaskId` set, `odooSaleOrderId` null.
  */
 export interface PushTravailResult {
-  odooSaleOrderId: number;
+  odooSaleOrderId: number | null;
+  odooTaskId: number | null;
+  /** "sale_order" pour les travaux facturables, "project_task" pour interne. */
+  odooKind: "sale_order" | "project_task";
   odooUrl: string;
   partnerCreated: boolean;
   productsCreated: number;
@@ -25,7 +34,8 @@ export interface PushTravailResult {
    * Id de la `industry.fsm.task` créée si au moins une ligne du travail
    * est un produit "physique" (consu/product) ET que le module Field
    * Service Management est installé sur le tenant Odoo. Null sinon
-   * (services-only ou module FSM absent — fallback gracieux).
+   * (services-only ou module FSM absent — fallback gracieux). Réservé
+   * aux travaux externes (sale_order kind).
    */
   odooFsmTaskId: number | null;
 }
@@ -94,20 +104,33 @@ export class OdooPushService {
       where: { id: travailId, tenantId },
       include: {
         partenaire: { select: { id: true, nom: true, emailContact: true, telephone: true } },
+        parcelle: { select: { id: true, nom: true } },
         lignesProduit: {
           include: {
             produit: { select: { id: true, libelle: true, odooProductId: true, unite: true } },
           },
         },
-        lignesHeure: true,
+        lignesHeure: {
+          include: {
+            user: { select: { id: true, prenom: true, nom: true } },
+          },
+        },
       },
     });
     if (!travail) throw new NotFoundException("Travail introuvable");
-    if (travail.odooSaleOrderId) {
+    if (travail.odooSaleOrderId || travail.odooTaskId) {
       throw new ConflictException(
-        `Travail déjà poussé vers Odoo (sale.order #${travail.odooSaleOrderId}). ` +
-          `Annule le devis côté Odoo avant de re-pousser.`,
+        `Travail déjà poussé vers Odoo (${travail.odooSaleOrderId ? `sale.order #${travail.odooSaleOrderId}` : `project.task #${travail.odooTaskId}`}). ` +
+          `Annule côté Odoo avant de re-pousser.`,
       );
+    }
+
+    // Cas TRAVAIL INTERNE : pas de facturation → on crée juste une
+    // project.task avec le détail des heures dans la description (chatter
+    // Odoo). Pas de sale.order, pas de produits/services Odoo créés, pas
+    // de fsm.task. Permet de tracer côté Odoo sans facturer.
+    if (travail.interne) {
+      return this.pushTravailAsTask(travailId, travail);
     }
     if (travail.lignesProduit.length === 0 && travail.lignesHeure.length === 0) {
       throw new BadRequestException(
@@ -354,12 +377,144 @@ export class OdooPushService {
 
     return {
       odooSaleOrderId: saleOrderId,
+      odooTaskId: null,
+      odooKind: "sale_order",
       odooUrl,
       partnerCreated,
       productsCreated,
       linesCount: orderLines.length,
       odooFsmTaskId,
     };
+  }
+
+  /**
+   * Push d'un travail INTERNE vers une `project.task` Odoo. Pas de
+   * facturation : on crée simplement une tâche avec les détails (heures,
+   * employés, parcelle…) dans la description. Permet de tracer côté
+   * Odoo sans devis ni client.
+   *
+   * Le projet conteneur "Agri Qodo — Travaux internes" est créé au
+   * premier push d'un tenant et caché ensuite (cache mémoire commun
+   * avec le carnet).
+   */
+  private async pushTravailAsTask(
+    travailId: string,
+    travail: {
+      titre: string;
+      date: Date;
+      notes: string | null;
+      parcelle: { id: string; nom: string } | null;
+      lignesHeure: Array<{
+        dureeMinutes: number;
+        notes: string | null;
+        user: { prenom: string; nom: string };
+      }>;
+    },
+  ): Promise<PushTravailResult> {
+    const { tenantId } = this.tenantContext.get();
+    let client: OdooClient;
+    try {
+      client = await this.odooClientManager.forTenant(tenantId);
+    } catch (err) {
+      this.logger.error(`Push Odoo (interne) : pas de client pour tenant ${tenantId} : ${err}`);
+      throw new ServiceUnavailableException(
+        "Configuration Odoo absente ou invalide. Renseigne-la dans Paramètres → Odoo.",
+      );
+    }
+
+    // Projet conteneur des travaux internes — créé une fois par tenant.
+    // Distinct du carnet pour ne pas mélanger.
+    const projectId = await this.ensureInternalWorkProject(client, tenantId);
+
+    const totalMin = travail.lignesHeure.reduce((s, l) => s + l.dureeMinutes, 0);
+    const totalH = (totalMin / 60).toFixed(2);
+    const lines: string[] = [
+      `Date : ${travail.date.toISOString().slice(0, 10)}`,
+      travail.parcelle ? `Parcelle : ${travail.parcelle.nom}` : null,
+      `Total : ${totalH} h (${totalMin} min)`,
+      "",
+      "Détail heures :",
+      ...travail.lignesHeure.map((l) => {
+        const h = (l.dureeMinutes / 60).toFixed(2);
+        const who = `${l.user.prenom} ${l.user.nom}`;
+        const note = l.notes ? ` — ${l.notes}` : "";
+        return `- ${who} : ${h} h${note}`;
+      }),
+      ...(travail.notes ? ["", `Notes : ${travail.notes}`] : []),
+    ].filter(Boolean) as string[];
+    const description = lines.join("\n");
+
+    let taskId: number;
+    try {
+      taskId = await client.create("project.task", {
+        name: travail.titre,
+        project_id: projectId,
+        description,
+        date_deadline: travail.date.toISOString().slice(0, 10),
+      });
+    } catch (err) {
+      this.logger.error(
+        `Push project.task interne échoué pour travail ${travailId} : ${err instanceof Error ? err.message : err}`,
+      );
+      throw new ServiceUnavailableException(
+        "Création de la tâche Odoo échouée. Vérifie les permissions du compte API.",
+      );
+    }
+
+    await this.prisma.travail.update({
+      where: { id: travailId },
+      data: { odooTaskId: taskId },
+    });
+
+    const tenant = await this.prisma.exploitation.findUnique({
+      where: { id: tenantId },
+      select: { odooUrl: true },
+    });
+    const odooUrl = tenant?.odooUrl
+      ? `${tenant.odooUrl.replace(/\/+$/, "")}/odoo/project/${projectId}/tasks/${taskId}`
+      : "";
+
+    this.logger.log(
+      `Push Odoo OK (interne) : travail ${travailId} → project.task #${taskId} dans projet #${projectId}`,
+    );
+
+    return {
+      odooSaleOrderId: null,
+      odooTaskId: taskId,
+      odooKind: "project_task",
+      odooUrl,
+      partnerCreated: false,
+      productsCreated: 0,
+      linesCount: travail.lignesHeure.length,
+      odooFsmTaskId: null,
+    };
+  }
+
+  /**
+   * Trouve ou crée le project.project conteneur des travaux internes
+   * pour le tenant. Cache mémoire pour éviter le lookup répété.
+   */
+  private async ensureInternalWorkProject(client: OdooClient, tenantId: string): Promise<number> {
+    const cacheKey = `internal:${tenantId}`;
+    const cached = this.carnetProjectCache.get(cacheKey);
+    if (cached) return cached;
+
+    const projectName = "Agri Qodo — Travaux internes";
+    const found = await client.searchRead<{ id: number }>(
+      "project.project",
+      [["name", "=", projectName]],
+      { fields: ["id"], limit: 1 },
+    );
+    if (found.length > 0 && found[0]) {
+      this.carnetProjectCache.set(cacheKey, found[0].id);
+      return found[0].id;
+    }
+    const created = await client.create("project.project", {
+      name: projectName,
+      allow_billable: false,
+    });
+    this.carnetProjectCache.set(cacheKey, created);
+    return created;
   }
 
   /**

@@ -44,6 +44,7 @@ export interface Travail {
   statut: TravailStatut;
   notes: string | null;
   odooSaleOrderId: number | null;
+  odooTaskId: number | null;
   invoicedAt: string | null;
   lignesProduit: LigneTravailProduit[];
   lignesHeure: LigneTravailHeure[];
@@ -168,7 +169,10 @@ export function useCancelTravail() {
 }
 
 export interface PushTravailResult {
-  odooSaleOrderId: number;
+  /** "sale_order" pour facturable, "project_task" pour travail interne. */
+  odooKind: "sale_order" | "project_task";
+  odooSaleOrderId: number | null;
+  odooTaskId: number | null;
   odooUrl: string;
   partnerCreated: boolean;
   productsCreated: number;
