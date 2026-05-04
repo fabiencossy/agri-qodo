@@ -243,8 +243,11 @@ export default function TravailDetailPage() {
           </div>
         )}
 
-        {/* Bandeau Odoo : selon le type — devis (sale.order) si client,
-            project.task simple si interne. */}
+        {/* Bandeau Odoo — push automatique au save (review 2026-05-04 :
+            "je veux que le pousser vers odoo soit automatique"). On
+            n'affiche plus de bouton manuel par défaut : juste l'état
+            (succès / en attente). Bouton retry caché derrière "Réessayer
+            le push" si jamais l'auto a échoué. */}
         {odoo.connected && t.statut !== "CANCELLED" && (
           <div className="mb-4 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 sm:px-5">
             {t.odooSaleOrderId || t.odooTaskId ? (
@@ -267,29 +270,21 @@ export default function TravailDetailPage() {
               <div className="flex flex-wrap items-center gap-3">
                 <Send className="h-5 w-5 flex-shrink-0 text-amber-700" />
                 <div className="flex-1 text-sm">
-                  <p className="font-semibold text-amber-900">
-                    {t.interne
-                      ? "Pousser vers Odoo (tâche simple)"
-                      : "Pousser vers Odoo (devis brouillon)"}
-                  </p>
+                  <p className="font-semibold text-amber-900">Push Odoo en attente</p>
                   <p className="text-xs text-foreground/70">
-                    {t.interne
-                      ? "Crée une project.task avec le détail des heures et des employés dans la description. Pas de facturation."
-                      : "Crée un sale.order draft avec le client + lignes produits/heures. Tu peux ensuite confirmer le devis dans Odoo."}
+                    Le push se déclenche automatiquement au save quand le travail a au moins une
+                    ligne (heure ou produit). Si rien n'est arrivé après quelques secondes, clique
+                    "Réessayer".
                   </p>
                 </div>
                 <Button
                   onClick={() => push.mutate(t.id, { onSuccess: (r) => setPushResult(r) })}
                   disabled={push.isPending}
                   size="sm"
-                  className="bg-amber-600 hover:bg-amber-700"
+                  variant="ghost"
                 >
                   <Send className="mr-1 h-4 w-4" />
-                  {push.isPending
-                    ? "Envoi…"
-                    : t.interne
-                      ? "Créer la tâche Odoo"
-                      : "Envoyer vers Odoo"}
+                  {push.isPending ? "Envoi…" : "Réessayer"}
                 </Button>
               </div>
             )}
