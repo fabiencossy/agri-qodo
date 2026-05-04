@@ -1,5 +1,13 @@
 import { ApiPropertyOptional } from "@nestjs/swagger";
-import { IsBoolean, IsOptional, IsString, Matches, MaxLength, MinLength } from "class-validator";
+import {
+  IsBoolean,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Matches,
+  MaxLength,
+  MinLength,
+} from "class-validator";
 
 /**
  * Édition partielle de l'exploitation par son OWNER. Le `numeroExploitant`
@@ -48,4 +56,19 @@ export class UpdateTenantDto {
   @IsOptional()
   @IsBoolean()
   visibleInDirectory?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      "Si true, les interventions du carnet sont rattachées à un Projet plutôt qu'à une Parcelle (UI form qui s'adapte).",
+  })
+  @IsOptional()
+  @IsBoolean()
+  noterTempsParProjet?: boolean;
+
+  @ApiPropertyOptional({
+    description: "Projet pré-sélectionné dans le formulaire Travaux pour tiers (UUID Projet).",
+  })
+  @IsOptional()
+  @IsUUID()
+  defaultProjetTravauxTiersId?: string;
 }

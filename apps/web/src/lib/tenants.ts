@@ -17,6 +17,9 @@ export interface TenantDetail {
   emailContact: string | null;
   telephone: string | null;
   visibleInDirectory: boolean;
+  /** Settings projets (cf C2). */
+  noterTempsParProjet: boolean;
+  defaultProjetTravauxTiersId: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -27,6 +30,8 @@ export interface UpdateTenantInput {
   numeroUfam?: string;
   numeroBdta?: string;
   visibleInDirectory?: boolean;
+  noterTempsParProjet?: boolean;
+  defaultProjetTravauxTiersId?: string;
 }
 
 export function useAccessibleTenants() {
