@@ -63,6 +63,7 @@ export interface RegisterInput {
   nom: string;
   exploitationNom: string;
   canton: string;
+  cguAccepted: boolean;
 }
 
 export function useRegister() {

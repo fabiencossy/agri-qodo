@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { CookieBanner } from "@/components/legal/cookie-banner";
 import { Providers } from "@/components/providers";
 import "./globals.css";
 
@@ -12,6 +13,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="fr">
       <body>
         <Providers>{children}</Providers>
+        <CookieBanner />
       </body>
     </html>
   );

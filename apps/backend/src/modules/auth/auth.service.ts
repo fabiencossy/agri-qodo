@@ -17,6 +17,13 @@ import type { AuthTokens, JwtPayload, JwtRefreshPayload } from "./types/jwt-payl
 
 const REFRESH_TOKEN_BYTES = 64;
 
+/**
+ * Version courante des CGU acceptées au signup. À bumper à chaque mise à jour
+ * matérielle des Conditions générales — les comptes existants restent sur
+ * leur version d'origine jusqu'à une éventuelle ré-acceptation.
+ */
+export const CGU_VERSION = "2026-04-30";
+
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
@@ -384,6 +391,7 @@ export class AuthService {
   }): Promise<AuthTokens> {
     const passwordHash = await bcrypt.hash(input.password, 10);
     const code = `AQ-${input.canton}-${randomBytes(2).toString("hex").toUpperCase()}`;
+    const cguAcceptedAt = new Date();
 
     let user;
     try {
@@ -404,6 +412,8 @@ export class AuthService {
             nom: input.nom.trim(),
             role: UserRole.OWNER,
             tenantId: exploitation.id,
+            cguAcceptedAt,
+            cguVersion: CGU_VERSION,
           },
         });
       });

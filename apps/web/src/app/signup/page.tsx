@@ -1,12 +1,13 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Sprout } from "lucide-react";
+import { Tractor } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
+import { LegalFooter } from "@/components/legal/legal-footer";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ApiError } from "@/lib/api-client";
@@ -48,6 +49,9 @@ const signupSchema = z.object({
   password: z.string().min(8, "8 caractères minimum").max(120),
   exploitationNom: z.string().min(2, "Donne un nom à ton exploitation").max(120),
   canton: z.enum(CANTONS),
+  cguAccepted: z.literal(true, {
+    errorMap: () => ({ message: "Tu dois accepter les CGU pour créer un compte." }),
+  }),
 });
 
 type SignupForm = z.infer<typeof signupSchema>;
@@ -84,7 +88,7 @@ export default function SignupPage() {
       <div className="w-full max-w-md">
         <header className="mb-6 text-center">
           <h1 className="flex items-center justify-center gap-2 text-3xl font-bold text-green">
-            <Sprout className="h-7 w-7" />
+            <Tractor className="h-7 w-7" />
             Agri Qodo
           </h1>
           <p className="mt-2 text-sm text-foreground/70">
@@ -189,6 +193,40 @@ export default function SignupPage() {
             </div>
           </div>
 
+          <div className="border-t border-border pt-4">
+            <label className="flex items-start gap-3 text-sm">
+              <input
+                type="checkbox"
+                className="mt-0.5 h-5 w-5 shrink-0 rounded border-border text-green focus:ring-2 focus:ring-green focus:ring-offset-0"
+                {...rhfRegister("cguAccepted")}
+              />
+              <span className="text-foreground/80">
+                J'accepte les{" "}
+                <Link
+                  href="/cgu"
+                  target="_blank"
+                  rel="noopener"
+                  className="font-medium text-green underline"
+                >
+                  Conditions générales d'utilisation
+                </Link>{" "}
+                et la{" "}
+                <Link
+                  href="/politique-confidentialite"
+                  target="_blank"
+                  rel="noopener"
+                  className="font-medium text-green underline"
+                >
+                  Politique de confidentialité
+                </Link>
+                .
+              </span>
+            </label>
+            {errors.cguAccepted && (
+              <p className="mt-1 text-xs text-red-600">{errors.cguAccepted.message}</p>
+            )}
+          </div>
+
           {errorMessage && (
             <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{errorMessage}</p>
           )}
@@ -208,6 +246,8 @@ export default function SignupPage() {
         <p className="mt-4 text-center text-xs text-foreground/50">
           Open source AGPL v3 · Hébergé en Suisse · 100 % gratuit
         </p>
+
+        <LegalFooter compact />
       </div>
     </main>
   );
