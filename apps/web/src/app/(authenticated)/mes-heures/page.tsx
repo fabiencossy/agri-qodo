@@ -3,13 +3,15 @@
 /**
  * Mes heures — `/mes-heures`.
  *
- * Vue read-only des heures saisies par l'utilisateur courant. Agrège les
+ * Vue des heures saisies par l'utilisateur courant. Agrège les
  * LigneTravailHeure où userId = me, à travers tous les Travaux du tenant.
  *
  * Deux modes :
- * - **Calendrier** (par défaut) : grille hebdomadaire 7 jours, total/jour
- *   en grand, navigation semaine prev/next, click sur un jour pour saisir
- * - **Liste** : groupement par jour, détail des lignes (mode classique)
+ * - **Semaine** (par défaut, style qodo-clock) : onglets jours Lu→Di
+ *   horizontaux avec total/jour, le jour sélectionné affiche la liste
+ *   détaillée de ses saisies (cards cliquables, durée/CHF à droite).
+ * - **Liste** : groupement par jour décroissant, détail des lignes
+ *   (mode classique).
  */
 import {
   ArrowRight,
@@ -37,9 +39,10 @@ import {
   useMesHeures,
 } from "@/lib/travaux";
 
-type ViewMode = "calendrier" | "liste";
+type ViewMode = "semaine" | "liste";
 
 const JOURS = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"] as const;
+const JOURS_COURT = ["Lu", "Ma", "Me", "Je", "Ve", "Sa", "Di"] as const;
 
 function startOfWeek(d: Date): Date {
   const day = d.getDay();
@@ -84,8 +87,11 @@ function shortLabelWeek(monday: Date): string {
 }
 
 export default function MesHeuresPage() {
-  const [view, setView] = useState<ViewMode>("calendrier");
+  const [view, setView] = useState<ViewMode>("semaine");
   const [weekStart, setWeekStart] = useState<Date>(() => startOfWeek(new Date()));
+  // Jour sélectionné dans la vue Semaine — défaut = aujourd'hui s'il
+  // est dans la semaine affichée, sinon le lundi.
+  const [selectedDayKey, setSelectedDayKey] = useState<string>(() => jourCle(new Date()));
   const weekEnd = useMemo(() => endOfDay(addDays(weekStart, 6)), [weekStart]);
 
   const heures = useMesHeures({
@@ -171,16 +177,14 @@ export default function MesHeuresPage() {
             <div className="inline-flex rounded-lg border border-border bg-background p-1">
               <button
                 type="button"
-                onClick={() => setView("calendrier")}
-                aria-label="Vue calendrier"
+                onClick={() => setView("semaine")}
+                aria-label="Vue semaine"
                 className={`flex h-9 items-center gap-1.5 rounded-md px-2 text-sm font-medium transition-colors sm:px-3 ${
-                  view === "calendrier"
-                    ? "bg-green text-white"
-                    : "text-foreground/70 hover:bg-muted"
+                  view === "semaine" ? "bg-green text-white" : "text-foreground/70 hover:bg-muted"
                 }`}
               >
                 <CalendarDays className="h-4 w-4" />
-                <span className="hidden sm:inline">Calendrier</span>
+                <span className="hidden sm:inline">Semaine</span>
               </button>
               <button
                 type="button"
@@ -233,8 +237,14 @@ export default function MesHeuresPage() {
           </button>
         </div>
 
-        {view === "calendrier" ? (
-          <CalendrierView weekStart={weekStart} byDay={byDay} today={today} />
+        {view === "semaine" ? (
+          <SemaineView
+            weekStart={weekStart}
+            byDay={byDay}
+            today={today}
+            selectedDayKey={selectedDayKey}
+            onSelectDay={setSelectedDayKey}
+          />
         ) : (
           <ListeView grouped={grouped} isLoading={heures.isLoading} />
         )}
@@ -243,90 +253,175 @@ export default function MesHeuresPage() {
   );
 }
 
-function CalendrierView({
+/**
+ * Vue Semaine style qodo-clock — onglets jours horizontaux Lu→Di avec
+ * total/jour en grand, le jour sélectionné affiche dessous la liste
+ * détaillée de ses saisies.
+ */
+function SemaineView({
   weekStart,
   byDay,
   today,
+  selectedDayKey,
+  onSelectDay,
 }: {
   weekStart: Date;
   byDay: Map<string, MesHeuresLigne[]>;
   today: string;
+  selectedDayKey: string;
+  onSelectDay: (key: string) => void;
 }) {
+  // Si le jour sélectionné n'est pas dans la semaine affichée, on tombe
+  // sur le lundi par défaut pour garantir un affichage cohérent.
+  const days = Array.from({ length: 7 }).map((_, i) => addDays(weekStart, i));
+  const inWeek = days.some((d) => jourCle(d) === selectedDayKey);
+  const effectiveDayKey = inWeek ? selectedDayKey : jourCle(weekStart);
+  const selectedItems = byDay.get(effectiveDayKey) ?? [];
+  const selectedDate = days.find((d) => jourCle(d) === effectiveDayKey) ?? weekStart;
+  const selectedTotal = selectedItems.reduce((s, l) => s + l.dureeMinutes, 0);
+  const selectedCHF = selectedItems.reduce((s, l) => {
+    if (!l.tauxHoraireCHF) return s;
+    return s + (l.dureeMinutes / 60) * Number(l.tauxHoraireCHF);
+  }, 0);
+
   return (
-    <div className="grid grid-cols-1 gap-2 sm:grid-cols-7">
-      {Array.from({ length: 7 }).map((_, i) => {
-        const day = addDays(weekStart, i);
-        const key = jourCle(day);
-        const items = byDay.get(key) ?? [];
-        const totalMin = items.reduce((s, l) => s + l.dureeMinutes, 0);
-        const isToday = key === today;
-        const isWeekend = i >= 5;
-
-        const dateUrl = `/travaux/new?date=${key}`;
-
-        return (
-          <div
-            key={key}
-            className={`flex flex-col rounded-2xl border bg-background p-3 transition-shadow hover:shadow-md ${
-              isToday ? "border-green ring-2 ring-green/30" : "border-border"
-            } ${isWeekend ? "bg-muted/20" : ""}`}
-          >
-            <div className="mb-2 flex items-baseline justify-between">
-              <p className="text-xs font-semibold uppercase tracking-wide text-foreground/50">
-                {JOURS[i]}
-              </p>
-              <p
-                className={`text-2xl font-bold tabular-nums ${
-                  isToday ? "text-green" : "text-foreground/80"
+    <div>
+      {/* Onglets jours horizontaux */}
+      <div className="mb-4 grid grid-cols-7 gap-1 sm:gap-2">
+        {days.map((day, i) => {
+          const key = jourCle(day);
+          const items = byDay.get(key) ?? [];
+          const totalMin = items.reduce((s, l) => s + l.dureeMinutes, 0);
+          const isToday = key === today;
+          const isSelected = key === effectiveDayKey;
+          return (
+            <button
+              key={key}
+              type="button"
+              onClick={() => onSelectDay(key)}
+              aria-pressed={isSelected}
+              className={`flex flex-col items-center justify-center gap-0.5 rounded-xl border-2 px-1 py-2 text-center transition-all sm:py-3 ${
+                isSelected
+                  ? "border-amber-500 bg-amber-50 text-amber-900"
+                  : isToday
+                    ? "border-green/40 bg-green/5 text-foreground hover:border-green"
+                    : "border-border bg-background text-foreground/80 hover:border-foreground/30"
+              }`}
+            >
+              <span className="text-[10px] font-semibold uppercase tracking-wide opacity-70 sm:text-xs">
+                <span className="sm:hidden">{JOURS_COURT[i]}</span>
+                <span className="hidden sm:inline">{JOURS[i]}</span>
+              </span>
+              <span className="text-xl font-bold tabular-nums sm:text-2xl">{day.getDate()}</span>
+              <span
+                className={`font-mono text-[11px] tabular-nums sm:text-xs ${
+                  totalMin > 0 ? "" : "opacity-30"
                 }`}
               >
-                {day.getDate()}
-              </p>
-            </div>
+                {totalMin > 0 ? formatDuree(totalMin) : "—"}
+              </span>
+            </button>
+          );
+        })}
+      </div>
 
-            {totalMin > 0 ? (
-              <div className="mb-2 rounded-lg bg-green/10 px-2 py-1 text-center">
-                <p className="font-mono text-sm font-bold text-green-dark">
-                  {formatDuree(totalMin)}
-                </p>
-              </div>
-            ) : (
-              <div className="mb-2 rounded-lg bg-muted/40 px-2 py-1 text-center">
-                <p className="text-xs text-foreground/40">—</p>
-              </div>
+      {/* Détail du jour sélectionné */}
+      <section className="overflow-hidden rounded-2xl border border-border bg-background">
+        <header className="flex items-center justify-between gap-2 border-b border-border bg-muted/30 px-4 py-3">
+          <span className="text-sm font-semibold capitalize sm:text-base">
+            {selectedDate.toLocaleDateString("fr-CH", {
+              weekday: "long",
+              day: "2-digit",
+              month: "long",
+            })}
+          </span>
+          <span className="font-mono text-base font-bold tabular-nums sm:text-lg">
+            {formatDuree(selectedTotal)}
+            {selectedCHF > 0 && (
+              <span className="ml-2 text-sm font-normal text-foreground/60">
+                · {formatCHF(selectedCHF)}
+              </span>
             )}
-
-            <ul className="flex-1 space-y-1 overflow-hidden">
-              {items.slice(0, 3).map((l) => (
-                <li
-                  key={l.id}
-                  className="rounded-md bg-muted/40 px-2 py-1 text-xs"
-                  title={l.travail.titre}
-                >
-                  <p className="truncate font-medium">{l.travail.titre}</p>
-                  <p className="font-mono text-[10px] text-foreground/60">
-                    {formatDuree(l.dureeMinutes)}
-                  </p>
-                </li>
-              ))}
-              {items.length > 3 && (
-                <li className="px-2 text-[10px] text-foreground/50">
-                  + {items.length - 3} autre{items.length - 3 > 1 ? "s" : ""}
-                </li>
-              )}
-            </ul>
-
-            <Link
-              href={dateUrl as never}
-              className="mt-2 flex items-center justify-center gap-1 rounded-lg border border-dashed border-border py-1.5 text-xs text-foreground/50 transition-colors hover:border-green hover:bg-green/5 hover:text-green"
-            >
-              <Plus className="h-3 w-3" />
-              Ajouter
+          </span>
+        </header>
+        {selectedItems.length === 0 ? (
+          <div className="flex flex-col items-center gap-3 px-4 py-10 text-center text-sm text-foreground/50">
+            <p>Aucune heure saisie ce jour.</p>
+            <Link href={`/travaux/new?date=${effectiveDayKey}` as never}>
+              <Button size="sm">
+                <Plus className="mr-1 h-4 w-4" />
+                Ajouter une saisie
+              </Button>
             </Link>
           </div>
-        );
-      })}
+        ) : (
+          <>
+            <ul className="divide-y divide-border">
+              {selectedItems.map((l) => (
+                <SaisieRow key={l.id} ligne={l} />
+              ))}
+            </ul>
+            <div className="border-t border-border bg-muted/10 px-4 py-2 text-right">
+              <Link
+                href={`/travaux/new?date=${effectiveDayKey}` as never}
+                className="inline-flex items-center gap-1 text-xs font-medium text-green hover:text-green-dark"
+              >
+                <Plus className="h-3 w-3" />
+                Ajouter une saisie
+              </Link>
+            </div>
+          </>
+        )}
+      </section>
     </div>
+  );
+}
+
+function SaisieRow({ ligne: l }: { ligne: MesHeuresLigne }) {
+  return (
+    <li className="px-4 py-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+            <Link
+              href={`/travaux/${l.travail.id}` as never}
+              className="font-medium hover:underline"
+            >
+              {l.travail.titre}
+            </Link>
+            {l.travail.partenaire && (
+              <span className="text-xs text-foreground/60">· {l.travail.partenaire.nom}</span>
+            )}
+            {l.travail.parcelle && (
+              <span className="text-xs text-foreground/60">· {l.travail.parcelle.nom}</span>
+            )}
+            <span
+              className={`rounded px-2 py-0.5 text-[10px] font-medium ${STATUT_BADGE[l.travail.statut]}`}
+            >
+              {STATUT_LABEL[l.travail.statut]}
+            </span>
+          </div>
+          {l.notes && <p className="mt-0.5 text-xs italic text-foreground/60">{l.notes}</p>}
+        </div>
+        <div className="flex shrink-0 flex-col items-end gap-1">
+          <span className="font-mono text-base font-bold tabular-nums">
+            {formatDuree(l.dureeMinutes)}
+          </span>
+          {l.tauxHoraireCHF && (
+            <span className="font-mono text-xs text-foreground/60">
+              {formatCHF((l.dureeMinutes / 60) * Number(l.tauxHoraireCHF))}
+            </span>
+          )}
+          <Link
+            href={`/travaux/${l.travail.id}` as never}
+            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-green hover:bg-green/10"
+          >
+            <ArrowRight className="h-3 w-3" />
+            Modifier
+          </Link>
+        </div>
+      </div>
+    </li>
   );
 }
 
