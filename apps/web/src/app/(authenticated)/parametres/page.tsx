@@ -4,6 +4,7 @@ import {
   Building2,
   Cog,
   Database,
+  FolderOpen,
   Handshake,
   KeyRound,
   type LucideIcon,
@@ -77,6 +78,13 @@ const COLLABORATION_LINKS: SettingsLink[] = [
 ];
 
 const REFERENTIELS_LINKS: SettingsLink[] = [
+  {
+    href: "/parametres/projets",
+    label: "Projets",
+    description:
+      "Étiquettes pour regrouper tes interventions et travaux (ex : Récolte 2026, Chantier X).",
+    icon: FolderOpen,
+  },
   {
     href: "/produits",
     label: "Catalogue produits",

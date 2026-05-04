@@ -21,6 +21,7 @@ import { PerModule } from "./modules/per/per.module";
 import { PlanFumureModule } from "./modules/plan-fumure/plan-fumure.module";
 import { PresencesModule } from "./modules/presences/presences.module";
 import { ProduitsModule } from "./modules/produits/produits.module";
+import { ProjetsModule } from "./modules/projets/projets.module";
 import { SrpaModule } from "./modules/srpa/srpa.module";
 import { SuisseBilanzModule } from "./modules/suisse-bilanz/suisse-bilanz.module";
 import { TenantsModule } from "./modules/tenants/tenants.module";
@@ -72,6 +73,7 @@ import { VeilleModule } from "./modules/veille/veille.module";
     SrpaModule,
     AnimauxModule,
     ProduitsModule,
+    ProjetsModule,
     MaterielsModule,
     SuisseBilanzModule,
     PlanFumureModule,
