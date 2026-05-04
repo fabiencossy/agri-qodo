@@ -86,6 +86,7 @@ export default function InterventionDetailPage() {
               </span>
             )
           }
+          onEdit={() => router.push(`/interventions/new?edit=${iv.id}` as never)}
           menuActions={[
             {
               label: "Supprimer",
@@ -96,15 +97,6 @@ export default function InterventionDetailPage() {
             },
           ]}
         />
-
-        {/* Bandeau info édition à venir — la modification complète arrive
-            dans une PR dédiée (formulaire interventions/new à étendre avec
-            le mode ?edit=...). En attendant la fiche permet validation,
-            refus et suppression. */}
-        <div className="mb-4 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">
-          La modification complète d'une intervention arrive bientôt. En attendant tu peux supprimer
-          puis re-saisir si tu dois corriger une erreur.
-        </div>
 
         {isPending && (
           <section className="mb-4 flex flex-wrap gap-2 rounded-2xl border border-amber-300 bg-amber-50 p-4">

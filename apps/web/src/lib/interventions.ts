@@ -167,6 +167,37 @@ export function useCreateIntervention() {
   });
 }
 
+/**
+ * Champs modifiables d'une intervention. Le backend interdit la
+ * modification de parcelleId, type et produitId — ces champs gouvernent
+ * la Culture créée par un SEMIS, modifier nécessite de supprimer/recréer.
+ */
+export interface UpdateInterventionInput {
+  dateOperation?: string;
+  produit?: string;
+  materielId?: string;
+  surfaceHa?: number;
+  rendementParHa?: number;
+  quantite?: number;
+  unite?: string;
+  techniqueEpandage?: TechniqueEpandage;
+  surfaceTravailleeM2?: number;
+  geomGeoJson?: InterventionGeoJsonPolygon;
+  notes?: string;
+}
+
+export function useUpdateIntervention() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...input }: UpdateInterventionInput & { id: string }) =>
+      api<Intervention>(`/api/interventions/${id}`, { method: "PATCH", body: input }),
+    onSuccess: (_data, variables) => {
+      void qc.invalidateQueries({ queryKey: QUERY_KEY });
+      void qc.invalidateQueries({ queryKey: ["interventions", variables.id] });
+    },
+  });
+}
+
 /** Variante d'Intervention enrichie de l'auteur, renvoyée par /pending. */
 export interface PendingIntervention extends Intervention {
   authorTenant: { id: string; nom: string; code: string };
