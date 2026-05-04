@@ -243,18 +243,23 @@ export default function TravailDetailPage() {
           </div>
         )}
 
-        {/* Bandeau Odoo : push vers sale.order brouillon */}
-        {odoo.connected && !t.interne && t.statut !== "CANCELLED" && (
-          <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 sm:px-5">
-            {t.odooSaleOrderId ? (
+        {/* Bandeau Odoo : selon le type — devis (sale.order) si client,
+            project.task simple si interne. */}
+        {odoo.connected && t.statut !== "CANCELLED" && (
+          <div className="mb-4 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 sm:px-5">
+            {t.odooSaleOrderId || t.odooTaskId ? (
               <div className="flex flex-wrap items-center gap-3">
                 <CheckCircle2 className="h-5 w-5 flex-shrink-0 text-amber-700" />
                 <div className="flex-1 text-sm">
                   <p className="font-semibold text-amber-900">
-                    Devis Odoo créé · #{t.odooSaleOrderId}
+                    {t.odooSaleOrderId
+                      ? `Devis Odoo créé · sale.order #${t.odooSaleOrderId}`
+                      : `Tâche Odoo créée · project.task #${t.odooTaskId}`}
                   </p>
-                  <p className="text-xs text-amber-700/80">
-                    Pour re-pousser, annule d'abord le devis dans Odoo.
+                  <p className="text-xs text-foreground/70">
+                    {t.odooSaleOrderId
+                      ? "Pour re-pousser, annule d'abord le devis dans Odoo."
+                      : "La tâche contient le détail des heures et des employés."}
                   </p>
                 </div>
               </div>
@@ -263,11 +268,14 @@ export default function TravailDetailPage() {
                 <Send className="h-5 w-5 flex-shrink-0 text-amber-700" />
                 <div className="flex-1 text-sm">
                   <p className="font-semibold text-amber-900">
-                    Pousser vers Odoo (devis brouillon)
+                    {t.interne
+                      ? "Pousser vers Odoo (tâche simple)"
+                      : "Pousser vers Odoo (devis brouillon)"}
                   </p>
-                  <p className="text-xs text-amber-700/80">
-                    Crée un sale.order draft avec le client + lignes produits/heures. Tu peux
-                    ensuite confirmer le devis dans Odoo.
+                  <p className="text-xs text-foreground/70">
+                    {t.interne
+                      ? "Crée une project.task avec le détail des heures et des employés dans la description. Pas de facturation."
+                      : "Crée un sale.order draft avec le client + lignes produits/heures. Tu peux ensuite confirmer le devis dans Odoo."}
                   </p>
                 </div>
                 <Button
@@ -277,7 +285,11 @@ export default function TravailDetailPage() {
                   className="bg-amber-600 hover:bg-amber-700"
                 >
                   <Send className="mr-1 h-4 w-4" />
-                  {push.isPending ? "Envoi…" : "Envoyer vers Odoo"}
+                  {push.isPending
+                    ? "Envoi…"
+                    : t.interne
+                      ? "Créer la tâche Odoo"
+                      : "Envoyer vers Odoo"}
                 </Button>
               </div>
             )}
@@ -287,12 +299,9 @@ export default function TravailDetailPage() {
         {pushResult && (
           <div className="mb-4 rounded-xl border border-green/30 bg-green/5 p-4 text-sm">
             <p className="font-medium text-green-dark">
-              ✓ Devis créé : sale.order #{pushResult.odooSaleOrderId} ({pushResult.linesCount}{" "}
-              lignes
-              {pushResult.partnerCreated && ", nouveau client créé"}
-              {pushResult.productsCreated > 0 &&
-                `, ${pushResult.productsCreated} produit${pushResult.productsCreated > 1 ? "s" : ""} créé${pushResult.productsCreated > 1 ? "s" : ""}`}
-              )
+              {pushResult.odooKind === "project_task"
+                ? `✓ Tâche Odoo créée : project.task #${pushResult.odooTaskId} (${pushResult.linesCount} ligne${pushResult.linesCount > 1 ? "s" : ""} d'heures)`
+                : `✓ Devis créé : sale.order #${pushResult.odooSaleOrderId} (${pushResult.linesCount} lignes${pushResult.partnerCreated ? ", nouveau client créé" : ""}${pushResult.productsCreated > 0 ? `, ${pushResult.productsCreated} produit${pushResult.productsCreated > 1 ? "s" : ""} créé${pushResult.productsCreated > 1 ? "s" : ""}` : ""})`}
             </p>
             {pushResult.odooUrl && (
               <a
