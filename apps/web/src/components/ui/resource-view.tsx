@@ -516,7 +516,11 @@ function SearchBar<T>(props: {
       </div>
 
       {props.panelOpen && (
-        <div className="absolute left-0 right-0 top-full z-30 mt-2 grid grid-cols-1 gap-0 overflow-hidden rounded-xl border border-border bg-background shadow-xl md:grid-cols-3">
+        // z-index : top-bar mobile = 8000, drawer hamburger = 9100. Le panel
+        // filtres doit passer au-dessus de la top-bar (sinon il se masque
+        // quand on scroll le carnet sur mobile) mais rester sous le drawer
+        // ouvert. 8500 satisfait les deux contraintes.
+        <div className="absolute left-0 right-0 top-full z-[8500] mt-2 grid max-h-[70vh] grid-cols-1 gap-0 overflow-y-auto rounded-xl border border-border bg-background shadow-xl md:grid-cols-3">
           <PanelColumn title="Filtres" icon={FilterIcon} accent="text-purple-700">
             {props.filters.length === 0 ? (
               <p className="text-xs text-foreground/40">Pas de filtre prédéfini.</p>

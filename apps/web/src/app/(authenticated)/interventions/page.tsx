@@ -2,15 +2,23 @@
 
 import { Check, Download, Plus, Sprout, Trash2, X } from "lucide-react";
 import Link from "next/link";
+import { useMemo } from "react";
 import { Breadcrumb } from "@/components/app/breadcrumb";
 import { PageHeader } from "@/components/app/page-header";
 import { Button } from "@/components/ui/button";
+import {
+  type FilterOption,
+  type GroupByOption,
+  type ListColumn,
+  ResourceView,
+} from "@/components/ui/resource-view";
 import { downloadCsv } from "@/lib/export-csv";
 import {
   colorType,
   emojiType,
   formatDateFr,
   formatQuantite,
+  type Intervention,
   libelleType,
   useDeleteIntervention,
   useInterventions,
@@ -18,8 +26,20 @@ import {
   useValidateIntervention,
 } from "@/lib/interventions";
 
+const TYPE_ORDER: Intervention["type"][] = [
+  "SEMIS",
+  "FUMURE_ORGANIQUE",
+  "FUMURE_MINERALE",
+  "PHYTO",
+  "RECOLTE",
+  "TRAVAIL_DU_SOL",
+  "IRRIGATION",
+  "AUTRE",
+];
+
 export default function InterventionsPage() {
-  const interventions = useInterventions();
+  const interventionsQuery = useInterventions();
+  const data = useMemo(() => interventionsQuery.data ?? [], [interventionsQuery.data]);
   const deleteMutation = useDeleteIntervention();
   const validateMutation = useValidateIntervention();
   const rejectMutation = useRejectIntervention();
@@ -36,6 +56,209 @@ export default function InterventionsPage() {
     rejectMutation.mutate(reason.trim() ? { id, reason: reason.trim() } : { id });
   };
 
+  const columns = useMemo<ListColumn<Intervention>[]>(
+    () => [
+      {
+        key: "type",
+        header: "Type",
+        cell: (iv) => (
+          <span className="flex items-center gap-2">
+            <span
+              className={`flex h-8 w-8 items-center justify-center rounded-md text-base ${colorType(iv.type)}`}
+            >
+              {emojiType(iv.type)}
+            </span>
+            <span className="font-medium">{libelleType(iv.type)}</span>
+            {iv.validationStatus === "PENDING" && (
+              <span className="rounded-full border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-xs font-medium text-amber-800">
+                à valider
+              </span>
+            )}
+          </span>
+        ),
+      },
+      {
+        key: "parcelle",
+        header: "Parcelle",
+        cell: (iv) => iv.parcelle?.nom ?? "—",
+        hideBelow: "sm",
+      },
+      {
+        key: "date",
+        header: "Date",
+        cell: (iv) => (
+          <span className="whitespace-nowrap text-sm">{formatDateFr(iv.dateOperation)}</span>
+        ),
+      },
+      {
+        key: "produit",
+        header: "Produit / matériel",
+        cell: (iv) => {
+          const quantite = formatQuantite(iv.quantite, iv.unite);
+          const produit = iv.produit ?? iv.materielRef?.libelle ?? "—";
+          return (
+            <span className="text-sm text-foreground/80">
+              {produit}
+              {quantite ? ` · ${quantite}` : ""}
+            </span>
+          );
+        },
+        hideBelow: "md",
+      },
+      {
+        key: "actions",
+        header: "",
+        cell: (iv) => (
+          <div className="flex justify-end gap-1">
+            {iv.validationStatus === "PENDING" ? (
+              <>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    validateMutation.mutate(iv.id);
+                  }}
+                  disabled={validateMutation.isPending}
+                  className="rounded-md p-1.5 text-foreground/50 hover:bg-green/10 hover:text-green"
+                  aria-label="Accepter"
+                  title="Accepter"
+                >
+                  <Check className="h-4 w-4" />
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onReject(iv.id);
+                  }}
+                  disabled={rejectMutation.isPending}
+                  className="rounded-md p-1.5 text-foreground/50 hover:bg-red-50 hover:text-red-600"
+                  aria-label="Refuser"
+                  title="Refuser"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDelete(iv.id, libelleType(iv.type).toLowerCase());
+                }}
+                disabled={deleteMutation.isPending}
+                className="rounded-md p-1.5 text-foreground/50 hover:bg-red-50 hover:text-red-600"
+                aria-label="Supprimer"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+        ),
+        className: "text-right",
+      },
+    ],
+    [deleteMutation.isPending, rejectMutation.isPending, validateMutation],
+  );
+
+  const filters = useMemo<FilterOption<Intervention>[]>(
+    () => [
+      {
+        key: "pending",
+        label: "À valider",
+        predicate: (iv) => iv.validationStatus === "PENDING",
+      },
+      {
+        key: "current-month",
+        label: "Ce mois",
+        predicate: (iv) => {
+          const d = new Date(iv.dateOperation);
+          const now = new Date();
+          return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+        },
+      },
+      {
+        key: "current-year",
+        label: "Cette campagne",
+        predicate: (iv) => new Date(iv.dateOperation).getFullYear() === new Date().getFullYear(),
+      },
+      {
+        key: "with-product",
+        label: "Avec produit",
+        predicate: (iv) => !!iv.produit || !!iv.produitRef,
+      },
+    ],
+    [],
+  );
+
+  const groupBys = useMemo<GroupByOption<Intervention>[]>(
+    () => [
+      {
+        key: "type",
+        label: "Type d'intervention",
+        groupKey: (iv) => iv.type,
+        groupLabel: (k) => libelleType(k as Intervention["type"]),
+        order: TYPE_ORDER,
+      },
+      {
+        key: "parcelle",
+        label: "Parcelle",
+        groupKey: (iv) => iv.parcelle?.nom ?? "(sans parcelle)",
+        groupLabel: (k) => k,
+      },
+      {
+        key: "mois",
+        label: "Mois",
+        groupKey: (iv) => {
+          const d = new Date(iv.dateOperation);
+          return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+        },
+        groupLabel: (k) => {
+          const [y, m] = k.split("-");
+          if (!y || !m) return k;
+          return new Date(Number(y), Number(m) - 1, 1).toLocaleDateString("fr-CH", {
+            month: "long",
+            year: "numeric",
+          });
+        },
+      },
+    ],
+    [],
+  );
+
+  const renderCard = (iv: Intervention) => {
+    const quantite = formatQuantite(iv.quantite, iv.unite);
+    const isPending = iv.validationStatus === "PENDING";
+    return (
+      <div>
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex items-start gap-2">
+            <span
+              className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-lg ${colorType(iv.type)}`}
+            >
+              {emojiType(iv.type)}
+            </span>
+            <div className="min-w-0">
+              <div className="font-medium">{libelleType(iv.type)}</div>
+              <div className="text-xs text-foreground/60">
+                {iv.parcelle?.nom ?? "—"} · {formatDateFr(iv.dateOperation)}
+              </div>
+            </div>
+          </div>
+          {isPending && (
+            <span className="shrink-0 rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800">
+              à valider
+            </span>
+          )}
+        </div>
+        {(iv.produit || iv.produitRef || quantite) && (
+          <p className="mt-2 text-xs text-foreground/70">
+            {iv.produit ?? iv.produitRef?.libelle ?? "—"}
+            {quantite ? ` · ${quantite}` : ""}
+          </p>
+        )}
+        {iv.notes && <p className="mt-1 text-xs text-foreground/60">{iv.notes}</p>}
+      </div>
+    );
+  };
+
   return (
     <>
       <Breadcrumb items={[{ label: "Accueil", href: "/app" }, { label: "Carnet des champs" }]} />
@@ -44,18 +267,17 @@ export default function InterventionsPage() {
           title="Carnet des champs"
           icon={Sprout}
           subtitle={
-            interventions.data
-              ? `${interventions.data.length} intervention${interventions.data.length > 1 ? "s" : ""}`
+            interventionsQuery.data
+              ? `${interventionsQuery.data.length} intervention${interventionsQuery.data.length > 1 ? "s" : ""}`
               : "Chargement…"
           }
           menuActions={[
             {
               label: "Exporter en CSV",
               icon: Download,
-              disabled: !interventions.data || interventions.data.length === 0,
+              disabled: data.length === 0,
               onClick: () => {
-                if (!interventions.data) return;
-                downloadCsv("interventions", interventions.data, [
+                downloadCsv("interventions", data, [
                   {
                     header: "Date",
                     value: (iv) => new Date(iv.dateOperation).toISOString().slice(0, 10),
@@ -76,113 +298,47 @@ export default function InterventionsPage() {
           ]}
         />
 
-        {interventions.isError && (
-          <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+        {interventionsQuery.isError && (
+          <div className="mb-3 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
             Impossible de charger les interventions. Vérifie ta connexion.
           </div>
         )}
 
-        {interventions.data && interventions.data.length === 0 && (
-          <div className="rounded-2xl border-2 border-dashed border-border p-10 text-center">
-            <Sprout className="mx-auto h-10 w-10 text-foreground/30" />
-            <h2 className="mt-4 text-lg font-semibold">Aucune intervention pour l'instant</h2>
-            <p className="mt-1 text-sm text-foreground/60">
-              Saisissez vos opérations terrain au fil de l'eau.
-            </p>
-            <Link href="/interventions/new" className="mt-6 inline-block">
-              <Button>
-                <Plus className="mr-2 h-4 w-4" />
-                Saisir ma première intervention
-              </Button>
-            </Link>
-          </div>
-        )}
-
-        {interventions.data && interventions.data.length > 0 && (
-          <ul className="space-y-3">
-            {interventions.data.map((iv) => {
-              const quantite = formatQuantite(iv.quantite, iv.unite);
-              const isPending = iv.validationStatus === "PENDING";
-              return (
-                <li
-                  key={iv.id}
-                  className={`rounded-2xl border bg-background p-4 ${
-                    isPending ? "border-amber-300" : "border-border"
-                  }`}
-                >
-                  <header className="flex items-start justify-between gap-4">
-                    <div className="flex items-start gap-3">
-                      <span
-                        className={`flex h-12 w-12 items-center justify-center rounded-xl text-2xl ${colorType(iv.type)}`}
-                      >
-                        {emojiType(iv.type)}
-                      </span>
-                      <div>
-                        <div className="font-semibold">
-                          {libelleType(iv.type)}
-                          {iv.produit && (
-                            <span className="ml-2 font-normal text-foreground/70">
-                              · {iv.produit}
-                            </span>
-                          )}
-                          {isPending && (
-                            <span className="ml-2 inline-flex items-center rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800">
-                              à valider
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-sm text-foreground/60">
-                          {iv.parcelle.nom} · {formatDateFr(iv.dateOperation)}
-                          {quantite && ` · ${quantite}`}
-                        </div>
-                        {iv.culture && (
-                          <div className="mt-1 inline-flex items-center gap-1 rounded-full bg-green/10 px-2 py-0.5 text-xs text-green">
-                            <Sprout className="h-3 w-3" />
-                            Culture {iv.culture.espece} · campagne {iv.culture.campagne}
-                          </div>
-                        )}
-                        {iv.notes && <p className="mt-1 text-sm text-foreground/70">{iv.notes}</p>}
-                      </div>
-                    </div>
-                    <div className="flex flex-shrink-0 items-center gap-1">
-                      {isPending ? (
-                        <>
-                          <button
-                            onClick={() => validateMutation.mutate(iv.id)}
-                            disabled={validateMutation.isPending}
-                            className="rounded-md p-1.5 text-foreground/50 hover:bg-green/10 hover:text-green"
-                            aria-label="Accepter"
-                            title="Accepter"
-                          >
-                            <Check className="h-4 w-4" />
-                          </button>
-                          <button
-                            onClick={() => onReject(iv.id)}
-                            disabled={rejectMutation.isPending}
-                            className="rounded-md p-1.5 text-foreground/50 hover:bg-red-50 hover:text-red-600"
-                            aria-label="Refuser"
-                            title="Refuser"
-                          >
-                            <X className="h-4 w-4" />
-                          </button>
-                        </>
-                      ) : (
-                        <button
-                          onClick={() => onDelete(iv.id, libelleType(iv.type).toLowerCase())}
-                          disabled={deleteMutation.isPending}
-                          className="rounded-md p-1.5 text-foreground/50 hover:bg-red-50 hover:text-red-600"
-                          aria-label="Supprimer"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      )}
-                    </div>
-                  </header>
-                </li>
-              );
-            })}
-          </ul>
-        )}
+        <ResourceView<Intervention>
+          storageKey="carnet-des-champs"
+          defaultView="list"
+          data={data}
+          columns={columns}
+          renderCard={renderCard}
+          renderKanbanCard={renderCard}
+          getKey={(iv) => iv.id}
+          searchFields={(iv) =>
+            [
+              libelleType(iv.type),
+              iv.parcelle?.nom ?? "",
+              iv.produit ?? "",
+              iv.produitRef?.libelle ?? "",
+              iv.materielRef?.libelle ?? "",
+              iv.culture?.espece ?? "",
+              iv.notes ?? "",
+            ].join(" ")
+          }
+          searchPlaceholder="Rechercher type, parcelle, produit, culture, notes…"
+          filters={filters}
+          groupBys={groupBys}
+          emptyState={
+            <div>
+              <Sprout className="mx-auto mb-2 h-10 w-10 text-foreground/30" />
+              <p className="mb-3 text-sm text-foreground/60">Aucune intervention pour l'instant.</p>
+              <Link href="/interventions/new">
+                <Button>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Saisir ma première intervention
+                </Button>
+              </Link>
+            </div>
+          }
+        />
       </div>
     </>
   );
