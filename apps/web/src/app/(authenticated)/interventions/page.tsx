@@ -2,6 +2,7 @@
 
 import { Check, Download, Plus, Sprout, Trash2, X } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useMemo } from "react";
 import { Breadcrumb } from "@/components/app/breadcrumb";
 import { PageHeader } from "@/components/app/page-header";
@@ -38,8 +39,20 @@ const TYPE_ORDER: Intervention["type"][] = [
 ];
 
 export default function InterventionsPage() {
+  const router = useRouter();
   const interventionsQuery = useInterventions();
-  const data = useMemo(() => interventionsQuery.data ?? [], [interventionsQuery.data]);
+  // Tri client : PENDING en haut, puis par date décroissante. Donne plus
+  // de visibilité aux interventions à valider sans casser le filtre/groupBy.
+  const data = useMemo(() => {
+    const list = [...(interventionsQuery.data ?? [])];
+    list.sort((a, b) => {
+      const ap = a.validationStatus === "PENDING" ? 0 : 1;
+      const bp = b.validationStatus === "PENDING" ? 0 : 1;
+      if (ap !== bp) return ap - bp;
+      return new Date(b.dateOperation).getTime() - new Date(a.dateOperation).getTime();
+    });
+    return list;
+  }, [interventionsQuery.data]);
   const deleteMutation = useDeleteIntervention();
   const validateMutation = useValidateIntervention();
   const rejectMutation = useRejectIntervention();
@@ -312,6 +325,7 @@ export default function InterventionsPage() {
           renderCard={renderCard}
           renderKanbanCard={renderCard}
           getKey={(iv) => iv.id}
+          onItemClick={(iv) => router.push(`/interventions/${iv.id}` as never)}
           searchFields={(iv) =>
             [
               libelleType(iv.type),
