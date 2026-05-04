@@ -44,6 +44,22 @@ export class TenantsService {
     if (dto.numeroUfam !== undefined) data.numeroUfam = dto.numeroUfam.trim() || null;
     if (dto.numeroBdta !== undefined) data.numeroBdta = dto.numeroBdta.trim() || null;
     if (dto.visibleInDirectory !== undefined) data.visibleInDirectory = dto.visibleInDirectory;
+    if (dto.noterTempsParProjet !== undefined) data.noterTempsParProjet = dto.noterTempsParProjet;
+    if (dto.defaultProjetTravauxTiersId !== undefined) {
+      // Validation : le projet doit appartenir au tenant courant.
+      if (dto.defaultProjetTravauxTiersId) {
+        const projet = await this.prisma.projet.findFirst({
+          where: { id: dto.defaultProjetTravauxTiersId, tenantId },
+          select: { id: true },
+        });
+        if (!projet) {
+          throw new NotFoundException("Projet par défaut introuvable dans ton exploitation.");
+        }
+      }
+      data.defaultProjetTravauxTiers = dto.defaultProjetTravauxTiersId
+        ? { connect: { id: dto.defaultProjetTravauxTiersId } }
+        : { disconnect: true };
+    }
     if (Object.keys(data).length === 0) return this.getMine(tenantId);
     try {
       return await this.prisma.exploitation.update({ where: { id: tenantId }, data });

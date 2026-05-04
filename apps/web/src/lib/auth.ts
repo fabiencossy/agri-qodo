@@ -15,6 +15,9 @@ export interface CurrentTenant {
   code: string;
   nom: string;
   canton: string;
+  /** Préférences tenant (cf settings paramètres > exploitation). */
+  noterTempsParProjet?: boolean;
+  defaultProjetTravauxTiersId?: string | null;
 }
 
 export interface CurrentUser {
