@@ -253,8 +253,59 @@ model Exploitation {
   travauxAsPartenaire   Travail[]      @relation("TravailPartenaire")
   presences             Presence[]
   editHistory           EditHistory[]
+  projets               Projet[]
+
+  // ----- Settings tenant (cf §C2) — par défaut configuration "classique"
+  // (intervention liée à une parcelle, pas de projet par défaut). L'OWNER
+  // peut switcher dans Paramètres → Exploitation.
+  /// Si true, les interventions du carnet des champs sont liées à un
+  /// Projet plutôt qu'à une Parcelle. Permet de regrouper les opérations
+  /// par "type de travaux" (ex: Récolte 2026, Assolement bio…) au lieu
+  /// de la géographie.
+  noterTempsParProjet   Boolean @default(false) @map("noter_temps_par_projet")
+  /// Projet pré-sélectionné dans le formulaire Travaux pour tiers.
+  /// Pratique pour les ETA qui travaillent sous une seule étiquette.
+  defaultProjetTravauxTiersId String? @map("default_projet_travaux_tiers_id")
+  defaultProjetTravauxTiers   Projet? @relation("DefaultProjetTravauxTiers", fields: [defaultProjetTravauxTiersId], references: [id], onDelete: SetNull)
 
   @@map("exploitations")
+}
+
+// ====================================================================
+// Projets — regroupement libre d'opérations (interventions ou travaux)
+// par étiquette métier choisie par l'agriculteur.
+// ====================================================================
+
+enum ProjetType {
+  INTERVENTION   // Pour les interventions du carnet (mode "noter par projet")
+  TRAVAUX_TIERS  // Pour les travaux ETA / facturables
+  INTERNE        // Pour les travaux internes (entretien, formation…)
+  AUTRE
+}
+
+/// Étiquette de regroupement d'opérations. L'agriculteur choisit lui-même
+/// le découpage (ex: "Récolte 2026", "Chantier Bruhlart toiture",
+/// "Entretien matériel"). Sert de filtre/groupe dans les listes et
+/// éventuellement de bucket Odoo (project.project) à terme.
+model Projet {
+  id          String      @id @default(uuid())
+  tenantId    String      @map("tenant_id")
+  nom         String      @db.VarChar(120)
+  description String?
+  type        ProjetType  @default(AUTRE)
+  /// Couleur d'affichage (hex), pour distinguer visuellement.
+  couleurHex  String?     @map("couleur_hex")
+  /// Projet archivé : caché des sélecteurs mais conservé pour historique.
+  archive     Boolean     @default(false)
+  createdAt   DateTime    @default(now()) @map("created_at")
+  updatedAt   DateTime    @updatedAt @map("updated_at")
+
+  tenant Exploitation @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  defaultForTenants Exploitation[] @relation("DefaultProjetTravauxTiers")
+
+  @@unique([tenantId, nom])
+  @@index([tenantId, archive])
+  @@map("projets")
 }
 
 model User {
