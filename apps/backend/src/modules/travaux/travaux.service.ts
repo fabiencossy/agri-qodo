@@ -29,6 +29,7 @@ export class TravauxService {
   private readonly include = {
     partenaire: { select: { id: true, nom: true, code: true, canton: true } },
     parcelle: { select: { id: true, nom: true } },
+    projet: { select: { id: true, nom: true, type: true, couleurHex: true } },
     lignesProduit: {
       orderBy: { createdAt: "asc" as const },
       include: {
@@ -105,6 +106,7 @@ export class TravauxService {
     const { tenantId } = this.tenantContext.get();
     await this.assertParcelle(dto.parcelleId, tenantId);
     await this.assertPartenaire(dto.partenaireId, tenantId);
+    await this.assertProjet(dto.projetId, tenantId);
     await this.assertLignesValid(dto.lignesProduit, dto.lignesHeure, tenantId);
 
     return this.prisma.travail.create({
@@ -118,6 +120,7 @@ export class TravauxService {
         ...(dto.dateFin ? { dateFin: new Date(dto.dateFin) } : {}),
         ...(dto.partenaireId ? { partenaireId: dto.partenaireId } : {}),
         ...(dto.parcelleId ? { parcelleId: dto.parcelleId } : {}),
+        ...(dto.projetId ? { projetId: dto.projetId } : {}),
         ...(dto.notes ? { notes: dto.notes } : {}),
         ...(dto.lignesProduit && dto.lignesProduit.length > 0
           ? { lignesProduit: { create: dto.lignesProduit.map((l) => this.toLigneProduitData(l)) } }
@@ -160,6 +163,7 @@ export class TravauxService {
     }
     if (dto.parcelleId) await this.assertParcelle(dto.parcelleId, tenantId);
     if (dto.partenaireId) await this.assertPartenaire(dto.partenaireId, tenantId);
+    if (dto.projetId) await this.assertProjet(dto.projetId, tenantId);
     await this.assertLignesValid(dto.lignesProduit, dto.lignesHeure, tenantId);
 
     return this.prisma
@@ -203,6 +207,9 @@ export class TravauxService {
           data.parcelle = dto.parcelleId
             ? { connect: { id: dto.parcelleId } }
             : { disconnect: true };
+        }
+        if (dto.projetId !== undefined) {
+          data.projet = dto.projetId ? { connect: { id: dto.projetId } } : { disconnect: true };
         }
 
         await tx.travail.update({ where: { id }, data });
@@ -371,6 +378,16 @@ export class TravauxService {
       select: { id: true },
     });
     if (!p) throw new BadRequestException("Partenaire introuvable");
+  }
+
+  /** Vérifie que le projet existe et appartient au tenant courant. */
+  private async assertProjet(projetId: string | undefined, tenantId: string) {
+    if (!projetId) return;
+    const p = await this.prisma.projet.findFirst({
+      where: { id: projetId, tenantId },
+      select: { id: true },
+    });
+    if (!p) throw new BadRequestException("Projet introuvable dans ton exploitation.");
   }
 
   private async assertLignesValid(

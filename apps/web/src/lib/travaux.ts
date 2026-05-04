@@ -36,6 +36,9 @@ export interface Travail {
   partenaire?: { id: string; nom: string; code: string; canton: string } | null;
   parcelleId: string | null;
   parcelle?: { id: string; nom: string } | null;
+  /** Projet de regroupement (cf C2). Null = aucun projet rattaché. */
+  projetId: string | null;
+  projet?: { id: string; nom: string; type: string; couleurHex: string | null } | null;
   titre: string;
   date: string;
   dateDebut: string | null;
@@ -77,6 +80,7 @@ export interface CreateTravailInput {
   dateFin?: string;
   partenaireId?: string;
   parcelleId?: string;
+  projetId?: string;
   interne?: boolean;
   notes?: string;
   lignesProduit?: CreateLigneProduitInput[];

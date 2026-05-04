@@ -23,6 +23,8 @@ import { Input } from "@/components/ui/input";
 import { ParcelleSearchSelect } from "@/components/ui/parcelle-search-select";
 import { PartenaireSelect } from "@/components/ui/partenaire-select";
 import { useCurrentUser } from "@/lib/auth";
+import { useProjets } from "@/lib/projets";
+import { useTenantDetail } from "@/lib/tenants";
 import {
   type CreateLigneHeureInput,
   type CreateLigneProduitInput,
@@ -82,6 +84,8 @@ export default function NewTravailPage() {
   const update = useUpdateTravail();
   const me = useCurrentUser();
   const users = useUsers();
+  const projets = useProjets({ type: "TRAVAUX_TIERS" });
+  const tenantDetail = useTenantDetail();
 
   // Mode édition : ?edit={travailId} → pré-remplit le form depuis l'API.
   const editId = searchParams.get("edit") ?? undefined;
@@ -105,6 +109,7 @@ export default function NewTravailPage() {
   );
   const [interne, setInterne] = useState(false);
   const [notes, setNotes] = useState("");
+  const [projetId, setProjetId] = useState("");
   const [lignesProduit, setLignesProduit] = useState<DraftLigneProduit[]>([]);
   const [lignesHeure, setLignesHeure] = useState<DraftLigneHeure[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -120,6 +125,7 @@ export default function NewTravailPage() {
     setDate(t.date.slice(0, 10));
     setPartenaireId(t.partenaireId ?? "");
     setParcelleId(t.parcelleId ?? "");
+    setProjetId(t.projetId ?? "");
     setInterne(t.interne);
     setNotes(t.notes ?? "");
     setLignesProduit(
@@ -154,6 +160,13 @@ export default function NewTravailPage() {
       prev.length === 0 ? [{ uid: uid(), userId: meId, dureeMinutes: 0 }] : prev,
     );
   }, [meId, isEditMode]);
+
+  // Présélection projet par défaut (create only, et seulement si vide).
+  useEffect(() => {
+    if (isEditMode) return;
+    const def = tenantDetail.data?.defaultProjetTravauxTiersId;
+    if (def) setProjetId((prev) => prev || def);
+  }, [tenantDetail.data?.defaultProjetTravauxTiersId, isEditMode]);
 
   const totalHeures = useMemo(
     () => lignesHeure.reduce((s, l) => s + (l.tauxHoraireCHF ?? 0) * (l.dureeMinutes / 60), 0),
@@ -226,6 +239,7 @@ export default function NewTravailPage() {
       interne,
       ...(partenaireId && !interne ? { partenaireId } : {}),
       ...(parcelleId ? { parcelleId } : {}),
+      ...(projetId ? { projetId } : {}),
       ...(notes ? { notes } : {}),
       ...(lignesProduitClean.length > 0 ? { lignesProduit: lignesProduitClean } : {}),
       ...(lignesHeureClean.length > 0 ? { lignesHeure: lignesHeureClean } : {}),
@@ -314,6 +328,26 @@ export default function NewTravailPage() {
               onChange={(id) => setParcelleId(id)}
               placeholder="Choisir une parcelle…"
             />
+          </Field>
+
+          <Field
+            label={interne ? "Projet (optionnel)" : "Projet"}
+            {...(!interne && (projets.data?.length ?? 0) === 0
+              ? { hint: "Aucun projet créé. Va dans Paramètres → Projets pour en créer." }
+              : {})}
+          >
+            <select
+              value={projetId}
+              onChange={(e) => setProjetId(e.target.value)}
+              className="h-12 w-full rounded-lg border border-border bg-background px-3 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green"
+            >
+              <option value="">— Aucun —</option>
+              {(projets.data ?? []).map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.nom}
+                </option>
+              ))}
+            </select>
           </Field>
 
           <Field label="Titre / description" required>
@@ -414,10 +448,12 @@ export default function NewTravailPage() {
 function Field({
   label,
   required,
+  hint,
   children,
 }: {
   label: string;
   required?: boolean;
+  hint?: string;
   children: React.ReactNode;
 }) {
   return (
@@ -427,6 +463,7 @@ function Field({
         {required && <span className="ml-1 text-red-600">*</span>}
       </span>
       {children}
+      {hint && <span className="mt-1 block text-xs text-foreground/50">{hint}</span>}
     </label>
   );
 }
