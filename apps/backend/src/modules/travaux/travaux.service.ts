@@ -8,6 +8,7 @@ import {
 import { type Prisma, TravailStatut } from "@prisma/client";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { TenantContextService } from "@/common/tenant/tenant-context.service";
+import { AuditService } from "@/modules/audit/audit.service";
 import type {
   CreateLigneHeureDto,
   CreateLigneProduitDto,
@@ -22,6 +23,7 @@ export class TravauxService {
     private readonly prisma: PrismaService,
     private readonly tenantContext: TenantContextService,
     private readonly odooPush: OdooPushService,
+    private readonly audit: AuditService,
   ) {}
 
   private readonly include = {
@@ -130,9 +132,25 @@ export class TravauxService {
 
   async update(id: string, dto: UpdateTravailDto) {
     const { tenantId } = this.tenantContext.get();
+    // Capture le before pour l'audit log — uniquement les champs scalaires
+    // touchables. Les lignes (produits/heures) sont remplacées en bloc et
+    // tracées séparément via leur compteur.
     const existing = await this.prisma.travail.findFirst({
       where: { id, tenantId },
-      select: { id: true, statut: true },
+      select: {
+        id: true,
+        statut: true,
+        titre: true,
+        date: true,
+        interne: true,
+        dateDebut: true,
+        dateFin: true,
+        notes: true,
+        partenaireId: true,
+        parcelleId: true,
+        lignesProduit: { select: { id: true } },
+        lignesHeure: { select: { id: true } },
+      },
     });
     if (!existing) throw new NotFoundException("Travail introuvable");
     if (existing.statut === TravailStatut.INVOICED) {
@@ -144,46 +162,88 @@ export class TravauxService {
     if (dto.partenaireId) await this.assertPartenaire(dto.partenaireId, tenantId);
     await this.assertLignesValid(dto.lignesProduit, dto.lignesHeure, tenantId);
 
-    return this.prisma.$transaction(async (tx) => {
-      // Stratégie "remplace tout" sur les lignes — plus simple côté UI
-      // mobile (l'édition d'une ligne fait un PATCH avec la liste complète).
-      if (dto.lignesProduit !== undefined) {
-        await tx.ligneTravailProduit.deleteMany({ where: { travailId: id } });
-        if (dto.lignesProduit.length > 0) {
-          await tx.ligneTravailProduit.createMany({
-            data: dto.lignesProduit.map((l) => ({ travailId: id, ...this.toLigneProduitData(l) })),
-          });
+    return this.prisma
+      .$transaction(async (tx) => {
+        // Stratégie "remplace tout" sur les lignes — plus simple côté UI
+        // mobile (l'édition d'une ligne fait un PATCH avec la liste complète).
+        if (dto.lignesProduit !== undefined) {
+          await tx.ligneTravailProduit.deleteMany({ where: { travailId: id } });
+          if (dto.lignesProduit.length > 0) {
+            await tx.ligneTravailProduit.createMany({
+              data: dto.lignesProduit.map((l) => ({
+                travailId: id,
+                ...this.toLigneProduitData(l),
+              })),
+            });
+          }
         }
-      }
-      if (dto.lignesHeure !== undefined) {
-        await tx.ligneTravailHeure.deleteMany({ where: { travailId: id } });
-        if (dto.lignesHeure.length > 0) {
-          await tx.ligneTravailHeure.createMany({
-            data: dto.lignesHeure.map((l) => ({ travailId: id, ...this.toLigneHeureData(l) })),
-          });
+        if (dto.lignesHeure !== undefined) {
+          await tx.ligneTravailHeure.deleteMany({ where: { travailId: id } });
+          if (dto.lignesHeure.length > 0) {
+            await tx.ligneTravailHeure.createMany({
+              data: dto.lignesHeure.map((l) => ({ travailId: id, ...this.toLigneHeureData(l) })),
+            });
+          }
         }
-      }
 
-      const data: Prisma.TravailUpdateInput = {};
-      if (dto.titre !== undefined) data.titre = dto.titre.trim();
-      if (dto.date !== undefined) data.date = new Date(dto.date);
-      if (dto.interne !== undefined) data.interne = dto.interne;
-      if (dto.dateDebut !== undefined)
-        data.dateDebut = dto.dateDebut ? new Date(dto.dateDebut) : null;
-      if (dto.dateFin !== undefined) data.dateFin = dto.dateFin ? new Date(dto.dateFin) : null;
-      if (dto.notes !== undefined) data.notes = dto.notes || null;
-      if (dto.partenaireId !== undefined) {
-        data.partenaire = dto.partenaireId
-          ? { connect: { id: dto.partenaireId } }
-          : { disconnect: true };
-      }
-      if (dto.parcelleId !== undefined) {
-        data.parcelle = dto.parcelleId ? { connect: { id: dto.parcelleId } } : { disconnect: true };
-      }
+        const data: Prisma.TravailUpdateInput = {};
+        if (dto.titre !== undefined) data.titre = dto.titre.trim();
+        if (dto.date !== undefined) data.date = new Date(dto.date);
+        if (dto.interne !== undefined) data.interne = dto.interne;
+        if (dto.dateDebut !== undefined)
+          data.dateDebut = dto.dateDebut ? new Date(dto.dateDebut) : null;
+        if (dto.dateFin !== undefined) data.dateFin = dto.dateFin ? new Date(dto.dateFin) : null;
+        if (dto.notes !== undefined) data.notes = dto.notes || null;
+        if (dto.partenaireId !== undefined) {
+          data.partenaire = dto.partenaireId
+            ? { connect: { id: dto.partenaireId } }
+            : { disconnect: true };
+        }
+        if (dto.parcelleId !== undefined) {
+          data.parcelle = dto.parcelleId
+            ? { connect: { id: dto.parcelleId } }
+            : { disconnect: true };
+        }
 
-      await tx.travail.update({ where: { id }, data });
-      return tx.travail.findUniqueOrThrow({ where: { id }, include: this.include });
-    });
+        await tx.travail.update({ where: { id }, data });
+        return tx.travail.findUniqueOrThrow({ where: { id }, include: this.include });
+      })
+      .then(async (updated) => {
+        // Best-effort audit : on ne wrap pas dans la transaction pour ne pas
+        // bloquer l'update si l'insert audit échoue (le service le swallow).
+        const before: Record<string, unknown> = {
+          titre: existing.titre,
+          date: existing.date,
+          interne: existing.interne,
+          dateDebut: existing.dateDebut,
+          dateFin: existing.dateFin,
+          notes: existing.notes,
+          partenaireId: existing.partenaireId,
+          parcelleId: existing.parcelleId,
+          lignesProduitCount: existing.lignesProduit.length,
+          lignesHeureCount: existing.lignesHeure.length,
+        };
+        const after: Record<string, unknown> = {
+          titre: updated.titre,
+          date: updated.date,
+          interne: updated.interne,
+          dateDebut: updated.dateDebut,
+          dateFin: updated.dateFin,
+          notes: updated.notes,
+          partenaireId: updated.partenaireId,
+          parcelleId: updated.parcelleId,
+          lignesProduitCount: updated.lignesProduit.length,
+          lignesHeureCount: updated.lignesHeure.length,
+        };
+        await this.audit.recordEdit({
+          entityType: "Travail",
+          entityId: id,
+          action: "UPDATE",
+          before,
+          after,
+        });
+        return updated;
+      });
   }
 
   async validate(id: string) {
