@@ -29,6 +29,21 @@ export interface VersionAdapter {
    */
   saleOrderConfirmMethod: string;
   /**
+   * Modèle Field Service Management. Renommé entre versions :
+   *   - v17 : `project.task` avec flag `is_fsm=True` (FSM dérivé de Project)
+   *   - v18+ Enterprise : `industry.fsm.task` (modèle dédié)
+   * Le module Enterprise "Field Service" doit être installé pour que ce
+   * modèle existe — la détection de présence est faite à l'exécution
+   * (cf `OdooPushService.detectFsmAvailable`).
+   */
+  fsmTaskModel: string;
+  /**
+   * Nom du champ qui pointe vers le sale.order parent sur la fsm.task.
+   * Stable depuis v18 (`sale_order_id`). Utilisé pour le lien
+   * bidirectionnel après création.
+   */
+  fsmTaskSaleOrderField: string;
+  /**
    * Champs à demander dans search_read pour un res.partner "client" type
    * — varie par version (ex: champ `vat` toujours là, mais `l10n_ch_isr`
    * apparaît à partir de l'install du module CH).
@@ -43,6 +58,8 @@ const ADAPTER_V19: VersionAdapter = {
   saleOrderLineModel: "sale.order.line",
   invoiceWizardModel: "sale.advance.payment.inv",
   saleOrderConfirmMethod: "action_confirm",
+  fsmTaskModel: "industry.fsm.task",
+  fsmTaskSaleOrderField: "sale_order_id",
   resPartnerStandardFields: [
     "id",
     "name",

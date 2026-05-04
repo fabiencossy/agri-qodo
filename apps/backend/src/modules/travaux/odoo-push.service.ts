@@ -6,7 +6,7 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from "@nestjs/common";
-import type { OdooClient } from "@agri-qodo/odoo-client";
+import { type OdooClient, pickAdapter } from "@agri-qodo/odoo-client";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { TenantContextService } from "@/common/tenant/tenant-context.service";
 import { OdooClientManager } from "@/modules/odoo/odoo-client-manager.service";
@@ -21,6 +21,13 @@ export interface PushTravailResult {
   partnerCreated: boolean;
   productsCreated: number;
   linesCount: number;
+  /**
+   * Id de la `industry.fsm.task` créée si au moins une ligne du travail
+   * est un produit "physique" (consu/product) ET que le module Field
+   * Service Management est installé sur le tenant Odoo. Null sinon
+   * (services-only ou module FSM absent — fallback gracieux).
+   */
+  odooFsmTaskId: number | null;
 }
 
 interface OdooSaleOrderLineCreate {
@@ -51,6 +58,13 @@ export class OdooPushService {
   // résolu/créé par tenant. Sert de container aux project.task créées
   // pour les interventions cas A (perso, sans facturation).
   private readonly carnetProjectCache = new Map<string, number>();
+
+  // Cache mémoire de la disponibilité du module Field Service Management
+  // par tenant. true = `industry.fsm.task` répond aux requêtes Odoo,
+  // false = module non installé (fallback gracieux : on skip la fsm.task).
+  // Cleared à chaque restart du backend — c'est OK, l'overhead d'une
+  // détection par session est négligeable.
+  private readonly fsmAvailabilityCache = new Map<string, boolean>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -181,25 +195,33 @@ export class OdooPushService {
 
     // 2. Construction des lignes ----------------------------------------
     const orderLines: OdooSaleOrderLineCreate[] = [];
+    // Tracking des produits "physiques" (consu/product) pour la fsm.task
+    // ultérieure. Format : {productId, qty, name} pour reconstruire les
+    // lignes côté FSM si on en crée une.
+    const physicalLines: { productId: number; qty: number; name: string }[] = [];
 
     // 2a. Lignes produit
     for (const lp of travail.lignesProduit) {
       let productId: number | undefined = lp.produit?.odooProductId ?? undefined;
+      let productType: ProductProductRow["type"] | undefined;
       if (!productId) {
-        // Lookup par libellé
+        // Lookup par libellé — on demande aussi `type` pour décider FSM
+        // ou pas (cf §G6 mapping).
         const found = await client.searchRead<ProductProductRow>(
           "product.product",
           [["name", "=", lp.libelle]],
-          { fields: ["id"], limit: 1 },
+          { fields: ["id", "type"], limit: 1 },
         );
         if (found.length > 0 && found[0]) {
           productId = found[0].id;
+          productType = found[0].type;
         } else {
           productId = await client.create("product.product", {
             name: lp.libelle,
             type: "consu",
             list_price: lp.prixUnitaireCHF ? Number(lp.prixUnitaireCHF) : 0,
           });
+          productType = "consu";
           productsCreated++;
         }
         // Met à jour le produit local pour les futurs push
@@ -209,6 +231,14 @@ export class OdooPushService {
             data: { odooProductId: productId },
           });
         }
+      } else {
+        // Produit déjà mappé : on relit son type pour le routage FSM.
+        const got = await client.searchRead<ProductProductRow>(
+          "product.product",
+          [["id", "=", productId]],
+          { fields: ["id", "type"], limit: 1 },
+        );
+        productType = got[0]?.type;
       }
       const line: OdooSaleOrderLineCreate = {
         product_id: productId,
@@ -217,6 +247,18 @@ export class OdooPushService {
       };
       if (lp.prixUnitaireCHF) line.price_unit = Number(lp.prixUnitaireCHF);
       orderLines.push(line);
+      // Routage FSM : seuls les produits "biens" (consu/product) — pas
+      // les services — alimentent la future industry.fsm.task. Si
+      // productType est inconnu, on prend la conservation max et on
+      // l'inclut quand même (mieux vaut une fsm.task avec une ligne en
+      // trop qu'une fsm.task vide).
+      if (productType !== "service") {
+        physicalLines.push({
+          productId,
+          qty: Number(lp.quantite),
+          name: lp.libelle,
+        });
+      }
     }
 
     // 2b. Lignes heures : produit "Main d'œuvre" générique par tenant
@@ -280,6 +322,22 @@ export class OdooPushService {
       data: { odooSaleOrderId: saleOrderId },
     });
 
+    // 5. Création optionnelle de la industry.fsm.task ------------------
+    // Si au moins une ligne physique ET le module FSM est installé,
+    // on crée une tâche Field Service liée au sale.order. Permet à
+    // l'agriculteur de planifier l'intervention terrain depuis Odoo
+    // sans devoir re-saisir les produits à livrer/utiliser.
+    let odooFsmTaskId: number | null = null;
+    if (physicalLines.length > 0) {
+      odooFsmTaskId = await this.tryCreateFsmTask(client, tenantId, {
+        saleOrderId,
+        partnerId,
+        title: travail.titre,
+        date: travail.date,
+        physicalLines,
+      });
+    }
+
     const tenant = await this.prisma.exploitation.findUnique({
       where: { id: tenantId },
       select: { odooUrl: true },
@@ -289,7 +347,9 @@ export class OdooPushService {
       : "";
 
     this.logger.log(
-      `Push Odoo OK : travail ${travailId} → sale.order #${saleOrderId} (${orderLines.length} lignes)`,
+      `Push Odoo OK : travail ${travailId} → sale.order #${saleOrderId} (${orderLines.length} lignes)${
+        odooFsmTaskId ? ` + fsm.task #${odooFsmTaskId}` : ""
+      }`,
     );
 
     return {
@@ -298,7 +358,118 @@ export class OdooPushService {
       partnerCreated,
       productsCreated,
       linesCount: orderLines.length,
+      odooFsmTaskId,
     };
+  }
+
+  /**
+   * Détecte la disponibilité du module Field Service Management sur le
+   * tenant Odoo en interrogeant `ir.model`. Cache le résultat par tenant
+   * pour éviter une requête à chaque push. Best-effort — un échec de
+   * détection est traité comme "non disponible".
+   */
+  private async detectFsmAvailable(client: OdooClient, tenantId: string): Promise<boolean> {
+    const cached = this.fsmAvailabilityCache.get(tenantId);
+    if (cached !== undefined) return cached;
+
+    const session = client.getSession();
+    const adapter = pickAdapter(session?.majorVersion ?? 19);
+    try {
+      const found = await client.searchRead<{ id: number }>(
+        "ir.model",
+        [["model", "=", adapter.fsmTaskModel]],
+        { fields: ["id"], limit: 1 },
+      );
+      const available = found.length > 0;
+      this.fsmAvailabilityCache.set(tenantId, available);
+      if (!available) {
+        this.logger.log(
+          `Module FSM non installé sur tenant ${tenantId} (modèle ${adapter.fsmTaskModel} introuvable) — fallback gracieux.`,
+        );
+      }
+      return available;
+    } catch (err) {
+      this.logger.warn(
+        `Détection FSM échouée pour tenant ${tenantId}, fallback "non disponible" : ${
+          err instanceof Error ? err.message : err
+        }`,
+      );
+      this.fsmAvailabilityCache.set(tenantId, false);
+      return false;
+    }
+  }
+
+  /**
+   * Crée une `industry.fsm.task` liée au sale.order pour les lignes de
+   * type "bien" (consu/product). Best-effort : si le module FSM n'est
+   * pas installé OU si la création échoue, on skip et on garde le
+   * sale.order seul. Ne throw jamais.
+   */
+  private async tryCreateFsmTask(
+    client: OdooClient,
+    tenantId: string,
+    input: {
+      saleOrderId: number;
+      partnerId: number;
+      title: string;
+      date: Date;
+      physicalLines: { productId: number; qty: number; name: string }[];
+    },
+  ): Promise<number | null> {
+    const available = await this.detectFsmAvailable(client, tenantId);
+    if (!available) return null;
+
+    const session = client.getSession();
+    const adapter = pickAdapter(session?.majorVersion ?? 19);
+
+    try {
+      const description = input.physicalLines.map((l) => `- ${l.name} × ${l.qty}`).join("\n");
+      const taskId = await client.create(adapter.fsmTaskModel, {
+        name: input.title,
+        partner_id: input.partnerId,
+        [adapter.fsmTaskSaleOrderField]: input.saleOrderId,
+        planned_date_begin: input.date.toISOString().slice(0, 10),
+        description,
+      });
+      this.logger.log(
+        `${adapter.fsmTaskModel} #${taskId} créée pour sale.order #${input.saleOrderId} (${input.physicalLines.length} lignes physiques)`,
+      );
+      return taskId;
+    } catch (err) {
+      // Premier essai échoué : peut-être un champ inattendu. On retente
+      // avec un payload minimal sans `planned_date_begin` ni le lien
+      // sale.order, juste pour ne pas perdre l'historique côté Odoo.
+      this.logger.warn(
+        `Création ${adapter.fsmTaskModel} échouée, retry minimal : ${
+          err instanceof Error ? err.message : err
+        }`,
+      );
+      try {
+        const taskId = await client.create(adapter.fsmTaskModel, {
+          name: input.title,
+          partner_id: input.partnerId,
+        });
+        // Tente le lien sale.order en write séparé (best-effort).
+        try {
+          await client.write(adapter.fsmTaskModel, [taskId], {
+            [adapter.fsmTaskSaleOrderField]: input.saleOrderId,
+          });
+        } catch {
+          // ignore — la fsm.task existe au moins
+        }
+        return taskId;
+      } catch (err2) {
+        this.logger.warn(
+          `Retry minimal ${adapter.fsmTaskModel} échoué — fallback définitif (sale.order seul) : ${
+            err2 instanceof Error ? err2.message : err2
+          }`,
+        );
+        // On marque le tenant comme "FSM indisponible" pour ne pas
+        // retenter à chaque push de cette session.
+        this.fsmAvailabilityCache.set(tenantId, false);
+        return null;
+      }
+    }
   }
 
   /**
