@@ -12,14 +12,16 @@
  * "CHANTIER" par défaut. Le champ reste en DB pour rétrocompat.
  */
 
-import { Clock, Play, Square, Trash2 } from "lucide-react";
+import { Clock, Pencil, Play, Square, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Breadcrumb } from "@/components/app/breadcrumb";
 import { PageHeader } from "@/components/app/page-header";
+import { EditPresenceModal } from "@/components/presences/edit-presence-modal";
 import { HhmmTimeInput } from "@/components/ui/hhmm-time-input";
 import { Input } from "@/components/ui/input";
 import {
   formatDuree,
+  type Presence,
   PRESENCE_TYPE_LABEL,
   useClockIn,
   useClockOut,
@@ -72,6 +74,9 @@ export default function PresencesPage() {
   const [date, setDate] = useState(todayDate());
   const [heureDebut, setHeureDebut] = useState(nowTime());
   const [heureFin, setHeureFin] = useState("");
+
+  // Présence en cours d'édition (modal). Null = modal fermée.
+  const [editing, setEditing] = useState<Presence | null>(null);
 
   // Quand une présence ouvre, on synchronise les champs avec ses valeurs
   // pour permettre l'édition de l'heure de fin avant le clock-out.
@@ -258,26 +263,38 @@ export default function PresencesPage() {
                       </div>
                     )}
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1">
                     <span className="font-mono text-sm tabular-nums">
                       {formatDuree(p.dureeMinutes)}
                     </span>
                     {!p.dateFin && (
-                      <span className="rounded-full bg-green/10 px-2 py-0.5 text-xs font-medium text-green">
+                      <span className="ml-1 rounded-full bg-green/10 px-2 py-0.5 text-xs font-medium text-green">
                         en cours
                       </span>
                     )}
                     {p.dateFin && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (confirm("Supprimer cette présence ?")) deletePresence.mutate(p.id);
-                        }}
-                        className="text-foreground/40 hover:text-red-600"
-                        aria-label="Supprimer"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => setEditing(p)}
+                          className="rounded-md p-1.5 text-foreground/40 hover:bg-muted hover:text-foreground/80"
+                          aria-label="Modifier"
+                          title="Modifier"
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (confirm("Supprimer cette présence ?")) deletePresence.mutate(p.id);
+                          }}
+                          className="rounded-md p-1.5 text-foreground/40 hover:bg-red-50 hover:text-red-600"
+                          aria-label="Supprimer"
+                          title="Supprimer"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </>
                     )}
                   </div>
                 </li>
@@ -286,6 +303,8 @@ export default function PresencesPage() {
           )}
         </section>
       </div>
+
+      {editing && <EditPresenceModal presence={editing} onClose={() => setEditing(null)} />}
     </>
   );
 }

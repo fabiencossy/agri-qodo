@@ -13,10 +13,10 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from "@nestjs/swagger";
-import { PresenceType } from "@prisma/client";
 import { JwtAuthGuard } from "@/modules/auth/guards/jwt-auth.guard";
 import { ClockOutPresenceDto } from "./dto/clock-out-presence.dto";
 import { CreatePresenceDto } from "./dto/create-presence.dto";
+import { UpdatePresenceDto } from "./dto/update-presence.dto";
 import { PresencesService } from "./presences.service";
 
 @ApiTags("presences")
@@ -80,12 +80,10 @@ export class PresencesController {
 
   @Patch(":id")
   @ApiOperation({
-    summary: "Modifie une présence (type, travail lié, notes). N'affecte pas dateDebut/dateFin.",
+    summary:
+      "Modifie une présence (type, dateDebut/dateFin, travail lié, notes). Recalcule dureeMinutes si les bornes changent.",
   })
-  update(
-    @Param("id", ParseUUIDPipe) id: string,
-    @Body() dto: { type?: PresenceType; travailId?: string; notes?: string },
-  ) {
+  update(@Param("id", ParseUUIDPipe) id: string, @Body() dto: UpdatePresenceDto) {
     return this.service.update(id, dto);
   }
 

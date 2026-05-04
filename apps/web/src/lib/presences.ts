@@ -103,6 +103,26 @@ export function useClockOut() {
   });
 }
 
+export interface UpdatePresenceInput {
+  type?: PresenceType;
+  dateDebut?: string;
+  dateFin?: string;
+  travailId?: string;
+  notes?: string;
+}
+
+export function useUpdatePresence() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...input }: UpdatePresenceInput & { id: string }) =>
+      api<Presence>(`/api/presences/${id}`, { method: "PATCH", body: input }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: KEY });
+      void qc.invalidateQueries({ queryKey: CURRENT });
+    },
+  });
+}
+
 export function useDeletePresence() {
   const qc = useQueryClient();
   return useMutation({
