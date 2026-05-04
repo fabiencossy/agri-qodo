@@ -1,9 +1,18 @@
 "use client";
 
-import { Download, FileUp, LayoutGrid, Map as MapIcon, MapPin, Plus, Trash2 } from "lucide-react";
+import {
+  Download,
+  FileUp,
+  LayoutGrid,
+  Map as MapIcon,
+  MapPin,
+  Plus,
+  Search,
+  Trash2,
+} from "lucide-react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Breadcrumb } from "@/components/app/breadcrumb";
 import { PageHeader } from "@/components/app/page-header";
 import { Button } from "@/components/ui/button";
@@ -11,6 +20,8 @@ import { downloadCsv } from "@/lib/export-csv";
 import {
   formatSurface,
   libelleZone,
+  type Parcelle,
+  type ParcelleMapItem,
   useDeleteParcelle,
   useParcelles,
   useParcellesMap,
@@ -29,12 +40,21 @@ type View = "liste" | "carte";
 
 const VIEW_STORAGE_KEY = "agriqodo:parcelles:view";
 
+function matchesQuery(
+  p: { nom: string; identifiantCadastral?: string | null },
+  q: string,
+): boolean {
+  if (!q) return true;
+  const n = q.toLowerCase();
+  return (
+    p.nom.toLowerCase().includes(n) || (p.identifiantCadastral?.toLowerCase().includes(n) ?? false)
+  );
+}
+
 export default function ParcellesPage() {
-  /**
-   * Default = carte (visuel agriculteur). Persistance localStorage —
-   * lecture en effect côté client pour ne pas casser le rendu SSR.
-   */
   const [view, setView] = useState<View>("carte");
+  const [search, setSearch] = useState("");
+
   useEffect(() => {
     try {
       const saved = localStorage.getItem(VIEW_STORAGE_KEY);
@@ -60,6 +80,17 @@ export default function ParcellesPage() {
       deleteMutation.mutate(id);
     }
   };
+
+  // Filtrage par recherche — appliqué aussi bien à la liste qu'à la carte
+  // pour donner un feedback visuel cohérent quand on tape.
+  const filteredList = useMemo<Parcelle[]>(
+    () => (parcelles.data ?? []).filter((p) => matchesQuery(p, search)),
+    [parcelles.data, search],
+  );
+  const filteredMap = useMemo<ParcelleMapItem[]>(
+    () => (parcellesMap.data ?? []).filter((p) => matchesQuery({ nom: p.nom }, search)),
+    [parcellesMap.data, search],
+  );
 
   return (
     <>
@@ -129,10 +160,39 @@ export default function ParcellesPage() {
           ]}
         />
 
+        {/* Barre de recherche unifiée — même look que <ResourceView> pour
+            cohérence visuelle. Filtre les 2 vues (liste et carte) en live. */}
+        {parcelles.data && parcelles.data.length > 0 && (
+          <div className="mb-3 flex items-center rounded-lg border border-border bg-background">
+            <Search className="ml-3 h-4 w-4 text-foreground/40" />
+            <input
+              type="search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Rechercher par nom ou identifiant cadastral…"
+              className="min-w-0 flex-1 bg-transparent px-3 py-2 text-sm outline-none"
+            />
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch("")}
+                className="px-3 text-xs text-foreground/60 hover:text-foreground/90"
+              >
+                Effacer
+              </button>
+            )}
+          </div>
+        )}
+
         {view === "carte" && parcellesMap.data && (
           <>
-            <ParcellesMapView parcelles={parcellesMap.data} />
-            {parcellesMap.data.every((p) => p.geom === null) && (
+            <ParcellesMapView parcelles={filteredMap} />
+            {filteredMap.length === 0 && search && (
+              <p className="mt-3 text-center text-sm text-foreground/60">
+                Aucune parcelle ne correspond à « {search} ».
+              </p>
+            )}
+            {!search && parcellesMap.data.every((p) => p.geom === null) && (
               <p className="mt-3 text-center text-sm text-foreground/60">
                 Aucune parcelle n'a de tracé géographique. Crée une nouvelle parcelle avec le mode «
                 Dessiner sur la carte ».
@@ -173,48 +233,56 @@ export default function ParcellesPage() {
         )}
 
         {view === "liste" && parcelles.data && parcelles.data.length > 0 && (
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {parcelles.data.map((p) => (
-              <Link
-                key={p.id}
-                href={`/parcelles/${p.id}` as never}
-                className="group relative block rounded-2xl border border-border bg-background p-5 transition-all hover:border-green hover:shadow-md active:scale-[0.99]"
-              >
-                <header className="mb-3 flex items-start justify-between gap-2">
-                  <h2 className="text-lg font-semibold group-hover:text-green">{p.nom}</h2>
-                  <button
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      onDelete(p.id, p.nom);
-                    }}
-                    disabled={deleteMutation.isPending}
-                    className="relative z-10 -mr-1 -mt-1 flex-shrink-0 rounded-md p-1.5 text-foreground/40 hover:bg-red-50 hover:text-red-600"
-                    aria-label="Supprimer"
+          <>
+            {filteredList.length === 0 ? (
+              <p className="rounded-xl border border-dashed border-border bg-muted/30 p-8 text-center text-sm text-foreground/60">
+                Aucune parcelle ne correspond à « {search} ».
+              </p>
+            ) : (
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {filteredList.map((p) => (
+                  <Link
+                    key={p.id}
+                    href={`/parcelles/${p.id}` as never}
+                    className="group relative block rounded-2xl border border-border bg-background p-5 transition-all hover:border-green hover:shadow-md active:scale-[0.99]"
                   >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                </header>
-                <dl className="space-y-1 text-sm">
-                  <div className="flex justify-between">
-                    <dt className="text-foreground/60">Surface</dt>
-                    <dd className="font-medium">{formatSurface(p.surfaceM2)}</dd>
-                  </div>
-                  <div className="flex justify-between">
-                    <dt className="text-foreground/60">Zone</dt>
-                    <dd>{libelleZone(p.zone)}</dd>
-                  </div>
-                  {p.identifiantCadastral && (
-                    <div className="flex justify-between">
-                      <dt className="text-foreground/60">N° cadastral</dt>
-                      <dd className="font-mono text-xs">{p.identifiantCadastral}</dd>
-                    </div>
-                  )}
-                </dl>
-                {p.notes && <p className="mt-3 text-xs text-foreground/60">{p.notes}</p>}
-              </Link>
-            ))}
-          </div>
+                    <header className="mb-3 flex items-start justify-between gap-2">
+                      <h2 className="text-lg font-semibold group-hover:text-green">{p.nom}</h2>
+                      <button
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          onDelete(p.id, p.nom);
+                        }}
+                        disabled={deleteMutation.isPending}
+                        className="relative z-10 -mr-1 -mt-1 flex-shrink-0 rounded-md p-1.5 text-foreground/40 hover:bg-red-50 hover:text-red-600"
+                        aria-label="Supprimer"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </header>
+                    <dl className="space-y-1 text-sm">
+                      <div className="flex justify-between">
+                        <dt className="text-foreground/60">Surface</dt>
+                        <dd className="font-medium">{formatSurface(p.surfaceM2)}</dd>
+                      </div>
+                      <div className="flex justify-between">
+                        <dt className="text-foreground/60">Zone</dt>
+                        <dd>{libelleZone(p.zone)}</dd>
+                      </div>
+                      {p.identifiantCadastral && (
+                        <div className="flex justify-between">
+                          <dt className="text-foreground/60">N° cadastral</dt>
+                          <dd className="font-mono text-xs">{p.identifiantCadastral}</dd>
+                        </div>
+                      )}
+                    </dl>
+                    {p.notes && <p className="mt-3 text-xs text-foreground/60">{p.notes}</p>}
+                  </Link>
+                ))}
+              </div>
+            )}
+          </>
         )}
       </div>
     </>
