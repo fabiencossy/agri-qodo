@@ -7,6 +7,7 @@ import { RuleEngineModule } from "./common/rule-engine/rule-engine.module";
 import { TenantModule } from "./common/tenant/tenant.module";
 import { validateEnv } from "./config/env.schema";
 import { AnimauxModule } from "./modules/animaux/animaux.module";
+import { AuditModule } from "./modules/audit/audit.module";
 import { AuthModule } from "./modules/auth/auth.module";
 import { HealthModule } from "./modules/health/health.module";
 import { InterventionsModule } from "./modules/interventions/interventions.module";
@@ -61,6 +62,7 @@ import { VeilleModule } from "./modules/veille/veille.module";
     CryptoModule,
     MailerModule,
     RuleEngineModule,
+    AuditModule,
     HealthModule,
     AuthModule,
     TenantsModule,

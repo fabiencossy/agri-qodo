@@ -112,7 +112,7 @@ export default function TravailDetailPage() {
               )}
             </>
           }
-          {...(t.statut === "DRAFT"
+          {...(t.statut !== "INVOICED"
             ? { onEdit: () => router.push(`/travaux/new?edit=${t.id}` as never) }
             : {})}
           menuActions={

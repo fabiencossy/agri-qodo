@@ -252,6 +252,7 @@ model Exploitation {
   travaux               Travail[]      @relation("TravailTenant")
   travauxAsPartenaire   Travail[]      @relation("TravailPartenaire")
   presences             Presence[]
+  editHistory           EditHistory[]
 
   @@map("exploitations")
 }
@@ -297,6 +298,7 @@ model User {
   emailVerificationTokens EmailVerificationToken[]
   lignesHeure             LigneTravailHeure[]
   presences               Presence[]
+  editHistory             EditHistory[]
 
   // Email partagé : un comptable / conseiller peut avoir un compte sur
   // plusieurs exploitations. L'unicité est sur (email, tenantId).
@@ -966,4 +968,45 @@ model Presence {
   @@index([dateDebut])
   @@index([travailId])
   @@map("presences")
+}
+
+// ====================================================================
+// Audit / EditHistory
+// ====================================================================
+
+// Trace générique des modifications matérielles sur les entités
+// auditables (Travail, Intervention, Presence, etc.). Sert :
+// - de base future pour les audit logs LPD/nFADP (Mois 2 backlog),
+// - à afficher l'historique d'un enregistrement dans l'UI ("Modifié
+//   par X le Y, champ Z passé de A à B").
+// On reste sur un format JSONB générique pour ne pas avoir à migrer
+// quand on étend l'audit à d'autres entités.
+model EditHistory {
+  id         String   @id @default(uuid())
+  tenantId   String   @map("tenant_id")
+  // Type d'entité auditée (ex: "Travail", "Intervention"). Free-form
+  // string plutôt qu'un enum pour ne pas forcer une migration à chaque
+  // ajout d'entité auditée.
+  entityType String   @map("entity_type") @db.VarChar(50)
+  entityId   String   @map("entity_id")
+  // User qui a fait la modification (peut être un partenaire externe
+  // dans le cas B). FK avec onDelete=SetNull pour ne pas perdre
+  // l'historique si on supprime un user.
+  userId     String?  @map("user_id")
+  // Action effectuée : "UPDATE", "VALIDATE", "REJECT", "CANCEL",
+  // "DELETE" — extensible.
+  action     String   @db.VarChar(20)
+  // Diff JSON : { fieldName: { old: any, new: any } }. Null pour les
+  // actions sans diff de champ (DELETE, VALIDATE, etc.).
+  diff       Json?
+  // Métadonnées libres : raison de refus, IP, user-agent, etc.
+  meta       Json?
+  editedAt   DateTime @default(now()) @map("edited_at")
+
+  tenant Exploitation @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, entityType, entityId])
+  @@index([tenantId, editedAt])
+  @@map("edit_history")
 }
