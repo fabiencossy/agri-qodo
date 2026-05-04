@@ -1,27 +1,24 @@
 "use client";
 
-import {
-  Download,
-  FileUp,
-  LayoutGrid,
-  Map as MapIcon,
-  MapPin,
-  Plus,
-  Search,
-  Trash2,
-} from "lucide-react";
+import { Download, FileUp, MapPin, Plus, Trash2 } from "lucide-react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { Breadcrumb } from "@/components/app/breadcrumb";
 import { PageHeader } from "@/components/app/page-header";
 import { Button } from "@/components/ui/button";
+import {
+  type FilterOption,
+  type GroupByOption,
+  type ListColumn,
+  ResourceView,
+} from "@/components/ui/resource-view";
 import { downloadCsv } from "@/lib/export-csv";
 import {
   formatSurface,
   libelleZone,
   type Parcelle,
-  type ParcelleMapItem,
+  type ZoneAgricole,
   useDeleteParcelle,
   useParcelles,
   useParcellesMap,
@@ -36,60 +33,123 @@ const ParcellesMapView = dynamic(() => import("@/components/maps/parcelles-map-v
   ),
 });
 
-type View = "liste" | "carte";
-
-const VIEW_STORAGE_KEY = "agriqodo:parcelles:view";
-
-function matchesQuery(
-  p: { nom: string; identifiantCadastral?: string | null },
-  q: string,
-): boolean {
-  if (!q) return true;
-  const n = q.toLowerCase();
-  return (
-    p.nom.toLowerCase().includes(n) || (p.identifiantCadastral?.toLowerCase().includes(n) ?? false)
-  );
-}
+const ZONE_ORDER: ZoneAgricole[] = ["ZA", "ZP", "ZM1", "ZM2", "ZM3", "ZM4", "ZE"];
 
 export default function ParcellesPage() {
-  const [view, setView] = useState<View>("carte");
-  const [search, setSearch] = useState("");
-
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem(VIEW_STORAGE_KEY);
-      if (saved === "liste" || saved === "carte") setView(saved);
-    } catch {
-      // localStorage indisponible — on garde le défaut
-    }
-  }, []);
-  const setViewPersisted = (v: View) => {
-    setView(v);
-    try {
-      localStorage.setItem(VIEW_STORAGE_KEY, v);
-    } catch {
-      // ignore
-    }
-  };
   const parcelles = useParcelles();
   const parcellesMap = useParcellesMap();
   const deleteMutation = useDeleteParcelle();
 
-  const onDelete = (id: string, nom: string) => {
-    if (confirm(`Supprimer la parcelle « ${nom} » ? Cette action est définitive.`)) {
-      deleteMutation.mutate(id);
-    }
-  };
+  const data = useMemo(() => parcelles.data ?? [], [parcelles.data]);
 
-  // Filtrage par recherche — appliqué aussi bien à la liste qu'à la carte
-  // pour donner un feedback visuel cohérent quand on tape.
-  const filteredList = useMemo<Parcelle[]>(
-    () => (parcelles.data ?? []).filter((p) => matchesQuery(p, search)),
-    [parcelles.data, search],
-  );
-  const filteredMap = useMemo<ParcelleMapItem[]>(
-    () => (parcellesMap.data ?? []).filter((p) => matchesQuery({ nom: p.nom }, search)),
-    [parcellesMap.data, search],
+  const columns: ListColumn<Parcelle>[] = [
+    {
+      key: "nom",
+      header: "Nom",
+      cell: (p) => (
+        <Link
+          href={`/parcelles/${p.id}` as never}
+          className="font-medium hover:text-green hover:underline"
+        >
+          {p.nom}
+        </Link>
+      ),
+    },
+    {
+      key: "surface",
+      header: "Surface",
+      cell: (p) => (
+        <span className="whitespace-nowrap font-mono text-sm tabular-nums">
+          {formatSurface(p.surfaceM2)}
+        </span>
+      ),
+    },
+    {
+      key: "zone",
+      header: "Zone",
+      cell: (p) => libelleZone(p.zone),
+      hideBelow: "md",
+    },
+    {
+      key: "cadastral",
+      header: "N° cadastral",
+      cell: (p) => (
+        <span className="font-mono text-xs text-foreground/60">
+          {p.identifiantCadastral ?? "—"}
+        </span>
+      ),
+      hideBelow: "lg",
+    },
+    {
+      key: "actions",
+      header: "",
+      cell: (p) => (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            if (confirm(`Supprimer la parcelle « ${p.nom} » ? Cette action est définitive.`)) {
+              deleteMutation.mutate(p.id);
+            }
+          }}
+          disabled={deleteMutation.isPending}
+          className="rounded-md p-1.5 text-foreground/40 hover:bg-red-50 hover:text-red-600"
+          aria-label="Supprimer"
+        >
+          <Trash2 className="h-4 w-4" />
+        </button>
+      ),
+      className: "text-right",
+    },
+  ];
+
+  const filters: FilterOption<Parcelle>[] = [
+    {
+      key: "with-cadastral",
+      label: "Avec N° cadastral",
+      predicate: (p) => !!p.identifiantCadastral,
+    },
+    { key: "with-notes", label: "Avec notes", predicate: (p) => !!p.notes },
+    { key: "small", label: "< 1 ha", predicate: (p) => Number(p.surfaceM2) < 10000 },
+    {
+      key: "large",
+      label: "≥ 5 ha",
+      predicate: (p) => Number(p.surfaceM2) >= 50000,
+    },
+  ];
+
+  const groupBys: GroupByOption<Parcelle>[] = [
+    {
+      key: "zone",
+      label: "Zone agricole",
+      groupKey: (p) => p.zone,
+      groupLabel: (k) => libelleZone(k as ZoneAgricole),
+      order: ZONE_ORDER as string[],
+    },
+  ];
+
+  const renderCard = (p: Parcelle) => (
+    <div>
+      <div className="flex items-start justify-between gap-2">
+        <h3 className="text-base font-semibold">{p.nom}</h3>
+      </div>
+      <dl className="mt-2 space-y-0.5 text-sm">
+        <div className="flex justify-between">
+          <dt className="text-foreground/60">Surface</dt>
+          <dd className="font-medium">{formatSurface(p.surfaceM2)}</dd>
+        </div>
+        <div className="flex justify-between">
+          <dt className="text-foreground/60">Zone</dt>
+          <dd>{libelleZone(p.zone)}</dd>
+        </div>
+        {p.identifiantCadastral && (
+          <div className="flex justify-between">
+            <dt className="text-foreground/60">N° cadastral</dt>
+            <dd className="font-mono text-xs">{p.identifiantCadastral}</dd>
+          </div>
+        )}
+      </dl>
+      {p.notes && <p className="mt-2 text-xs text-foreground/60">{p.notes}</p>}
+    </div>
   );
 
   return (
@@ -104,34 +164,6 @@ export default function ParcellesPage() {
               ? `${parcelles.data.length} parcelle${parcelles.data.length > 1 ? "s" : ""}`
               : "Chargement…"
           }
-          rightSlot={
-            parcelles.data && parcelles.data.length > 0 ? (
-              <div className="inline-flex rounded-lg border border-border bg-background p-1">
-                <button
-                  type="button"
-                  onClick={() => setViewPersisted("liste")}
-                  aria-label="Vue liste"
-                  className={`flex h-9 items-center gap-1.5 rounded-md px-2 text-sm font-medium transition-colors sm:px-3 ${
-                    view === "liste" ? "bg-green text-white" : "text-foreground/70 hover:bg-muted"
-                  }`}
-                >
-                  <LayoutGrid className="h-4 w-4" />
-                  <span className="hidden sm:inline">Liste</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setViewPersisted("carte")}
-                  aria-label="Vue carte"
-                  className={`flex h-9 items-center gap-1.5 rounded-md px-2 text-sm font-medium transition-colors sm:px-3 ${
-                    view === "carte" ? "bg-green text-white" : "text-foreground/70 hover:bg-muted"
-                  }`}
-                >
-                  <MapIcon className="h-4 w-4" />
-                  <span className="hidden sm:inline">Carte</span>
-                </button>
-              </div>
-            ) : null
-          }
           menuActions={[
             {
               label: "Importer un fichier",
@@ -141,10 +173,9 @@ export default function ParcellesPage() {
             {
               label: "Exporter en CSV",
               icon: Download,
-              disabled: !parcelles.data || parcelles.data.length === 0,
+              disabled: data.length === 0,
               onClick: () => {
-                if (!parcelles.data) return;
-                downloadCsv("parcelles", parcelles.data, [
+                downloadCsv("parcelles", data, [
                   { header: "Nom", value: (p) => p.nom },
                   { header: "Surface (m²)", value: (p) => p.surfaceM2 },
                   {
@@ -160,130 +191,70 @@ export default function ParcellesPage() {
           ]}
         />
 
-        {/* Barre de recherche unifiée — même look que <ResourceView> pour
-            cohérence visuelle. Filtre les 2 vues (liste et carte) en live. */}
-        {parcelles.data && parcelles.data.length > 0 && (
-          <div className="mb-3 flex items-center rounded-lg border border-border bg-background">
-            <Search className="ml-3 h-4 w-4 text-foreground/40" />
-            <input
-              type="search"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Rechercher par nom ou identifiant cadastral…"
-              className="min-w-0 flex-1 bg-transparent px-3 py-2 text-sm outline-none"
-            />
-            {search && (
-              <button
-                type="button"
-                onClick={() => setSearch("")}
-                className="px-3 text-xs text-foreground/60 hover:text-foreground/90"
-              >
-                Effacer
-              </button>
-            )}
-          </div>
-        )}
-
-        {view === "carte" && parcellesMap.data && (
-          <>
-            <ParcellesMapView parcelles={filteredMap} />
-            {filteredMap.length === 0 && search && (
-              <p className="mt-3 text-center text-sm text-foreground/60">
-                Aucune parcelle ne correspond à « {search} ».
-              </p>
-            )}
-            {!search && parcellesMap.data.every((p) => p.geom === null) && (
-              <p className="mt-3 text-center text-sm text-foreground/60">
-                Aucune parcelle n'a de tracé géographique. Crée une nouvelle parcelle avec le mode «
-                Dessiner sur la carte ».
-              </p>
-            )}
-          </>
-        )}
-
         {parcelles.isError && (
-          <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+          <div className="mb-3 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
             Impossible de charger les parcelles. Vérifie ta connexion.
           </div>
         )}
 
-        {parcelles.data && parcelles.data.length === 0 && (
-          <div className="rounded-2xl border-2 border-dashed border-border p-10 text-center">
-            <MapPin className="mx-auto h-10 w-10 text-foreground/30" />
-            <h2 className="mt-4 text-lg font-semibold">Aucune parcelle pour l'instant</h2>
-            <p className="mt-1 text-sm text-foreground/60">
-              Importez vos parcelles depuis votre portail cantonal en un clic, ou commencez par en
-              créer une.
-            </p>
-            <div className="mt-6 flex justify-center gap-3">
-              <Link href="/parcelles/import">
-                <Button>
-                  <FileUp className="mr-2 h-4 w-4" />
-                  Importer un fichier
-                </Button>
-              </Link>
-              <Link href="/parcelles/new">
-                <Button variant="secondary">
-                  <Plus className="mr-2 h-4 w-4" />
-                  Créer manuellement
-                </Button>
-              </Link>
-            </div>
-          </div>
-        )}
-
-        {view === "liste" && parcelles.data && parcelles.data.length > 0 && (
-          <>
-            {filteredList.length === 0 ? (
-              <p className="rounded-xl border border-dashed border-border bg-muted/30 p-8 text-center text-sm text-foreground/60">
-                Aucune parcelle ne correspond à « {search} ».
+        <ResourceView<Parcelle>
+          storageKey="parcelles"
+          defaultView="map"
+          data={data}
+          columns={columns}
+          renderCard={renderCard}
+          renderKanbanCard={renderCard}
+          getKey={(p) => p.id}
+          onItemClick={(p) =>
+            // Use Link semantics — fallback to window navigation since
+            // ResourceView ne propage pas les props nav. Simple navigation
+            // côté client suffit ici.
+            (window.location.href = `/parcelles/${p.id}`)
+          }
+          searchFields={(p) =>
+            [p.nom, p.identifiantCadastral ?? "", p.notes ?? "", libelleZone(p.zone)].join(" ")
+          }
+          searchPlaceholder="Rechercher par nom, N° cadastral, zone…"
+          filters={filters}
+          groupBys={groupBys}
+          renderMapView={(filteredItems) => {
+            const ids = new Set(filteredItems.map((p) => p.id));
+            const filteredMap = (parcellesMap.data ?? []).filter((m) => ids.has(m.id));
+            return (
+              <>
+                <ParcellesMapView parcelles={filteredMap} />
+                {filteredMap.length === 0 && (
+                  <p className="mt-3 text-center text-sm text-foreground/60">
+                    Aucune parcelle ne correspond aux filtres.
+                  </p>
+                )}
+              </>
+            );
+          }}
+          emptyState={
+            <div>
+              <MapPin className="mx-auto h-10 w-10 text-foreground/30" />
+              <h2 className="mt-4 text-lg font-semibold">Aucune parcelle pour l'instant</h2>
+              <p className="mt-1 text-sm text-foreground/60">
+                Importe tes parcelles depuis le portail cantonal ou crées-en une manuellement.
               </p>
-            ) : (
-              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {filteredList.map((p) => (
-                  <Link
-                    key={p.id}
-                    href={`/parcelles/${p.id}` as never}
-                    className="group relative block rounded-2xl border border-border bg-background p-5 transition-all hover:border-green hover:shadow-md active:scale-[0.99]"
-                  >
-                    <header className="mb-3 flex items-start justify-between gap-2">
-                      <h2 className="text-lg font-semibold group-hover:text-green">{p.nom}</h2>
-                      <button
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          onDelete(p.id, p.nom);
-                        }}
-                        disabled={deleteMutation.isPending}
-                        className="relative z-10 -mr-1 -mt-1 flex-shrink-0 rounded-md p-1.5 text-foreground/40 hover:bg-red-50 hover:text-red-600"
-                        aria-label="Supprimer"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    </header>
-                    <dl className="space-y-1 text-sm">
-                      <div className="flex justify-between">
-                        <dt className="text-foreground/60">Surface</dt>
-                        <dd className="font-medium">{formatSurface(p.surfaceM2)}</dd>
-                      </div>
-                      <div className="flex justify-between">
-                        <dt className="text-foreground/60">Zone</dt>
-                        <dd>{libelleZone(p.zone)}</dd>
-                      </div>
-                      {p.identifiantCadastral && (
-                        <div className="flex justify-between">
-                          <dt className="text-foreground/60">N° cadastral</dt>
-                          <dd className="font-mono text-xs">{p.identifiantCadastral}</dd>
-                        </div>
-                      )}
-                    </dl>
-                    {p.notes && <p className="mt-3 text-xs text-foreground/60">{p.notes}</p>}
-                  </Link>
-                ))}
+              <div className="mt-6 flex justify-center gap-3">
+                <Link href="/parcelles/import">
+                  <Button>
+                    <FileUp className="mr-2 h-4 w-4" />
+                    Importer un fichier
+                  </Button>
+                </Link>
+                <Link href="/parcelles/new">
+                  <Button variant="secondary">
+                    <Plus className="mr-2 h-4 w-4" />
+                    Créer manuellement
+                  </Button>
+                </Link>
               </div>
-            )}
-          </>
-        )}
+            </div>
+          }
+        />
       </div>
     </>
   );

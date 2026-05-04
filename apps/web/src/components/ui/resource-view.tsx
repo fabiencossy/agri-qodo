@@ -28,6 +28,7 @@ import {
   LayoutGrid,
   List,
   type LucideIcon,
+  Map as MapIcon,
   Search,
   Star,
   X,
@@ -36,7 +37,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 // ---------- Types publics ---------------------------------------------------
 
-export type ViewMode = "list" | "kanban" | "card" | "calendar";
+export type ViewMode = "list" | "kanban" | "card" | "calendar" | "map";
 
 export interface ListColumn<T> {
   key: string;
@@ -123,6 +124,13 @@ export interface ResourceViewProps<T> {
    * aussi de tooltip au survol). Si absent, on retombe sur renderCard.
    */
   renderCalendarItem?: (item: T) => React.ReactNode;
+  /**
+   * Renderer custom pour le mode "map" — typiquement une vue Leaflet
+   * pour les ressources géolocalisées (parcelles, animaux GPS…).
+   * Reçoit la liste des items filtrés (post-recherche/filtres). Si
+   * absent, le mode map est désactivé.
+   */
+  renderMapView?: (filteredData: T[]) => React.ReactNode;
 }
 
 // ---------- Implémentation --------------------------------------------------
@@ -156,7 +164,8 @@ function loadState(storageKey: string, defaultView: ViewMode): PersistedState {
         parsed.view === "kanban" ||
         parsed.view === "list" ||
         parsed.view === "card" ||
-        parsed.view === "calendar"
+        parsed.view === "calendar" ||
+        parsed.view === "map"
           ? parsed.view
           : defaultView,
       search: typeof parsed.search === "string" ? parsed.search : "",
@@ -338,6 +347,7 @@ export function ResourceView<T>(props: ResourceViewProps<T>) {
         onRemoveFavorite={removeFavorite}
         searchPlaceholder={props.searchPlaceholder ?? "Rechercher…"}
         calendarAvailable={!!props.dateField}
+        mapAvailable={!!props.renderMapView}
       />
 
       {props.data.length === 0 && props.emptyState ? (
@@ -375,6 +385,14 @@ export function ResourceView<T>(props: ResourceViewProps<T>) {
         ) : (
           <p className="rounded-xl border border-dashed border-border bg-muted/30 p-8 text-center text-sm text-foreground/60">
             Vue calendrier indisponible : aucun champ date configuré pour cette ressource.
+          </p>
+        )
+      ) : view === "map" ? (
+        props.renderMapView ? (
+          <div>{props.renderMapView(filteredData)}</div>
+        ) : (
+          <p className="rounded-xl border border-dashed border-border bg-muted/30 p-8 text-center text-sm text-foreground/60">
+            Vue carte indisponible pour cette ressource.
           </p>
         )
       ) : (
@@ -628,6 +646,7 @@ function SearchBar<T>(props: {
   onRemoveFavorite: (name: string) => void;
   searchPlaceholder: string;
   calendarAvailable: boolean;
+  mapAvailable: boolean;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -732,6 +751,14 @@ function SearchBar<T>(props: {
               onClick={() => props.onViewChange("calendar")}
               icon={CalendarDays}
               label="Calendrier"
+            />
+          )}
+          {props.mapAvailable && (
+            <ViewToggleButton
+              active={props.view === "map"}
+              onClick={() => props.onViewChange("map")}
+              icon={MapIcon}
+              label="Carte"
             />
           )}
         </div>
