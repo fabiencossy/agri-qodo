@@ -147,6 +147,15 @@ export function useInterventionsWithGeom(filters?: { campagne?: number; parcelle
   });
 }
 
+/** Détail d'une intervention par id — pour la fiche /interventions/[id]. */
+export function useIntervention(id: string | undefined) {
+  return useQuery({
+    queryKey: ["interventions", id] as const,
+    queryFn: () => api<Intervention>(`/api/interventions/${id}`),
+    enabled: !!id,
+  });
+}
+
 export function useCreateIntervention() {
   const qc = useQueryClient();
   return useMutation({

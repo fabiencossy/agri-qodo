@@ -156,7 +156,7 @@ export default function AssolementPage() {
                 {formatSurface(surfaceCouverteM2)} sur {formatSurface(sauTotaleM2)}
               </p>
               {tauxCouverture < 100 && sauTotaleM2 > 0 && (
-                <p className="mt-2 rounded-lg bg-amber-50 px-2 py-1 text-xs text-amber-900">
+                <p className="mt-2 rounded-lg border border-amber-300 bg-amber-100 px-2.5 py-1.5 text-xs text-amber-950">
                   Pour qu'une parcelle apparaisse colorée, saisis un SEMIS avec sa zone tracée (mode
                   "Dessiner sur la carte").
                 </p>

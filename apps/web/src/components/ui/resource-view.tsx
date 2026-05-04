@@ -424,13 +424,16 @@ function SearchBar<T>(props: {
   const containerRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!props.panelOpen) return;
-    const handler = (e: MouseEvent) => {
+    // pointerdown couvre tactile (iOS Safari), souris et stylet — plus
+    // robuste que mousedown qui peut être manqué sur tactile derrière
+    // certains parents fixed/sticky.
+    const handler = (e: PointerEvent) => {
       if (!containerRef.current?.contains(e.target as Node)) {
         props.onClosePanel();
       }
     };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
+    document.addEventListener("pointerdown", handler);
+    return () => document.removeEventListener("pointerdown", handler);
   }, [props.panelOpen, props.onClosePanel]);
 
   // Pattern Odoo : clic n'importe où dans la search bar (input ou chips)
@@ -482,7 +485,10 @@ function SearchBar<T>(props: {
           </div>
           <button
             type="button"
-            onClick={props.onTogglePanel}
+            onClick={(e) => {
+              e.stopPropagation();
+              props.onTogglePanel();
+            }}
             className="flex h-full items-center border-l border-border px-3 hover:bg-muted"
             aria-label="Filtres et regroupement"
           >
