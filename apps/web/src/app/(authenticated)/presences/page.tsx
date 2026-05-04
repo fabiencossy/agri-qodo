@@ -45,15 +45,6 @@ function semaineCourante() {
   };
 }
 
-function todayDate(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function nowTime(): string {
-  const d = new Date();
-  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-}
-
 function combineDateTime(date: string, time: string): string | null {
   if (!date || !time) return null;
   const iso = `${date}T${time}:00`;
@@ -69,10 +60,12 @@ export default function PresencesPage() {
   const clockOut = useClockOut();
   const deletePresence = useDeletePresence();
 
-  // Champs éditables pré-pointage. Default = maintenant — l'utilisateur
-  // peut les modifier pour saisir une présence rétroactive.
-  const [date, setDate] = useState(todayDate());
-  const [heureDebut, setHeureDebut] = useState(nowTime());
+  // Champs vides par défaut (review 2026-05-04 : "rien préremplir !"). Si
+  // l'utilisateur clique Play sans rien remplir, le backend prend
+  // automatiquement l'heure actuelle. Les champs servent uniquement à
+  // saisir une présence rétroactive ou à corriger l'heure de fin.
+  const [date, setDate] = useState("");
+  const [heureDebut, setHeureDebut] = useState("");
   const [heureFin, setHeureFin] = useState("");
 
   // Présence en cours d'édition (modal). Null = modal fermée.
