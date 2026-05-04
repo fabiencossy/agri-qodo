@@ -267,12 +267,14 @@ model Exploitation {
   /// Pratique pour les ETA qui travaillent sous une seule étiquette.
   defaultProjetTravauxTiersId String? @map("default_projet_travaux_tiers_id")
   defaultProjetTravauxTiers   Projet? @relation("DefaultProjetTravauxTiers", fields: [defaultProjetTravauxTiersId], references: [id], onDelete: SetNull)
-  /// Suivi des heures sur toutes les activités (PRD fusion v0.2 §3.2).
-  /// Quand true (défaut) : champs heures + employé(s) présents sur les
-  /// 3 onglets (Carnet, Travail tiers, Travail interne) — l'OWNER peut
-  /// suivre ce que chaque employé a fait. Quand false : champs heures
-  /// masqués, le carnet redevient purement agronomique.
-  suiviHeuresActif     Boolean @default(true) @map("suivi_heures_actif")
+  /// Affichage des champs heures par onglet (PRD fusion v0.2 §3.2).
+  /// 3 booléens granulaires — true = affiché, false = caché. Permet à
+  /// chaque exploitation de configurer la saisie selon ses usages réels
+  /// (ex : ne saisir les heures que sur Travail pour tiers pour facturer
+  /// le client, mais pas sur Carnet ni Travail interne).
+  heuresVisiblesCarnet         Boolean @default(true) @map("heures_visibles_carnet")
+  heuresVisiblesTravauxTiers   Boolean @default(true) @map("heures_visibles_travaux_tiers")
+  heuresVisiblesTravauxInterne Boolean @default(true) @map("heures_visibles_travaux_interne")
 
   @@map("exploitations")
 }
@@ -350,14 +352,13 @@ model User {
   createdAt    DateTime  @default(now()) @map("created_at")
   updatedAt    DateTime  @updatedAt @map("updated_at")
 
-  tenant        Exploitation        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  refreshTokens             RefreshToken[]
-  passwordResetTokens       PasswordResetToken[]
-  emailVerificationTokens   EmailVerificationToken[]
-  lignesHeure               LigneTravailHeure[]
-  presences                 Presence[]
-  editHistory               EditHistory[]
-  interventionParticipations InterventionParticipant[]
+  tenant                  Exploitation             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  refreshTokens           RefreshToken[]
+  passwordResetTokens     PasswordResetToken[]
+  emailVerificationTokens EmailVerificationToken[]
+  lignesHeure             LigneTravailHeure[]
+  presences               Presence[]
+  editHistory             EditHistory[]
 
   // Email partagé : un comptable / conseiller peut avoir un compte sur
   // plusieurs exploitations. L'unicité est sur (email, tenantId).
@@ -579,15 +580,14 @@ model Intervention {
   customFields        Json?                                   @map("custom_fields")
   createdAt           DateTime                                @default(now()) @map("created_at")
 
-  ownerTenant   Exploitation              @relation("InterventionOwner", fields: [ownerTenantId], references: [id], onDelete: Cascade)
-  authorTenant  Exploitation              @relation("InterventionAuthor", fields: [authorTenantId], references: [id], onDelete: Cascade)
-  parcelle      Parcelle                  @relation(fields: [parcelleId], references: [id], onDelete: Cascade)
-  produitRef    Produit?                  @relation(fields: [produitId], references: [id], onDelete: SetNull)
-  materielRef   Materiel?                 @relation(fields: [materielId], references: [id], onDelete: SetNull)
-  culture       Culture?                  @relation(fields: [cultureId], references: [id], onDelete: SetNull)
-  linkedTravail Travail?                  @relation("InterventionTravailLink", fields: [linkedTravailId], references: [id], onDelete: SetNull)
+  ownerTenant   Exploitation @relation("InterventionOwner", fields: [ownerTenantId], references: [id], onDelete: Cascade)
+  authorTenant  Exploitation @relation("InterventionAuthor", fields: [authorTenantId], references: [id], onDelete: Cascade)
+  parcelle      Parcelle     @relation(fields: [parcelleId], references: [id], onDelete: Cascade)
+  produitRef    Produit?     @relation(fields: [produitId], references: [id], onDelete: SetNull)
+  materielRef   Materiel?    @relation(fields: [materielId], references: [id], onDelete: SetNull)
+  culture       Culture?     @relation(fields: [cultureId], references: [id], onDelete: SetNull)
+  linkedTravail Travail?     @relation("InterventionTravailLink", fields: [linkedTravailId], references: [id], onDelete: SetNull)
   planApport    PlanApport? // 1-1 si réalisé depuis un plan
-  participants  InterventionParticipant[] // PRD fusion v0.2 §4 q5 — multi-employés
 
   @@index([ownerTenantId])
   @@index([authorTenantId])
@@ -598,28 +598,6 @@ model Intervention {
   @@index([materielId])
   @@index([cultureId])
   @@map("interventions")
-}
-
-// Multi-employés sur une Intervention (PRD fusion v0.2 §4 q5).
-// Permet de saisir une intervention faite à plusieurs : 1 entrée par
-// participant, avec sa durée individuelle (utile pour tracer le temps
-// passé par chaque employé sur l'opération sans devoir créer N
-// interventions identiques). dureeMinutes optionnelle : null = même
-// durée que l'intervention (à calculer côté UI), valeur = durée perso.
-model InterventionParticipant {
-  id             String   @id @default(uuid())
-  interventionId String   @map("intervention_id")
-  userId         String   @map("user_id")
-  dureeMinutes   Int?     @map("duree_minutes")
-  notes          String?
-  createdAt      DateTime @default(now()) @map("created_at")
-
-  intervention Intervention @relation(fields: [interventionId], references: [id], onDelete: Cascade)
-  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([interventionId, userId])
-  @@index([userId])
-  @@map("intervention_participants")
 }
 
 // ====================================================================

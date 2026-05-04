@@ -2,11 +2,8 @@ import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { InterventionType, TechniqueEpandage } from "@prisma/client";
 import { Type } from "class-transformer";
 import {
-  ArrayMaxSize,
-  IsArray,
   IsDateString,
   IsEnum,
-  IsInt,
   IsNumber,
   IsObject,
   IsOptional,
@@ -14,36 +11,8 @@ import {
   IsUUID,
   MaxLength,
   Min,
-  ValidateNested,
 } from "class-validator";
 import type { GeoJsonGeometry } from "@/modules/parcelles/dto/create-parcelle.dto";
-
-/**
- * Participant à une intervention (PRD fusion v0.2 §3.2).
- * Permet de saisir une intervention faite à plusieurs : 1 entrée par
- * participant, durée individuelle optionnelle.
- */
-export class InterventionParticipantInputDto {
-  @ApiProperty({ description: "ID utilisateur (User) du participant." })
-  @IsUUID()
-  userId!: string;
-
-  @ApiPropertyOptional({
-    description:
-      "Durée de participation en minutes. Null = même durée que l'intervention (calculée côté UI).",
-  })
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(0)
-  dureeMinutes?: number;
-
-  @ApiPropertyOptional({ description: "Notes individuelles du participant." })
-  @IsOptional()
-  @IsString()
-  @MaxLength(500)
-  notes?: string;
-}
 
 /**
  * Géométrie d'une sous-zone d'intervention. Accepte uniquement Polygon
@@ -180,17 +149,4 @@ export class CreateInterventionDto {
   @IsString()
   @MaxLength(500)
   notes?: string;
-
-  @ApiPropertyOptional({
-    description:
-      "Participants à l'intervention (multi-employés). Si vide, intervention solo de l'auteur.",
-    type: () => InterventionParticipantInputDto,
-    isArray: true,
-  })
-  @IsOptional()
-  @IsArray()
-  @ArrayMaxSize(50)
-  @ValidateNested({ each: true })
-  @Type(() => InterventionParticipantInputDto)
-  participants?: InterventionParticipantInputDto[];
 }

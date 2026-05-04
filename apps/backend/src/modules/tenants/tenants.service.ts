@@ -45,7 +45,15 @@ export class TenantsService {
     if (dto.numeroBdta !== undefined) data.numeroBdta = dto.numeroBdta.trim() || null;
     if (dto.visibleInDirectory !== undefined) data.visibleInDirectory = dto.visibleInDirectory;
     if (dto.noterTempsParProjet !== undefined) data.noterTempsParProjet = dto.noterTempsParProjet;
-    if (dto.suiviHeuresActif !== undefined) data.suiviHeuresActif = dto.suiviHeuresActif;
+    if (dto.heuresVisiblesCarnet !== undefined) {
+      data.heuresVisiblesCarnet = dto.heuresVisiblesCarnet;
+    }
+    if (dto.heuresVisiblesTravauxTiers !== undefined) {
+      data.heuresVisiblesTravauxTiers = dto.heuresVisiblesTravauxTiers;
+    }
+    if (dto.heuresVisiblesTravauxInterne !== undefined) {
+      data.heuresVisiblesTravauxInterne = dto.heuresVisiblesTravauxInterne;
+    }
     if (dto.defaultProjetTravauxTiersId !== undefined) {
       // Validation : le projet doit appartenir au tenant courant.
       if (dto.defaultProjetTravauxTiersId) {

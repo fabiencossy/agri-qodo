@@ -73,10 +73,23 @@ export class UpdateTenantDto {
   defaultProjetTravauxTiersId?: string;
 
   @ApiPropertyOptional({
-    description:
-      "Suivi des heures sur toutes les activités (Carnet, Travail tiers, Travail interne). Quand false, les champs heures + employé(s) sont masqués partout.",
+    description: "Affiche les champs heures sur le formulaire Carnet des champs (sinon masqués).",
   })
   @IsOptional()
   @IsBoolean()
-  suiviHeuresActif?: boolean;
+  heuresVisiblesCarnet?: boolean;
+
+  @ApiPropertyOptional({
+    description: "Affiche les champs heures sur le formulaire Travail pour tiers (sinon masqués).",
+  })
+  @IsOptional()
+  @IsBoolean()
+  heuresVisiblesTravauxTiers?: boolean;
+
+  @ApiPropertyOptional({
+    description: "Affiche les champs heures sur le formulaire Travail interne (sinon masqués).",
+  })
+  @IsOptional()
+  @IsBoolean()
+  heuresVisiblesTravauxInterne?: boolean;
 }

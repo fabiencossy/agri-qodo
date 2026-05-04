@@ -75,25 +75,7 @@ export interface Intervention {
   cultureId: string | null;
   culture: { id: string; espece: string; variete: string | null; campagne: number } | null;
   validationStatus: ValidationStatus;
-  /** Multi-employés (PRD fusion v0.2). Vide = saisie solo de l'auteur. */
-  participants: InterventionParticipant[];
   createdAt: string;
-}
-
-export interface InterventionParticipant {
-  id: string;
-  interventionId: string;
-  userId: string;
-  user: { id: string; prenom: string; nom: string; email: string };
-  /** Durée individuelle en minutes (null = durée de l'intervention). */
-  dureeMinutes: number | null;
-  notes: string | null;
-}
-
-export interface InterventionParticipantInput {
-  userId: string;
-  dureeMinutes?: number;
-  notes?: string;
 }
 
 export interface InterventionGeoJsonPolygon {
@@ -120,8 +102,6 @@ export interface CreateInterventionInput {
   notes?: string;
   /** Sous-zone géométrique (Polygon GeoJSON) — recalcule surfaceTravailleeM2 côté backend. */
   geomGeoJson?: InterventionGeoJsonPolygon;
-  /** Participants à l'intervention (PRD fusion v0.2). */
-  participants?: InterventionParticipantInput[];
 }
 
 export interface InterventionWithGeom {
@@ -204,8 +184,6 @@ export interface UpdateInterventionInput {
   surfaceTravailleeM2?: number;
   geomGeoJson?: InterventionGeoJsonPolygon;
   notes?: string;
-  /** Si fourni, remplace toute la liste de participants. */
-  participants?: InterventionParticipantInput[];
 }
 
 export function useUpdateIntervention() {

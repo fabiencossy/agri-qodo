@@ -65,16 +65,21 @@ Pour donner une sensation d'unité :
 - **Date** (`dateOperation` ou `date`)
 - **Parcelle** (optionnelle — facultative pour Travail tiers et Pointage)
 - **Notes**
-- **Personne(s) + heures** — **présents sur les 3 onglets** (Carnet, Travail tiers, Travail interne). Permet à l'OWNER de suivre ce que chaque employé a fait au quotidien, peu importe le type d'activité. **Décision Fabien 2026-05-04**.
-- **Toggle paramètre** `suiviHeuresActif` (Exploitation, défaut `true`) — quand désactivé, les champs heures + employé(s) sont masqués partout. Utile pour un agriculteur seul qui ne veut pas saisir d'heures.
+- **Heures** — affichées par défaut sur les 3 onglets (Carnet, Travail tiers, Travail interne).
+- **3 toggles paramètre granulaires** (Exploitation, défaut `true` chacun, **décision Fabien 2026-05-04 soir**) :
+  - `heuresVisiblesCarnet`
+  - `heuresVisiblesTravauxTiers`
+  - `heuresVisiblesTravauxInterne`
+    Permet à chaque exploitation de choisir où elle saisit des heures (ex : facturation client uniquement → ne cocher que `heuresVisiblesTravauxTiers`).
 - **HHMM compact qodo-clock** (`HhmmTimeInput` déjà dispo).
+- **Multi-employés** : **retiré** de la fusion (décision Fabien 2026-05-04 soir). Pas de table `InterventionParticipant`. La saisie reste mono-utilisateur (l'auteur). Si besoin futur de multi-employés, c'est un sprint dédié.
 
 ### 3.3 Champs spécifiques
 
-- **Carnet** : type intervention, produit, matériel, surface, rendement (si récolte), géom (sous-zone), technique épandage (si fumure organique). + heures (si setting actif) → stockées dans `InterventionParticipant.dureeMinutes`.
-- **Travaux tiers** : client (Exploitation partenaire), projet (selon settings), lignes produits, taux horaire. + heures (si setting actif) → stockées dans `LigneTravailHeure` (existant).
-- **Travail interne** : projet (selon settings), lignes produits, **pas** de client. + heures (si setting actif) → `LigneTravailHeure`.
-- **Pointage** (mode dégradé du toggle) : si setting actif et utilisateur veut juste pointer sans contexte → `Presence` (existant). Si setting OFF, le pointage horaire reste accessible mais comme entrée dédiée.
+- **Carnet** : type intervention, produit, matériel, surface, rendement (si récolte), géom (sous-zone), technique épandage (si fumure organique). + heures (si `heuresVisiblesCarnet=true`) → champs heures simples sur l'intervention (mono-utilisateur).
+- **Travaux tiers** : client (Exploitation partenaire), projet (selon settings), lignes produits, taux horaire. + heures (si `heuresVisiblesTravauxTiers=true`) → `LigneTravailHeure` (existant).
+- **Travail interne** : projet (selon settings), lignes produits, **pas** de client. + heures (si `heuresVisiblesTravauxInterne=true`) → `LigneTravailHeure`.
+- **Pointage simple** : `Presence` Play/Stop existant, accessible depuis le FAB et `/presences` indépendamment des 3 toggles.
 
 ---
 
@@ -136,10 +141,14 @@ model Travail {
 
 model Exploitation {
   // ...existant (noterTempsParProjet, defaultProjetTravauxTiersId)...
-  // Toggle global heures. Défaut true (back-compat tenants existants).
-  suiviHeuresActif Boolean @default(true) @map("suivi_heures_actif")
+  // 3 toggles granulaires d'affichage des heures (décision 2026-05-04 soir).
+  heuresVisiblesCarnet         Boolean @default(true) @map("heures_visibles_carnet")
+  heuresVisiblesTravauxTiers   Boolean @default(true) @map("heures_visibles_travaux_tiers")
+  heuresVisiblesTravauxInterne Boolean @default(true) @map("heures_visibles_travaux_interne")
 }
 
+// Note : pas de table InterventionParticipant — multi-employés retiré
+// du Sprint 0 (décision 2026-05-04 soir).
 // Aucun drop, aucun rename, aucune contrainte modifiée.
 ```
 

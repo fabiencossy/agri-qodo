@@ -154,11 +154,6 @@ export class InterventionsService {
       select: { id: true, libelle: true, categorie: true, unite: true, prixUnitaireCHF: true },
     },
     culture: { select: { id: true, espece: true, variete: true, campagne: true } },
-    participants: {
-      include: {
-        user: { select: { id: true, prenom: true, nom: true, email: true } },
-      },
-    },
   } satisfies Prisma.InterventionInclude;
 
   /**
@@ -328,30 +323,6 @@ export class InterventionsService {
           JSON.stringify(dto.geomGeoJson),
           created.id,
         );
-      }
-
-      // Multi-employés sur Carnet (PRD fusion v0.2 §3.2). On valide que
-      // chaque userId fait bien partie du tenant courant — un partenaire
-      // ne peut pas pointer un employé du tenant propriétaire.
-      if (dto.participants && dto.participants.length > 0) {
-        const userIds = dto.participants.map((p) => p.userId);
-        const validUsers = await tx.user.findMany({
-          where: { id: { in: userIds }, tenantId: authorTenantId, isActive: true },
-          select: { id: true },
-        });
-        if (validUsers.length !== userIds.length) {
-          throw new BadRequestException(
-            "Un ou plusieurs participants n'appartiennent pas à ton exploitation.",
-          );
-        }
-        await tx.interventionParticipant.createMany({
-          data: dto.participants.map((p) => ({
-            interventionId: created.id,
-            userId: p.userId,
-            dureeMinutes: p.dureeMinutes ?? null,
-            notes: p.notes ?? null,
-          })),
-        });
       }
 
       // Cas B (intervention sur parcelle d'un partenaire) : on crée
@@ -610,34 +581,6 @@ export class InterventionsService {
           where: { id: existing.cultureId },
           data: { dateSemis: newDate, campagne: newDate.getUTCFullYear() },
         });
-      }
-
-      // Participants : si fourni, remplace toute la liste. Si null/absent,
-      // on ne touche pas (édition partielle d'un autre champ).
-      if (dto.participants !== undefined) {
-        const userIds = dto.participants.map((p) => p.userId);
-        if (userIds.length > 0) {
-          const validUsers = await tx.user.findMany({
-            where: { id: { in: userIds }, tenantId, isActive: true },
-            select: { id: true },
-          });
-          if (validUsers.length !== userIds.length) {
-            throw new BadRequestException(
-              "Un ou plusieurs participants n'appartiennent pas à ton exploitation.",
-            );
-          }
-        }
-        await tx.interventionParticipant.deleteMany({ where: { interventionId: id } });
-        if (dto.participants.length > 0) {
-          await tx.interventionParticipant.createMany({
-            data: dto.participants.map((p) => ({
-              interventionId: id,
-              userId: p.userId,
-              dureeMinutes: p.dureeMinutes ?? null,
-              notes: p.notes ?? null,
-            })),
-          });
-        }
       }
 
       return tx.intervention.findUniqueOrThrow({

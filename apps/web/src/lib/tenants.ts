@@ -20,8 +20,10 @@ export interface TenantDetail {
   /** Settings projets (cf C2). */
   noterTempsParProjet: boolean;
   defaultProjetTravauxTiersId: string | null;
-  /** Suivi des heures sur toutes les activités (PRD fusion v0.2). */
-  suiviHeuresActif: boolean;
+  /** Toggles granulaires d'affichage des heures par onglet (PRD fusion v0.2). */
+  heuresVisiblesCarnet: boolean;
+  heuresVisiblesTravauxTiers: boolean;
+  heuresVisiblesTravauxInterne: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -34,7 +36,9 @@ export interface UpdateTenantInput {
   visibleInDirectory?: boolean;
   noterTempsParProjet?: boolean;
   defaultProjetTravauxTiersId?: string;
-  suiviHeuresActif?: boolean;
+  heuresVisiblesCarnet?: boolean;
+  heuresVisiblesTravauxTiers?: boolean;
+  heuresVisiblesTravauxInterne?: boolean;
 }
 
 export function useAccessibleTenants() {

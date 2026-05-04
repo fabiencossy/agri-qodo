@@ -69,7 +69,11 @@ export default function ActivitesPage() {
   const pending = useInterventionsPending();
   const presenceCourante = useCurrentPresence();
   const tenantDetail = useTenantDetail();
-  const showHours = tenantDetail.data?.suiviHeuresActif !== false;
+  // On affiche le bloc heures si au moins un onglet a les heures visibles.
+  const showHours =
+    tenantDetail.data?.heuresVisiblesCarnet !== false ||
+    tenantDetail.data?.heuresVisiblesTravauxTiers !== false ||
+    tenantDetail.data?.heuresVisiblesTravauxInterne !== false;
   const validateMut = useValidateIntervention();
   const rejectMut = useRejectIntervention();
   const deleteMut = useDeleteIntervention();

@@ -372,8 +372,10 @@ export default function NewTravailPage() {
             />
           </Field>
 
-          {/* Heures — masqué si suiviHeuresActif=false (PRD fusion v0.2). */}
-          {tenantDetail.data?.suiviHeuresActif !== false && (
+          {/* Heures — toggle granulaire par onglet (PRD fusion v0.2 §3.2). */}
+          {(interne
+            ? tenantDetail.data?.heuresVisiblesTravauxInterne
+            : tenantDetail.data?.heuresVisiblesTravauxTiers) !== false && (
             <div className="space-y-3 border-t border-border pt-4">
               <div className="flex items-center justify-between">
                 <span className="text-sm font-medium">
