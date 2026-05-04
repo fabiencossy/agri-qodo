@@ -1,13 +1,13 @@
 "use client";
 
 /**
- * Liste des travaux facturables — `/travaux`.
+ * Liste des travaux pour tiers facturables — `/travaux`.
  *
  * Utilise <ResourceView> pour la bascule liste/kanban + recherche.
- * Le travail = mission/prestation/opération avec lignes produits +
- * lignes heures. Cf project_agri_qodo_travaux_timesheet.
+ * Le travail = mission/opération avec lignes produits + lignes heures.
+ * Cf project_agri_qodo_travaux_timesheet.
  */
-import { ClipboardList, Download, Plus } from "lucide-react";
+import { Download, Plus, Tractor } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo } from "react";
@@ -165,11 +165,11 @@ export default function TravauxPage() {
 
   return (
     <>
-      <Breadcrumb items={[{ label: "Accueil", href: "/app" }, { label: "Prestations" }]} />
+      <Breadcrumb items={[{ label: "Accueil", href: "/app" }, { label: "Travaux pour tiers" }]} />
       <div className="mx-auto max-w-6xl px-2 py-4 sm:px-4 sm:py-8">
         <PageHeader
-          title="Prestations"
-          icon={ClipboardList}
+          title="Travaux pour tiers"
+          icon={Tractor}
           subtitle="Produits + heures dans une seule saisie. Facturation Odoo automatique."
           menuActions={[
             {

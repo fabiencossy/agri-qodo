@@ -1,6 +1,6 @@
 "use client";
 
-import { Briefcase, ClipboardCheck, Sprout, Timer, TrendingUp } from "lucide-react";
+import { ClipboardCheck, Sprout, Timer, Tractor, TrendingUp } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
@@ -26,7 +26,7 @@ import {
   useTravaux,
 } from "@/lib/travaux";
 
-type Onglet = "interventions" | "prestations";
+type Onglet = "interventions" | "travaux-tiers";
 
 function semaineCourante() {
   const now = new Date();
@@ -46,7 +46,7 @@ function semaineCourante() {
 }
 
 /**
- * Hub Activités — toggle Interventions/Prestations en haut + liste directe
+ * Hub Activités — toggle Carnet/Travaux pour tiers en haut + liste directe
  * de l'onglet sélectionné. Création via le FAB "+" en bas à droite (déjà
  * en place globalement). Affiche les notifications (présence, pending) et
  * le résumé hebdo en pied.
@@ -94,7 +94,7 @@ export default function ActivitesPage() {
           <h1 className="text-2xl font-bold sm:text-3xl">Activités</h1>
         </header>
 
-        {/* Toggle Interventions / Prestations */}
+        {/* Toggle Carnet / Travaux pour tiers */}
         <div className="mb-4 inline-flex w-full rounded-xl border border-border bg-muted/30 p-1 sm:w-auto">
           <button
             type="button"
@@ -110,15 +110,15 @@ export default function ActivitesPage() {
           </button>
           <button
             type="button"
-            onClick={() => setOnglet("prestations")}
+            onClick={() => setOnglet("travaux-tiers")}
             className={`flex flex-1 items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors sm:flex-none sm:px-6 ${
-              onglet === "prestations"
+              onglet === "travaux-tiers"
                 ? "bg-background text-foreground shadow-sm"
                 : "text-foreground/60 hover:text-foreground/80"
             }`}
           >
-            <Briefcase className="h-4 w-4" />
-            Prestations
+            <Tractor className="h-4 w-4" />
+            Travaux pour tiers
           </button>
         </div>
 
@@ -164,7 +164,7 @@ export default function ActivitesPage() {
             isPendingMutation={validateMut.isPending || rejectMut.isPending}
           />
         ) : (
-          <PrestationsList
+          <TravauxTiersList
             data={travaux.data ?? []}
             isLoading={travaux.isLoading}
             onClick={(id) => router.push(`/travaux/${id}` as never)}
@@ -190,7 +190,7 @@ export default function ActivitesPage() {
             <div className="rounded-xl border border-border bg-background p-3 text-center">
               <div className="text-2xl font-bold sm:text-3xl">{travauxSemaine.length}</div>
               <div className="mt-0.5 text-xs text-foreground/70">
-                prestation{travauxSemaine.length > 1 ? "s" : ""}
+                travail{travauxSemaine.length > 1 ? "s" : ""} pour tiers
               </div>
             </div>
             <Link
@@ -319,9 +319,9 @@ function InterventionsList({
   );
 }
 
-/* ---------- Liste prestations (tableau-style) ---------- */
+/* ---------- Liste travaux pour tiers (tableau-style) ---------- */
 
-interface PrestationsListProps {
+interface TravauxTiersListProps {
   data: ReturnType<typeof useTravaux>["data"] extends infer T
     ? T extends Array<infer U>
       ? U[]
@@ -331,7 +331,7 @@ interface PrestationsListProps {
   onClick: (id: string) => void;
 }
 
-function PrestationsList({ data, isLoading, onClick }: PrestationsListProps) {
+function TravauxTiersList({ data, isLoading, onClick }: TravauxTiersListProps) {
   const [search, setSearch] = useState("");
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -345,8 +345,8 @@ function PrestationsList({ data, isLoading, onClick }: PrestationsListProps) {
   if (data.length === 0) {
     return (
       <div className="rounded-2xl border-2 border-dashed border-border p-10 text-center text-foreground/60">
-        <Briefcase className="mx-auto mb-3 h-10 w-10 opacity-40" />
-        <p className="text-sm">Aucune prestation saisie pour l&apos;instant.</p>
+        <Tractor className="mx-auto mb-3 h-10 w-10 opacity-40" />
+        <p className="text-sm">Aucun travail pour tiers saisi pour l&apos;instant.</p>
         <p className="mt-1 text-xs">Tape sur le bouton + en bas à droite pour commencer.</p>
       </div>
     );
@@ -372,7 +372,7 @@ function PrestationsList({ data, isLoading, onClick }: PrestationsListProps) {
                 className="flex w-full items-center gap-3 px-3 py-2.5 text-left hover:bg-muted/30 sm:px-4 sm:py-3"
               >
                 <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-muted">
-                  <Briefcase className="h-4 w-4 text-foreground/60" />
+                  <Tractor className="h-4 w-4 text-foreground/60" />
                 </span>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 text-sm font-medium">

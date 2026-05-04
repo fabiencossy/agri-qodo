@@ -86,7 +86,7 @@ export default function PresencesPage() {
         <PageHeader
           title="Présences"
           icon={Clock}
-          subtitle="Pointe ton entrée/sortie de chantier. Les heures sont reportées automatiquement sur la prestation liée."
+          subtitle="Pointe ton entrée/sortie de chantier. Les heures sont reportées automatiquement sur le travail pour tiers lié."
         />
 
         {/* ----- Bouton géant clock-in ou clock-out ----- */}
@@ -231,7 +231,7 @@ function ClockInCard({
 
       {(type === "CHANTIER" || type === "DEPLACEMENT") && travaux.length > 0 && (
         <div className="mt-5">
-          <p className="mb-1 text-sm text-foreground/70">Prestation liée (optionnel)</p>
+          <p className="mb-1 text-sm text-foreground/70">Travail pour tiers lié (optionnel)</p>
           <select
             value={travailId}
             onChange={(e) => onChangeTravailId(e.target.value)}
@@ -245,7 +245,7 @@ function ClockInCard({
             ))}
           </select>
           <p className="mt-1 text-xs text-foreground/50">
-            Les heures seront reportées automatiquement sur cette prestation.
+            Les heures seront reportées automatiquement sur ce travail pour tiers.
           </p>
         </div>
       )}
@@ -302,7 +302,7 @@ function ClockOutCard({
           </p>
           {travail && (
             <p className="mt-2 text-sm">
-              📋 Prestation : <strong>{travail.titre}</strong>
+              🚜 Travail pour tiers : <strong>{travail.titre}</strong>
             </p>
           )}
         </div>

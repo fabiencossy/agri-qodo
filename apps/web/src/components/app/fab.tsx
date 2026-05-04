@@ -2,12 +2,12 @@
 
 import {
   Beef,
-  Briefcase,
   ClipboardList,
   type LucideIcon,
   MapPin,
   Plus,
   Sprout,
+  Tractor,
   X,
 } from "lucide-react";
 import Link from "next/link";
@@ -35,9 +35,9 @@ const PRIMARY_INTERVENTION: FabAction = {
 
 const PRIMARY_TRAVAIL: FabAction = {
   href: "/travaux/new",
-  label: "Saisir une prestation",
-  description: "Prestation pour un client ou interne (mécanique, transport).",
-  icon: Briefcase,
+  label: "Saisir un travail pour tiers",
+  description: "Travail pour un client ou interne (mécanique, transport).",
+  icon: Tractor,
 };
 
 const SECONDARY_ACTIONS: FabAction[] = [

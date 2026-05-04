@@ -13,7 +13,7 @@
  * - Total CHF estimé en bas (caché si interne).
  * - Sticky bottom action bar mobile (Save + Annuler).
  */
-import { ArrowLeft, ClipboardList, Plus, Save, Trash2, UserCircle } from "lucide-react";
+import { ArrowLeft, Plus, Save, Tractor, Trash2, UserCircle } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -272,8 +272,8 @@ export default function NewTravailPage() {
             <ArrowLeft className="h-5 w-5" />
           </Link>
           <h1 className="flex items-center gap-2 text-2xl font-bold sm:text-3xl">
-            <ClipboardList className="h-6 w-6 text-green sm:h-7 sm:w-7" />
-            {isEditMode ? "Modifier la prestation" : "Nouvelle prestation"}
+            <Tractor className="h-6 w-6 text-green sm:h-7 sm:w-7" />
+            {isEditMode ? "Modifier le travail pour tiers" : "Nouveau travail pour tiers"}
           </h1>
         </div>
 
