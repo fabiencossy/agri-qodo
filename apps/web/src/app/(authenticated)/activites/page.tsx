@@ -31,6 +31,7 @@ import {
   useValidateIntervention,
 } from "@/lib/interventions";
 import { useCurrentPresence } from "@/lib/presences";
+import { useTenantDetail } from "@/lib/tenants";
 import { type Travail, useMesHeures, useTravaux } from "@/lib/travaux";
 
 type Onglet = "interventions" | "travaux-tiers";
@@ -67,6 +68,8 @@ export default function ActivitesPage() {
   const travaux = useTravaux();
   const pending = useInterventionsPending();
   const presenceCourante = useCurrentPresence();
+  const tenantDetail = useTenantDetail();
+  const showHours = tenantDetail.data?.suiviHeuresActif !== false;
   const validateMut = useValidateIntervention();
   const rejectMut = useRejectIntervention();
   const deleteMut = useDeleteIntervention();
@@ -248,7 +251,7 @@ export default function ActivitesPage() {
               ({lundi.toLocaleDateString("fr-CH")} → {dimanche.toLocaleDateString("fr-CH")})
             </span>
           </header>
-          <div className="grid grid-cols-3 gap-3">
+          <div className={`grid gap-3 ${showHours ? "grid-cols-3" : "grid-cols-2"}`}>
             <div className="rounded-xl border border-border bg-background p-3 text-center">
               <div className="text-2xl font-bold sm:text-3xl">{interventionsSemaine.length}</div>
               <div className="mt-0.5 text-xs text-foreground/70">
@@ -261,15 +264,17 @@ export default function ActivitesPage() {
                 travail{travauxSemaine.length > 1 ? "s" : ""} pour tiers
               </div>
             </div>
-            <Link
-              href="/mes-heures"
-              className="rounded-xl border border-border bg-background p-3 text-center transition-colors hover:bg-muted/30"
-            >
-              <div className="font-mono text-2xl font-bold tabular-nums sm:text-3xl">
-                {heuresSemaineLabel}
-              </div>
-              <div className="mt-0.5 text-xs text-foreground/70">heures</div>
-            </Link>
+            {showHours && (
+              <Link
+                href="/mes-heures"
+                className="rounded-xl border border-border bg-background p-3 text-center transition-colors hover:bg-muted/30"
+              >
+                <div className="font-mono text-2xl font-bold tabular-nums sm:text-3xl">
+                  {heuresSemaineLabel}
+                </div>
+                <div className="mt-0.5 text-xs text-foreground/70">heures</div>
+              </Link>
+            )}
           </div>
         </section>
       </div>

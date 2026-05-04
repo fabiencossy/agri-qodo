@@ -3,11 +3,13 @@
 import {
   Beef,
   ClipboardList,
+  Clock,
   type LucideIcon,
   MapPin,
   Plus,
   Sprout,
   Tractor,
+  Wrench,
   X,
 } from "lucide-react";
 import Link from "next/link";
@@ -22,22 +24,37 @@ interface FabAction {
 }
 
 /**
- * Deux actions principales du module Activités, identiques sur toutes
- * les pages — pivot UX "gros doigts". Tout le reste (parcelle, cheptel,
- * SRPA) descend en accès secondaire compact.
+ * Quatre actions principales du module Activités (PRD fusion v0.2 §3.1) —
+ * porte unique pour saisir une activité, identiques sur toutes les pages.
+ * Tout le reste (parcelle, cheptel, SRPA) descend en accès secondaire
+ * compact.
  */
 const PRIMARY_INTERVENTION: FabAction = {
   href: "/interventions/new",
-  label: "Faire une intervention",
-  description: "Carnet des champs : labour, semis, fumure, phyto, récolte…",
+  label: "Carnet des champs",
+  description: "Semis, fumure, phyto, récolte sur ma parcelle.",
   icon: Sprout,
 };
 
-const PRIMARY_TRAVAIL: FabAction = {
-  href: "/travaux/new",
-  label: "Saisir un travail pour tiers",
-  description: "Travail pour un client ou interne (mécanique, transport).",
+const PRIMARY_TRAVAIL_TIERS: FabAction = {
+  href: "/travaux/new?interne=false" as Route,
+  label: "Travail pour tiers",
+  description: "Prestation facturable chez un client.",
   icon: Tractor,
+};
+
+const PRIMARY_TRAVAIL_INTERNE: FabAction = {
+  href: "/travaux/new?interne=true" as Route,
+  label: "Travail interne",
+  description: "Activité de mon exploitation à tracer (sans facturation).",
+  icon: Wrench,
+};
+
+const PRIMARY_POINTAGE: FabAction = {
+  href: "/presences",
+  label: "Pointage simple",
+  description: "Démarrer/arrêter un pointage horaire.",
+  icon: Clock,
 };
 
 const SECONDARY_ACTIONS: FabAction[] = [
@@ -112,8 +129,18 @@ export function Fab() {
                 onClick={() => setOpen(false)}
               />
               <PrimaryCard
-                action={PRIMARY_TRAVAIL}
+                action={PRIMARY_TRAVAIL_TIERS}
                 accent="violet"
+                onClick={() => setOpen(false)}
+              />
+              <PrimaryCard
+                action={PRIMARY_TRAVAIL_INTERNE}
+                accent="blue"
+                onClick={() => setOpen(false)}
+              />
+              <PrimaryCard
+                action={PRIMARY_POINTAGE}
+                accent="amber"
                 onClick={() => setOpen(false)}
               />
             </div>
@@ -171,15 +198,26 @@ function PrimaryCard({
   onClick,
 }: {
   action: FabAction;
-  accent: "green" | "violet";
+  accent: "green" | "violet" | "blue" | "amber";
   onClick: () => void;
 }) {
   const Icon = action.icon;
-  const styles =
-    accent === "green"
-      ? "border-green/30 bg-green/5 hover:border-green text-foreground"
-      : "border-amber-300/60 bg-amber-50 hover:border-amber-500 text-foreground dark:bg-amber-950/30 dark:border-amber-800";
-  const iconBg = accent === "green" ? "bg-green text-white" : "bg-amber-600 text-white";
+  const stylesByAccent: Record<typeof accent, string> = {
+    green: "border-green/30 bg-green/5 hover:border-green text-foreground",
+    violet:
+      "border-violet-300/60 bg-violet-50 hover:border-violet-500 text-foreground dark:bg-violet-950/30 dark:border-violet-800",
+    blue: "border-blue-300/60 bg-blue-50 hover:border-blue-500 text-foreground dark:bg-blue-950/30 dark:border-blue-800",
+    amber:
+      "border-amber-300/60 bg-amber-50 hover:border-amber-500 text-foreground dark:bg-amber-950/30 dark:border-amber-800",
+  };
+  const iconBgByAccent: Record<typeof accent, string> = {
+    green: "bg-green text-white",
+    violet: "bg-violet-600 text-white",
+    blue: "bg-blue-600 text-white",
+    amber: "bg-amber-600 text-white",
+  };
+  const styles = stylesByAccent[accent];
+  const iconBg = iconBgByAccent[accent];
   return (
     <Link
       href={action.href}

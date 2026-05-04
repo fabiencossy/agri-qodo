@@ -107,7 +107,10 @@ export default function NewTravailPage() {
   const [parcelleId, setParcelleId] = useState(
     parcelleIdParam && /^[0-9a-f-]{36}$/i.test(parcelleIdParam) ? parcelleIdParam : "",
   );
-  const [interne, setInterne] = useState(false);
+  // ?interne=true pré-remplit le toggle "Travail interne" — utilisé par
+  // le FAB qui distingue Travail tiers (interne=false) et Travail interne.
+  const interneParam = searchParams.get("interne");
+  const [interne, setInterne] = useState(interneParam === "true");
   const [notes, setNotes] = useState("");
   const [projetId, setProjetId] = useState("");
   const [lignesProduit, setLignesProduit] = useState<DraftLigneProduit[]>([]);
@@ -369,45 +372,47 @@ export default function NewTravailPage() {
             />
           </Field>
 
-          {/* Heures — section flat, sans titre uppercase, juste un label */}
-          <div className="space-y-3 border-t border-border pt-4">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium">
-                Heures{lignesHeure.length > 0 ? ` (${lignesHeure.length})` : ""}
-              </span>
-              <Button type="button" variant="secondary" size="sm" onClick={addLigneHeure}>
-                <Plus className="mr-1 h-4 w-4" />
-                Ajouter
-              </Button>
-            </div>
-            {lignesHeure.length === 0 ? (
-              <p className="text-sm text-foreground/50">
-                Aucune heure. Ajoute le temps passé — alimente automatiquement le timesheet.
-              </p>
-            ) : (
-              <div className="space-y-3">
-                {lignesHeure.map((l, idx) => (
-                  <LigneHeureRow
-                    key={l.uid}
-                    ligne={l}
-                    users={users.data ?? []}
-                    canChangeUser={isChef}
-                    onChange={(patch) => updateHeure(idx, patch)}
-                    onRemove={() => removeHeure(idx)}
-                    showPrice={!interne}
-                  />
-                ))}
+          {/* Heures — masqué si suiviHeuresActif=false (PRD fusion v0.2). */}
+          {tenantDetail.data?.suiviHeuresActif !== false && (
+            <div className="space-y-3 border-t border-border pt-4">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium">
+                  Heures{lignesHeure.length > 0 ? ` (${lignesHeure.length})` : ""}
+                </span>
+                <Button type="button" variant="secondary" size="sm" onClick={addLigneHeure}>
+                  <Plus className="mr-1 h-4 w-4" />
+                  Ajouter
+                </Button>
               </div>
-            )}
-            {totalDureeMin > 0 && (
-              <p className="text-right text-sm font-medium">
-                Sous-total : <span>{formatDuree(totalDureeMin)}</span>
-                {!interne && totalHeures > 0 && (
-                  <span className="ml-2 font-mono">{formatCHF(totalHeures)}</span>
-                )}
-              </p>
-            )}
-          </div>
+              {lignesHeure.length === 0 ? (
+                <p className="text-sm text-foreground/50">
+                  Aucune heure. Ajoute le temps passé — alimente automatiquement le timesheet.
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {lignesHeure.map((l, idx) => (
+                    <LigneHeureRow
+                      key={l.uid}
+                      ligne={l}
+                      users={users.data ?? []}
+                      canChangeUser={isChef}
+                      onChange={(patch) => updateHeure(idx, patch)}
+                      onRemove={() => removeHeure(idx)}
+                      showPrice={!interne}
+                    />
+                  ))}
+                </div>
+              )}
+              {totalDureeMin > 0 && (
+                <p className="text-right text-sm font-medium">
+                  Sous-total : <span>{formatDuree(totalDureeMin)}</span>
+                  {!interne && totalHeures > 0 && (
+                    <span className="ml-2 font-mono">{formatCHF(totalHeures)}</span>
+                  )}
+                </p>
+              )}
+            </div>
+          )}
 
           {/* Total — uniquement si facturable */}
           {!interne && totalHeures > 0 && (
