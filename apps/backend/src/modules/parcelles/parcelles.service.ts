@@ -138,19 +138,30 @@ export class ParcellesService {
     if (!parcelle) {
       throw new NotFoundException("Parcelle introuvable");
     }
-    // Récupère la geom en GeoJSON via PostGIS (Prisma ne supporte pas le
-    // type geometry). Filtre tenant déjà appliqué par le findFirst au-dessus,
-    // mais on le ré-applique côté raw pour la défense en profondeur.
+    // Récupère la geom en GeoJSON + un point de référence pour
+    // l'itinéraire (ST_PointOnSurface garantit un point DANS le polygone,
+    // contrairement à ST_Centroid qui peut tomber dehors sur les
+    // polygones concaves). Filtre tenant déjà appliqué par le findFirst
+    // au-dessus, mais on le ré-applique côté raw pour la défense en
+    // profondeur.
     const { tenantId } = this.tenantContext.get();
-    const rows = await this.prisma.$queryRawUnsafe<{ geom: string | null }[]>(
-      `SELECT ST_AsGeoJSON(geom) AS geom
+    const rows = await this.prisma.$queryRawUnsafe<
+      { geom: string | null; lat: number | null; lng: number | null }[]
+    >(
+      `SELECT
+         ST_AsGeoJSON(geom) AS geom,
+         CASE WHEN geom IS NULL THEN NULL ELSE ST_Y(ST_PointOnSurface(geom)) END AS lat,
+         CASE WHEN geom IS NULL THEN NULL ELSE ST_X(ST_PointOnSurface(geom)) END AS lng
        FROM parcelles
        WHERE id::text = $1 AND tenant_id::text = $2`,
       id,
       tenantId,
     );
-    const geom = rows[0]?.geom ? (JSON.parse(rows[0].geom) as GeoJsonGeometry) : null;
-    return { ...parcelle, geom };
+    const row = rows[0];
+    const geom = row?.geom ? (JSON.parse(row.geom) as GeoJsonGeometry) : null;
+    const lat = row?.lat !== null && row?.lat !== undefined ? Number(row.lat) : null;
+    const lng = row?.lng !== null && row?.lng !== undefined ? Number(row.lng) : null;
+    return { ...parcelle, geom, lat, lng };
   }
 
   /**

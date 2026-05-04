@@ -3,7 +3,7 @@
 import { Download, FileUp, LayoutGrid, Map as MapIcon, MapPin, Plus, Trash2 } from "lucide-react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Breadcrumb } from "@/components/app/breadcrumb";
 import { PageHeader } from "@/components/app/page-header";
 import { Button } from "@/components/ui/button";
@@ -27,8 +27,30 @@ const ParcellesMapView = dynamic(() => import("@/components/maps/parcelles-map-v
 
 type View = "liste" | "carte";
 
+const VIEW_STORAGE_KEY = "agriqodo:parcelles:view";
+
 export default function ParcellesPage() {
-  const [view, setView] = useState<View>("liste");
+  /**
+   * Default = carte (visuel agriculteur). Persistance localStorage —
+   * lecture en effect côté client pour ne pas casser le rendu SSR.
+   */
+  const [view, setView] = useState<View>("carte");
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(VIEW_STORAGE_KEY);
+      if (saved === "liste" || saved === "carte") setView(saved);
+    } catch {
+      // localStorage indisponible — on garde le défaut
+    }
+  }, []);
+  const setViewPersisted = (v: View) => {
+    setView(v);
+    try {
+      localStorage.setItem(VIEW_STORAGE_KEY, v);
+    } catch {
+      // ignore
+    }
+  };
   const parcelles = useParcelles();
   const parcellesMap = useParcellesMap();
   const deleteMutation = useDeleteParcelle();
@@ -56,7 +78,7 @@ export default function ParcellesPage() {
               <div className="inline-flex rounded-lg border border-border bg-background p-1">
                 <button
                   type="button"
-                  onClick={() => setView("liste")}
+                  onClick={() => setViewPersisted("liste")}
                   aria-label="Vue liste"
                   className={`flex h-9 items-center gap-1.5 rounded-md px-2 text-sm font-medium transition-colors sm:px-3 ${
                     view === "liste" ? "bg-green text-white" : "text-foreground/70 hover:bg-muted"
@@ -67,7 +89,7 @@ export default function ParcellesPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setView("carte")}
+                  onClick={() => setViewPersisted("carte")}
                   aria-label="Vue carte"
                   className={`flex h-9 items-center gap-1.5 rounded-md px-2 text-sm font-medium transition-colors sm:px-3 ${
                     view === "carte" ? "bg-green text-white" : "text-foreground/70 hover:bg-muted"
