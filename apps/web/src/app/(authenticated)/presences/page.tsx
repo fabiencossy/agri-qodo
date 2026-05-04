@@ -1,20 +1,22 @@
 "use client";
 
 /**
- * Page présences refondue style qodo-clock — un seul gros bouton Play/Stop
- * + 3 champs Date / Heure début / Heure fin éditables avant pointage pour
- * permettre une saisie rétroactive si l'utilisateur n'a pas pointé en
- * temps réel.
+ * Page présences — un seul gros bouton Play/Stop + 3 champs Date / Heure
+ * début / Heure fin avec saisie HHMM compact (qodo-clock-style).
+ *
+ * Le sélecteur "Travail pour tiers lié" a été supprimé (review 2026-05-04 :
+ * "pas besoin de lier au travaux"). L'association heures→travail se fait
+ * désormais en aval, dans /mes-heures ou côté Travail directement.
  *
  * Le `type` Presence n'est plus saisi côté UI : on utilise toujours
- * "CHANTIER" par défaut. La grille de types initiale a été supprimée
- * (la classification fine sera dérivée du Travail lié quand pertinent).
+ * "CHANTIER" par défaut. Le champ reste en DB pour rétrocompat.
  */
 
 import { Clock, Play, Square, Trash2 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Breadcrumb } from "@/components/app/breadcrumb";
 import { PageHeader } from "@/components/app/page-header";
+import { HhmmTimeInput } from "@/components/ui/hhmm-time-input";
 import { Input } from "@/components/ui/input";
 import {
   formatDuree,
@@ -25,7 +27,6 @@ import {
   useDeletePresence,
   useMesPresences,
 } from "@/lib/presences";
-import { useTravaux } from "@/lib/travaux";
 
 function semaineCourante() {
   const now = new Date();
@@ -65,14 +66,12 @@ export default function PresencesPage() {
   const clockIn = useClockIn();
   const clockOut = useClockOut();
   const deletePresence = useDeletePresence();
-  const travaux = useTravaux();
 
   // Champs éditables pré-pointage. Default = maintenant — l'utilisateur
   // peut les modifier pour saisir une présence rétroactive.
   const [date, setDate] = useState(todayDate());
   const [heureDebut, setHeureDebut] = useState(nowTime());
   const [heureFin, setHeureFin] = useState("");
-  const [travailId, setTravailId] = useState("");
 
   // Quand une présence ouvre, on synchronise les champs avec ses valeurs
   // pour permettre l'édition de l'heure de fin avant le clock-out.
@@ -102,15 +101,11 @@ export default function PresencesPage() {
     .filter((p) => p.dureeMinutes !== null)
     .reduce((sum, p) => sum + (p.dureeMinutes ?? 0), 0);
 
-  // Travaux ouverts pour le sélecteur (limite 50 plus récents).
-  const travauxOptions = useMemo(() => (travaux.data ?? []).slice(0, 50), [travaux.data]);
-
   const handleClockIn = () => {
     const dateDebut = combineDateTime(date, heureDebut);
     clockIn.mutate({
       type: "CHANTIER",
       ...(dateDebut ? { dateDebut } : {}),
-      ...(travailId ? { travailId } : {}),
     });
   };
 
@@ -136,7 +131,7 @@ export default function PresencesPage() {
         <PageHeader
           title="Présences"
           icon={Clock}
-          subtitle="Un clic Play, un clic Stop. Les heures sont reportées automatiquement sur le travail pour tiers lié."
+          subtitle="Un clic Play, un clic Stop. Tape 720 pour 7h20, 7 pour 7h pile."
         />
 
         {current.isLoading ? (
@@ -186,7 +181,7 @@ export default function PresencesPage() {
               )}
             </div>
 
-            {/* 3 champs Date / Heure début / Heure fin */}
+            {/* 3 champs Date / Heure début / Heure fin avec HHMM compact */}
             <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
               <label className="text-sm">
                 <span className="mb-1 block font-medium text-foreground/70">Date</span>
@@ -200,51 +195,18 @@ export default function PresencesPage() {
               </label>
               <label className="text-sm">
                 <span className="mb-1 block font-medium text-foreground/70">Heure de début</span>
-                <Input
-                  type="time"
+                <HhmmTimeInput
                   value={heureDebut}
-                  onChange={(e) => setHeureDebut(e.target.value)}
+                  onChange={setHeureDebut}
                   disabled={isOpen}
-                  className="h-12 w-full font-mono tabular-nums"
+                  ariaLabel="Heure de début"
                 />
               </label>
               <label className="text-sm">
                 <span className="mb-1 block font-medium text-foreground/70">Heure de fin</span>
-                <Input
-                  type="time"
-                  value={heureFin}
-                  onChange={(e) => setHeureFin(e.target.value)}
-                  className="h-12 w-full font-mono tabular-nums"
-                  placeholder="--:--"
-                />
+                <HhmmTimeInput value={heureFin} onChange={setHeureFin} ariaLabel="Heure de fin" />
               </label>
             </div>
-
-            {/* Sélecteur travail tiers lié (optionnel) */}
-            {!isOpen && travauxOptions.length > 0 && (
-              <div className="mt-4">
-                <label className="text-sm">
-                  <span className="mb-1 block font-medium text-foreground/70">
-                    Travail pour tiers lié (optionnel)
-                  </span>
-                  <select
-                    value={travailId}
-                    onChange={(e) => setTravailId(e.target.value)}
-                    className="h-12 w-full rounded-lg border border-border bg-background px-3 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green"
-                  >
-                    <option value="">— Aucun (à associer plus tard) —</option>
-                    {travauxOptions.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.titre} — {new Date(t.date).toLocaleDateString("fr-CH")}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <p className="mt-1 text-xs text-foreground/50">
-                  Les heures pointées seront reportées automatiquement sur ce travail.
-                </p>
-              </div>
-            )}
 
             {isOpen && current.data?.travail && (
               <p className="mt-4 text-center text-sm">
