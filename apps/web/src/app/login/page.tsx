@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
+import { LegalFooter } from "@/components/legal/legal-footer";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ApiError } from "@/lib/api-client";
@@ -182,6 +183,8 @@ export default function LoginPage() {
         <p className="mt-2 text-center text-xs text-foreground/50">
           Stockage local des données — vous pouvez travailler hors ligne.
         </p>
+
+        <LegalFooter compact />
       </div>
     </main>
   );

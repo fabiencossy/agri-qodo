@@ -1,6 +1,14 @@
 import { ApiProperty } from "@nestjs/swagger";
 import { Canton } from "@prisma/client";
-import { IsEmail, IsEnum, IsString, MaxLength, MinLength } from "class-validator";
+import {
+  Equals,
+  IsBoolean,
+  IsEmail,
+  IsEnum,
+  IsString,
+  MaxLength,
+  MinLength,
+} from "class-validator";
 
 export class RegisterDto {
   @ApiProperty({ example: "marie@ferme-rolet.ch" })
@@ -35,4 +43,12 @@ export class RegisterDto {
   @ApiProperty({ enum: Canton })
   @IsEnum(Canton)
   canton!: Canton;
+
+  @ApiProperty({
+    description:
+      "Consentement CGU + politique de confidentialité (obligatoire). Doit être true pour valider le signup.",
+  })
+  @IsBoolean()
+  @Equals(true, { message: "Tu dois accepter les CGU pour créer un compte." })
+  cguAccepted!: boolean;
 }
