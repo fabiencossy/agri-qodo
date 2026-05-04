@@ -24,6 +24,8 @@ import {
   type TechniqueEpandage,
   TYPES_ORDER,
   useCreateIntervention,
+  useIntervention,
+  useUpdateIntervention,
 } from "@/lib/interventions";
 import { formatSurface, useParcelle, useParcelles, useParcellesAccessibles } from "@/lib/parcelles";
 import { useCheckFumureOrganique } from "@/lib/per";
@@ -112,7 +114,15 @@ export default function NewInterventionPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const presetParcelleId = searchParams?.get("parcelleId") ?? "";
+  // Mode édition : ?edit={id} → on fetch l'intervention existante et on
+  // pré-remplit. Le backend interdit la modification de parcelleId, type
+  // et produitId (cf UpdateInterventionDto) — ces champs sont disabled
+  // dans le formulaire en mode édition.
+  const editId = searchParams?.get("edit") ?? "";
+  const isEditMode = !!editId;
+  const existingIntervention = useIntervention(editId || undefined);
   const createMutation = useCreateIntervention();
+  const updateMutation = useUpdateIntervention();
   const parcelles = useParcelles();
   const accessiblesParcelles = useParcellesAccessibles();
   const produits = useProduits();
@@ -122,6 +132,7 @@ export default function NewInterventionPage() {
     handleSubmit,
     control,
     setValue,
+    reset,
     formState: { errors },
   } = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -141,6 +152,35 @@ export default function NewInterventionPage() {
       notes: "",
     },
   });
+
+  // Pré-remplissage en mode édition : reset une fois que l'intervention
+  // existante est chargée. Garde-fou via une ref-like (loadedRef) pour
+  // éviter de reset à chaque re-render.
+  const [loadedId, setLoadedId] = useState<string>("");
+  useEffect(() => {
+    if (!isEditMode || !existingIntervention.data) return;
+    if (loadedId === existingIntervention.data.id) return;
+    setLoadedId(existingIntervention.data.id);
+    const iv = existingIntervention.data;
+    reset({
+      parcelleId: iv.parcelleId,
+      type: iv.type,
+      dateOperation: iv.dateOperation.slice(0, 10),
+      produitId: iv.produitId ?? "",
+      produit: iv.produit ?? "",
+      materielId: iv.materielId ?? "",
+      surfaceHa: iv.surfaceHa ? Number(iv.surfaceHa) : undefined,
+      rendementParHa: undefined,
+      quantite: iv.quantite ? Number(iv.quantite) : undefined,
+      unite: iv.unite ?? "",
+      techniqueEpandage: "",
+      surfaceTravailleeM2: iv.surfaceTravailleeM2 ? Number(iv.surfaceTravailleeM2) : undefined,
+      notes: iv.notes ?? "",
+    });
+    // Note : on ne touche pas `toutLeChamp` ici — l'effet
+    // selectedParcelleId le reset à true. L'utilisateur peut décocher
+    // s'il veut modifier la sous-zone partielle.
+  }, [isEditMode, existingIntervention.data, loadedId, reset]);
 
   const selectedType = useWatch({ control, name: "type" });
   const selectedProduitId = useWatch({ control, name: "produitId" });
@@ -242,6 +282,38 @@ export default function NewInterventionPage() {
       return {};
     })();
 
+    if (isEditMode && editId) {
+      // Backend interdit la modification de parcelleId / type / produitId
+      // (cf UpdateInterventionDto) — on les omet du payload PATCH.
+      updateMutation.mutate(
+        {
+          id: editId,
+          dateOperation: values.dateOperation,
+          ...(values.produit ? { produit: values.produit } : {}),
+          ...(values.materielId ? { materielId: values.materielId } : {}),
+          ...(values.surfaceHa && !Number.isNaN(values.surfaceHa)
+            ? { surfaceHa: values.surfaceHa }
+            : {}),
+          ...(values.rendementParHa && !Number.isNaN(values.rendementParHa)
+            ? { rendementParHa: values.rendementParHa }
+            : {}),
+          ...(values.quantite && !Number.isNaN(values.quantite)
+            ? { quantite: values.quantite }
+            : {}),
+          ...(values.unite ? { unite: values.unite } : {}),
+          ...(values.techniqueEpandage
+            ? { techniqueEpandage: values.techniqueEpandage as TechniqueEpandage }
+            : {}),
+          ...zoneFields,
+          ...(values.notes ? { notes: values.notes } : {}),
+        },
+        {
+          onSuccess: () => router.push(`/interventions/${editId}` as never),
+        },
+      );
+      return;
+    }
+
     createMutation.mutate(
       {
         parcelleId: values.parcelleId,
@@ -279,11 +351,21 @@ export default function NewInterventionPage() {
         items={[
           { label: "Accueil", href: "/app" },
           { label: "Carnet des champs", href: "/interventions" },
-          { label: "Nouvelle intervention" },
+          { label: isEditMode ? "Modifier" : "Nouvelle intervention" },
         ]}
       />
       <div className="mx-auto max-w-2xl px-4 py-8">
-        <h1 className="mb-6 text-2xl font-bold">Saisir une intervention</h1>
+        <h1 className="mb-6 text-2xl font-bold">
+          {isEditMode ? "Modifier l'intervention" : "Saisir une intervention"}
+        </h1>
+
+        {isEditMode && (
+          <div className="mb-4 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+            Le type d'opération, la parcelle et le produit catalogue ne sont pas modifiables — ils
+            gouvernent la culture créée pour les SEMIS. Pour les changer, supprime cette saisie et
+            crée-en une nouvelle.
+          </div>
+        )}
 
         {noParcelles && (
           <div className="mb-6 rounded-lg bg-amber-50 p-4 text-sm text-amber-900">
@@ -318,7 +400,11 @@ export default function NewInterventionPage() {
             />
           </Field>
 
-          <Field label="Parcelle" error={errors.parcelleId?.message}>
+          <Field
+            label="Parcelle"
+            error={errors.parcelleId?.message}
+            {...(isEditMode ? { hint: "Non modifiable" } : {})}
+          >
             <Controller
               control={control}
               name="parcelleId"
@@ -327,7 +413,7 @@ export default function NewInterventionPage() {
                   value={value ?? ""}
                   onChange={(id) => onChange(id)}
                   required
-                  disabled={noParcelles}
+                  disabled={noParcelles || isEditMode}
                   {...(clientId ? { filtreTenantId: clientId } : {})}
                 />
               )}
@@ -353,7 +439,11 @@ export default function NewInterventionPage() {
             </div>
           )}
 
-          <Field label="Type d'opération" error={errors.type?.message}>
+          <Field
+            label="Type d'opération"
+            error={errors.type?.message}
+            {...(isEditMode ? { hint: "Non modifiable" } : {})}
+          >
             <Controller
               control={control}
               name="type"
@@ -363,7 +453,9 @@ export default function NewInterventionPage() {
                     <button
                       key={t}
                       type="button"
+                      disabled={isEditMode}
                       onClick={() => {
+                        if (isEditMode) return;
                         onChange(t);
                         // Reset produit quand on change de type pour
                         // éviter d'envoyer un produit incompatible.
@@ -373,7 +465,7 @@ export default function NewInterventionPage() {
                         value === t
                           ? "border-green bg-green/10 font-medium text-green"
                           : "border-border hover:bg-muted"
-                      }`}
+                      } ${isEditMode ? "cursor-not-allowed opacity-60" : ""}`}
                     >
                       <span className="text-2xl">{emojiType(t)}</span>
                       <span className="text-xs">{libelleType(t)}</span>
@@ -641,9 +733,10 @@ export default function NewInterventionPage() {
             </div>
           )}
 
-          {createMutation.isError && (
+          {(createMutation.isError || updateMutation.isError) && (
             <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
-              Saisie impossible. Vérifie les valeurs et réessaie.
+              {isEditMode ? "Modification impossible" : "Saisie impossible"}. Vérifie les valeurs et
+              réessaie.
             </div>
           )}
 
@@ -652,11 +745,21 @@ export default function NewInterventionPage() {
               type="submit"
               size="lg"
               className="flex-1"
-              disabled={createMutation.isPending || noParcelles || semisSansProduit}
+              disabled={
+                createMutation.isPending ||
+                updateMutation.isPending ||
+                (!isEditMode && (noParcelles || semisSansProduit))
+              }
             >
-              {createMutation.isPending ? "Enregistrement…" : "Enregistrer"}
+              {isEditMode
+                ? updateMutation.isPending
+                  ? "Modification…"
+                  : "Enregistrer les modifications"
+                : createMutation.isPending
+                  ? "Enregistrement…"
+                  : "Enregistrer"}
             </Button>
-            <Link href="/interventions">
+            <Link href={isEditMode ? (`/interventions/${editId}` as never) : "/interventions"}>
               <Button type="button" variant="ghost" size="lg">
                 Annuler
               </Button>
