@@ -325,6 +325,12 @@ export default function InterventionsPage() {
           renderCard={renderCard}
           renderKanbanCard={renderCard}
           getKey={(iv) => iv.id}
+          dateField={(iv) => iv.dateOperation}
+          renderCalendarItem={(iv) => (
+            <span>
+              {emojiType(iv.type)} {libelleType(iv.type)}
+            </span>
+          )}
           onItemClick={(iv) => router.push(`/interventions/${iv.id}` as never)}
           searchFields={(iv) =>
             [

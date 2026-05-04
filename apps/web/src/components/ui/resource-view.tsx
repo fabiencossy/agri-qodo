@@ -20,6 +20,7 @@
  */
 import {
   Bookmark,
+  CalendarDays,
   ChevronDown,
   Columns,
   Filter as FilterIcon,
@@ -35,7 +36,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 // ---------- Types publics ---------------------------------------------------
 
-export type ViewMode = "list" | "kanban" | "card";
+export type ViewMode = "list" | "kanban" | "card" | "calendar";
 
 export interface ListColumn<T> {
   key: string;
@@ -111,6 +112,17 @@ export interface ResourceViewProps<T> {
   emptyState?: React.ReactNode;
   /** Placeholder de la search bar. */
   searchPlaceholder?: string;
+  /**
+   * Champ date utilisé par le mode "calendar" pour positionner les
+   * items sur la grille mensuelle. Doit retourner une date (Date ou
+   * ISO string). Si absent, le mode calendar est désactivé.
+   */
+  dateField?: (item: T) => Date | string | null | undefined;
+  /**
+   * Renderer compact d'un item dans une cellule de calendrier (sert
+   * aussi de tooltip au survol). Si absent, on retombe sur renderCard.
+   */
+  renderCalendarItem?: (item: T) => React.ReactNode;
 }
 
 // ---------- Implémentation --------------------------------------------------
@@ -141,7 +153,10 @@ function loadState(storageKey: string, defaultView: ViewMode): PersistedState {
     const parsed = JSON.parse(raw) as Partial<PersistedState>;
     return {
       view:
-        parsed.view === "kanban" || parsed.view === "list" || parsed.view === "card"
+        parsed.view === "kanban" ||
+        parsed.view === "list" ||
+        parsed.view === "card" ||
+        parsed.view === "calendar"
           ? parsed.view
           : defaultView,
       search: typeof parsed.search === "string" ? parsed.search : "",
@@ -322,6 +337,7 @@ export function ResourceView<T>(props: ResourceViewProps<T>) {
         onApplyFavorite={applyFavorite}
         onRemoveFavorite={removeFavorite}
         searchPlaceholder={props.searchPlaceholder ?? "Rechercher…"}
+        calendarAvailable={!!props.dateField}
       />
 
       {props.data.length === 0 && props.emptyState ? (
@@ -347,6 +363,20 @@ export function ResourceView<T>(props: ResourceViewProps<T>) {
           renderCard={props.renderCard ?? props.renderKanbanCard}
           {...(props.onItemClick ? { onItemClick: props.onItemClick } : {})}
         />
+      ) : view === "calendar" ? (
+        props.dateField ? (
+          <CalendarView
+            data={filteredData}
+            getKey={props.getKey}
+            dateField={props.dateField}
+            renderItem={props.renderCalendarItem ?? props.renderCard ?? props.renderKanbanCard}
+            {...(props.onItemClick ? { onItemClick: props.onItemClick } : {})}
+          />
+        ) : (
+          <p className="rounded-xl border border-dashed border-border bg-muted/30 p-8 text-center text-sm text-foreground/60">
+            Vue calendrier indisponible : aucun champ date configuré pour cette ressource.
+          </p>
+        )
       ) : (
         <KanbanView
           groups={
@@ -405,6 +435,173 @@ function CardView<T>({ data, getKey, renderCard, onItemClick }: CardViewProps<T>
   );
 }
 
+// ---------- CalendarView (vue mensuelle) ---------------------------------
+
+interface CalendarViewProps<T> {
+  data: T[];
+  getKey: (item: T) => string;
+  dateField: (item: T) => Date | string | null | undefined;
+  renderItem: (item: T) => React.ReactNode;
+  onItemClick?: (item: T) => void;
+}
+
+function startOfMonth(d: Date): Date {
+  return new Date(d.getFullYear(), d.getMonth(), 1);
+}
+
+function isSameDay(a: Date, b: Date): boolean {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
+}
+
+const JOURS_COURTS = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
+
+function CalendarView<T>({
+  data,
+  getKey,
+  dateField,
+  renderItem,
+  onItemClick,
+}: CalendarViewProps<T>) {
+  const [cursor, setCursor] = useState<Date>(() => startOfMonth(new Date()));
+
+  // Map jour ISO (YYYY-MM-DD) → items pour ce jour. Skip items sans date.
+  const itemsByDay = useMemo(() => {
+    const map = new Map<string, T[]>();
+    for (const item of data) {
+      const raw = dateField(item);
+      if (!raw) continue;
+      const d = typeof raw === "string" ? new Date(raw) : raw;
+      if (Number.isNaN(d.getTime())) continue;
+      const k = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      const bucket = map.get(k);
+      if (bucket) bucket.push(item);
+      else map.set(k, [item]);
+    }
+    return map;
+  }, [data, dateField]);
+
+  // Construit la grille du mois : 1ère case = lundi de la semaine du 1er
+  // jour du mois (peut être en mois précédent), 6 semaines × 7 jours.
+  const cells = useMemo(() => {
+    const first = startOfMonth(cursor);
+    const dayOfWeek = (first.getDay() + 6) % 7; // 0 = lundi
+    const start = new Date(first);
+    start.setDate(first.getDate() - dayOfWeek);
+    const out: Date[] = [];
+    for (let i = 0; i < 42; i++) {
+      const d = new Date(start);
+      d.setDate(start.getDate() + i);
+      out.push(d);
+    }
+    return out;
+  }, [cursor]);
+
+  const today = new Date();
+  const monthLabel = cursor.toLocaleDateString("fr-CH", { month: "long", year: "numeric" });
+  const goPrev = () => setCursor((c) => new Date(c.getFullYear(), c.getMonth() - 1, 1));
+  const goNext = () => setCursor((c) => new Date(c.getFullYear(), c.getMonth() + 1, 1));
+  const goToday = () => setCursor(startOfMonth(new Date()));
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between gap-2 rounded-xl border border-border bg-background px-3 py-2">
+        <button
+          type="button"
+          onClick={goPrev}
+          className="rounded-md p-1.5 hover:bg-muted"
+          aria-label="Mois précédent"
+        >
+          ←
+        </button>
+        <span className="text-sm font-semibold capitalize">{monthLabel}</span>
+        <div className="flex gap-1">
+          <button
+            type="button"
+            onClick={goToday}
+            className="rounded-md px-2 py-1 text-xs hover:bg-muted"
+          >
+            Aujourd&apos;hui
+          </button>
+          <button
+            type="button"
+            onClick={goNext}
+            className="rounded-md p-1.5 hover:bg-muted"
+            aria-label="Mois suivant"
+          >
+            →
+          </button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-7 gap-px overflow-hidden rounded-xl border border-border bg-border">
+        {JOURS_COURTS.map((j) => (
+          <div
+            key={j}
+            className="bg-muted px-1 py-1 text-center text-[10px] font-semibold uppercase tracking-wide text-foreground/60 sm:text-xs"
+          >
+            {j}
+          </div>
+        ))}
+        {cells.map((d) => {
+          const inMonth = d.getMonth() === cursor.getMonth();
+          const isToday = isSameDay(d, today);
+          const k = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+          const items = itemsByDay.get(k) ?? [];
+          return (
+            <div
+              key={k}
+              className={`min-h-[80px] bg-background p-1 sm:min-h-[110px] ${
+                inMonth ? "" : "opacity-40"
+              } ${isToday ? "ring-2 ring-inset ring-green" : ""}`}
+            >
+              <div className="mb-1 flex items-baseline justify-between text-[11px]">
+                <span className={`font-medium ${isToday ? "text-green" : "text-foreground/70"}`}>
+                  {d.getDate()}
+                </span>
+                {items.length > 0 && (
+                  <span className="rounded-full bg-muted px-1.5 text-[10px] text-foreground/60">
+                    {items.length}
+                  </span>
+                )}
+              </div>
+              <ul className="space-y-1">
+                {items.slice(0, 3).map((item) => {
+                  const key = getKey(item);
+                  const content = (
+                    <div className="cursor-pointer truncate rounded border border-green/30 bg-green/5 px-1 py-0.5 text-[11px] hover:bg-green/10">
+                      {renderItem(item)}
+                    </div>
+                  );
+                  return onItemClick ? (
+                    <li key={key}>
+                      <button
+                        type="button"
+                        onClick={() => onItemClick(item)}
+                        className="block w-full text-left"
+                      >
+                        {content}
+                      </button>
+                    </li>
+                  ) : (
+                    <li key={key}>{content}</li>
+                  );
+                })}
+                {items.length > 3 && (
+                  <li className="text-[10px] text-foreground/50">+ {items.length - 3} autres</li>
+                )}
+              </ul>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ---------- SearchBar + Panel ---------------------------------------------
 
 function SearchBar<T>(props: {
@@ -430,6 +627,7 @@ function SearchBar<T>(props: {
   onApplyFavorite: (fav: SavedFavorite) => void;
   onRemoveFavorite: (name: string) => void;
   searchPlaceholder: string;
+  calendarAvailable: boolean;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -528,6 +726,14 @@ function SearchBar<T>(props: {
             icon={Columns}
             label="Kanban"
           />
+          {props.calendarAvailable && (
+            <ViewToggleButton
+              active={props.view === "calendar"}
+              onClick={() => props.onViewChange("calendar")}
+              icon={CalendarDays}
+              label="Calendrier"
+            />
+          )}
         </div>
       </div>
 
