@@ -13,7 +13,6 @@
  */
 import {
   ArrowRight,
-  Briefcase,
   CalendarDays,
   ChevronLeft,
   ChevronRight,
@@ -21,6 +20,7 @@ import {
   Download,
   LayoutGrid,
   Plus,
+  Tractor,
 } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
@@ -346,7 +346,7 @@ function ListeView({
         <p className="mb-3 text-sm text-foreground/60">Aucune heure pour cette semaine.</p>
         <Link href="/travaux/new">
           <Button variant="secondary">
-            <Briefcase className="mr-1 h-4 w-4" />
+            <Tractor className="mr-1 h-4 w-4" />
             Créer un travail
           </Button>
         </Link>

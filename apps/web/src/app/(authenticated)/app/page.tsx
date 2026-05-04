@@ -2,12 +2,12 @@
 
 import {
   Beef,
-  Briefcase,
   ClipboardList,
   Clock,
   type LucideIcon,
   MapPin,
   Sprout,
+  Tractor,
   TrendingUp,
 } from "lucide-react";
 import Link from "next/link";
@@ -110,8 +110,8 @@ export default function HomePage() {
           />
           <StatCard
             href="/travaux"
-            icon={Briefcase}
-            label="Travaux ce mois"
+            icon={Tractor}
+            label="Travaux pour tiers ce mois"
             value={nbTravaux30j.toString()}
             sub={nbTravaux30j === 0 ? "Aucun travail saisi" : "ce mois-ci"}
             color="bg-amber-50 text-amber-700"
@@ -178,11 +178,11 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* Section : Derniers travaux */}
+      {/* Section : Derniers travaux pour tiers */}
       <section className="mb-8">
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-xs font-semibold uppercase tracking-wider text-foreground/50">
-            Travaux récents
+            Travaux pour tiers récents
           </h2>
           <Link href="/travaux" className="text-xs font-medium text-green hover:underline">
             Voir tout →
@@ -196,7 +196,7 @@ export default function HomePage() {
               {travaux.data.slice(0, 4).map((t) => (
                 <li key={t.id} className="flex items-center gap-3 px-4 py-3">
                   <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-amber-100 text-amber-700">
-                    <Briefcase className="h-4 w-4" />
+                    <Tractor className="h-4 w-4" />
                   </span>
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium">

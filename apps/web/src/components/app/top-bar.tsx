@@ -1,8 +1,8 @@
 "use client";
 
 import { Menu } from "lucide-react";
-import Link from "next/link";
 import { useCurrentTenant } from "@/lib/auth";
+import { BrandLogo } from "./brand-logo";
 
 /**
  * Top bar visible uniquement sur mobile/tablet (< lg).
@@ -20,9 +20,7 @@ export function TopBar({ onMenuClick }: { onMenuClick: () => void }) {
         >
           <Menu className="h-5 w-5" />
         </button>
-        <Link href="/" className="text-lg font-bold text-green">
-          🌱 Agri Qodo
-        </Link>
+        <BrandLogo />
         {tenant.data && (
           <span className="hidden truncate text-sm text-foreground/60 md:inline">
             · {tenant.data.nom}

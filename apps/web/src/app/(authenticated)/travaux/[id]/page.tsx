@@ -8,6 +8,7 @@ import {
   MapPin,
   Package,
   Send,
+  Tractor,
   Trash2,
   XCircle,
 } from "lucide-react";
@@ -89,14 +90,14 @@ export default function TravailDetailPage() {
       <Breadcrumb
         items={[
           { label: "Accueil", href: "/app" },
-          { label: "Travaux", href: "/travaux" },
+          { label: "Travaux pour tiers", href: "/travaux" },
           { label: t.titre },
         ]}
       />
       <div className="mx-auto max-w-3xl px-2 py-3 sm:px-4 sm:py-6">
         <DetailHeader
           backHref="/travaux"
-          icon={ClipboardList}
+          icon={Tractor}
           title={t.titre}
           subtitle={<span className="capitalize">{dateLong(t.date)}</span>}
           badges={

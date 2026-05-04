@@ -1,9 +1,9 @@
 "use client";
 
 import { X } from "lucide-react";
-import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect } from "react";
+import { BrandLogo } from "./brand-logo";
 import { NavContent } from "./nav-content";
 
 export function HamburgerDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -40,9 +40,7 @@ export function HamburgerDrawer({ open, onClose }: { open: boolean; onClose: () 
         }`}
       >
         <header className="flex items-center justify-between border-b border-border px-4 py-3">
-          <Link href="/" className="text-lg font-bold text-green">
-            🌱 Agri Qodo
-          </Link>
+          <BrandLogo />
           <button onClick={onClose} aria-label="Fermer" className="rounded-md p-1.5 hover:bg-muted">
             <X className="h-5 w-5" />
           </button>

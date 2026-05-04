@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { ShieldCheck, Sparkles } from "lucide-react";
+import { ShieldCheck, Sparkles, Tractor } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
@@ -89,7 +89,10 @@ export default function LoginPage() {
     <main className="flex min-h-screen items-center justify-center px-4 py-12">
       <div className="w-full max-w-md">
         <header className="mb-6 text-center">
-          <h1 className="text-3xl font-bold text-green">🌱 Agri Qodo</h1>
+          <h1 className="flex items-center justify-center gap-2 text-3xl font-bold text-green">
+            <Tractor className="h-7 w-7" />
+            Agri Qodo
+          </h1>
           <p className="mt-2 text-sm text-foreground/70">Connectez-vous à votre exploitation</p>
         </header>
 
