@@ -1,16 +1,24 @@
 "use client";
 
-import { Clock, Pause as PauseIcon, Play, Square, Trash2 } from "lucide-react";
-import { useEffect, useState } from "react";
+/**
+ * Page présences refondue style qodo-clock — un seul gros bouton Play/Stop
+ * + 3 champs Date / Heure début / Heure fin éditables avant pointage pour
+ * permettre une saisie rétroactive si l'utilisateur n'a pas pointé en
+ * temps réel.
+ *
+ * Le `type` Presence n'est plus saisi côté UI : on utilise toujours
+ * "CHANTIER" par défaut. La grille de types initiale a été supprimée
+ * (la classification fine sera dérivée du Travail lié quand pertinent).
+ */
+
+import { Clock, Play, Square, Trash2 } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { Breadcrumb } from "@/components/app/breadcrumb";
 import { PageHeader } from "@/components/app/page-header";
-import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   formatDuree,
-  type PresenceType,
-  PRESENCE_TYPE_EMOJI,
   PRESENCE_TYPE_LABEL,
-  PRESENCE_TYPES_ORDER,
   useClockIn,
   useClockOut,
   useCurrentPresence,
@@ -34,6 +42,22 @@ function semaineCourante() {
   };
 }
 
+function todayDate(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function nowTime(): string {
+  const d = new Date();
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+function combineDateTime(date: string, time: string): string | null {
+  if (!date || !time) return null;
+  const iso = `${date}T${time}:00`;
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+}
+
 export default function PresencesPage() {
   const current = useCurrentPresence();
   const { lundiIso, dimancheIso } = semaineCourante();
@@ -43,8 +67,24 @@ export default function PresencesPage() {
   const deletePresence = useDeletePresence();
   const travaux = useTravaux();
 
-  const [type, setType] = useState<PresenceType>("CHANTIER");
+  // Champs éditables pré-pointage. Default = maintenant — l'utilisateur
+  // peut les modifier pour saisir une présence rétroactive.
+  const [date, setDate] = useState(todayDate());
+  const [heureDebut, setHeureDebut] = useState(nowTime());
+  const [heureFin, setHeureFin] = useState("");
   const [travailId, setTravailId] = useState("");
+
+  // Quand une présence ouvre, on synchronise les champs avec ses valeurs
+  // pour permettre l'édition de l'heure de fin avant le clock-out.
+  useEffect(() => {
+    if (current.data) {
+      const d = new Date(current.data.dateDebut);
+      setDate(d.toISOString().slice(0, 10));
+      setHeureDebut(
+        `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`,
+      );
+    }
+  }, [current.data]);
 
   // Timer live pour la présence ouverte (mise à jour chaque seconde).
   const [now, setNow] = useState(() => Date.now());
@@ -62,16 +102,26 @@ export default function PresencesPage() {
     .filter((p) => p.dureeMinutes !== null)
     .reduce((sum, p) => sum + (p.dureeMinutes ?? 0), 0);
 
+  // Travaux ouverts pour le sélecteur (limite 50 plus récents).
+  const travauxOptions = useMemo(() => (travaux.data ?? []).slice(0, 50), [travaux.data]);
+
   const handleClockIn = () => {
+    const dateDebut = combineDateTime(date, heureDebut);
     clockIn.mutate({
-      type,
+      type: "CHANTIER",
+      ...(dateDebut ? { dateDebut } : {}),
       ...(travailId ? { travailId } : {}),
     });
   };
 
   const handleClockOut = () => {
-    clockOut.mutate({});
+    const dateFin = combineDateTime(date, heureFin);
+    clockOut.mutate({
+      ...(dateFin ? { dateFin } : {}),
+    });
   };
+
+  const isOpen = !!current.data;
 
   return (
     <>
@@ -82,40 +132,129 @@ export default function PresencesPage() {
           { label: "Présences" },
         ]}
       />
-      <div className="mx-auto max-w-3xl px-3 py-4 sm:py-8">
+      <div className="mx-auto max-w-2xl px-3 py-4 sm:py-8">
         <PageHeader
           title="Présences"
           icon={Clock}
-          subtitle="Pointe ton entrée/sortie de chantier. Les heures sont reportées automatiquement sur le travail pour tiers lié."
+          subtitle="Un clic Play, un clic Stop. Les heures sont reportées automatiquement sur le travail pour tiers lié."
         />
 
-        {/* ----- Bouton géant clock-in ou clock-out ----- */}
         {current.isLoading ? (
           <div className="rounded-3xl border-2 border-dashed border-border p-10 text-center text-foreground/50">
             Chargement…
           </div>
-        ) : current.data ? (
-          <ClockOutCard
-            type={current.data.type}
-            dateDebut={current.data.dateDebut}
-            elapsedMinutes={elapsedMinutes}
-            travail={current.data.travail}
-            isPending={clockOut.isPending}
-            onClockOut={handleClockOut}
-          />
         ) : (
-          <ClockInCard
-            type={type}
-            onChangeType={setType}
-            travailId={travailId}
-            onChangeTravailId={setTravailId}
-            travaux={travaux.data ?? []}
-            isPending={clockIn.isPending}
-            onClockIn={handleClockIn}
-          />
+          <section
+            className={`rounded-3xl border-2 p-6 sm:p-8 ${
+              isOpen ? "border-amber-300/60 bg-amber-50" : "border-green/30 bg-green/5"
+            }`}
+          >
+            {/* Bouton Play/Stop centré */}
+            <div className="flex flex-col items-center">
+              <button
+                type="button"
+                onClick={isOpen ? handleClockOut : handleClockIn}
+                disabled={clockIn.isPending || clockOut.isPending}
+                aria-label={isOpen ? "Arrêter le pointage" : "Démarrer le pointage"}
+                className={`flex h-32 w-32 items-center justify-center rounded-full text-white shadow-lg transition-all hover:scale-105 active:scale-95 disabled:opacity-50 sm:h-40 sm:w-40 ${
+                  isOpen ? "bg-red-600 hover:bg-red-700" : "bg-green hover:bg-green-dark"
+                }`}
+              >
+                {isOpen ? (
+                  <Square className="h-14 w-14 sm:h-16 sm:w-16" fill="currentColor" />
+                ) : (
+                  <Play className="h-14 w-14 sm:h-16 sm:w-16" fill="currentColor" />
+                )}
+              </button>
+              <p
+                className={`mt-3 text-center text-base font-semibold ${
+                  isOpen ? "text-amber-900" : "text-foreground/80"
+                }`}
+              >
+                {isOpen
+                  ? clockOut.isPending
+                    ? "Arrêt…"
+                    : "Pointage en cours"
+                  : clockIn.isPending
+                    ? "Démarrage…"
+                    : "Démarrer le pointage"}
+              </p>
+              {isOpen && current.data && (
+                <p className="mt-1 font-mono text-3xl font-bold tabular-nums text-amber-900 sm:text-4xl">
+                  {formatDuree(elapsedMinutes)}
+                </p>
+              )}
+            </div>
+
+            {/* 3 champs Date / Heure début / Heure fin */}
+            <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <label className="text-sm">
+                <span className="mb-1 block font-medium text-foreground/70">Date</span>
+                <Input
+                  type="date"
+                  value={date}
+                  onChange={(e) => setDate(e.target.value)}
+                  disabled={isOpen}
+                  className="h-12 w-full"
+                />
+              </label>
+              <label className="text-sm">
+                <span className="mb-1 block font-medium text-foreground/70">Heure de début</span>
+                <Input
+                  type="time"
+                  value={heureDebut}
+                  onChange={(e) => setHeureDebut(e.target.value)}
+                  disabled={isOpen}
+                  className="h-12 w-full font-mono tabular-nums"
+                />
+              </label>
+              <label className="text-sm">
+                <span className="mb-1 block font-medium text-foreground/70">Heure de fin</span>
+                <Input
+                  type="time"
+                  value={heureFin}
+                  onChange={(e) => setHeureFin(e.target.value)}
+                  className="h-12 w-full font-mono tabular-nums"
+                  placeholder="--:--"
+                />
+              </label>
+            </div>
+
+            {/* Sélecteur travail tiers lié (optionnel) */}
+            {!isOpen && travauxOptions.length > 0 && (
+              <div className="mt-4">
+                <label className="text-sm">
+                  <span className="mb-1 block font-medium text-foreground/70">
+                    Travail pour tiers lié (optionnel)
+                  </span>
+                  <select
+                    value={travailId}
+                    onChange={(e) => setTravailId(e.target.value)}
+                    className="h-12 w-full rounded-lg border border-border bg-background px-3 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green"
+                  >
+                    <option value="">— Aucun (à associer plus tard) —</option>
+                    {travauxOptions.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.titre} — {new Date(t.date).toLocaleDateString("fr-CH")}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <p className="mt-1 text-xs text-foreground/50">
+                  Les heures pointées seront reportées automatiquement sur ce travail.
+                </p>
+              </div>
+            )}
+
+            {isOpen && current.data?.travail && (
+              <p className="mt-4 text-center text-sm">
+                🚜 Travail pour tiers : <strong>{current.data.travail.titre}</strong>
+              </p>
+            )}
+          </section>
         )}
 
-        {/* ----- Récap semaine ----- */}
+        {/* Récap semaine */}
         <section className="mt-8 rounded-2xl border border-border bg-background p-4 sm:p-5">
           <header className="mb-4 flex items-center justify-between">
             <h2 className="text-base font-semibold">Cette semaine</h2>
@@ -129,9 +268,9 @@ export default function PresencesPage() {
             <ul className="divide-y divide-border">
               {(mes.data ?? []).map((p) => (
                 <li key={p.id} className="flex items-start gap-3 py-3">
-                  <span className="text-2xl">{PRESENCE_TYPE_EMOJI[p.type]}</span>
+                  <Clock className="mt-0.5 h-4 w-4 flex-shrink-0 text-foreground/40" />
                   <div className="flex-1 min-w-0">
-                    <div className="font-medium">{PRESENCE_TYPE_LABEL[p.type]}</div>
+                    <div className="text-sm font-medium">{PRESENCE_TYPE_LABEL[p.type]}</div>
                     <div className="text-xs text-foreground/60">
                       {new Date(p.dateDebut).toLocaleString("fr-CH", {
                         weekday: "short",
@@ -188,137 +327,3 @@ export default function PresencesPage() {
     </>
   );
 }
-
-interface ClockInCardProps {
-  type: PresenceType;
-  onChangeType: (t: PresenceType) => void;
-  travailId: string;
-  onChangeTravailId: (id: string) => void;
-  travaux: Array<{ id: string; titre: string; date: string }>;
-  isPending: boolean;
-  onClockIn: () => void;
-}
-
-function ClockInCard({
-  type,
-  onChangeType,
-  travailId,
-  onChangeTravailId,
-  travaux,
-  isPending,
-  onClockIn,
-}: ClockInCardProps) {
-  return (
-    <section className="rounded-3xl border-2 border-green/30 bg-green/5 p-5 sm:p-7">
-      <p className="text-sm text-foreground/70">Type de présence</p>
-      <div className="mt-2 grid grid-cols-3 gap-2 sm:grid-cols-6">
-        {PRESENCE_TYPES_ORDER.map((t) => (
-          <button
-            key={t}
-            type="button"
-            onClick={() => onChangeType(t)}
-            className={`flex flex-col items-center gap-1 rounded-xl border-2 p-3 text-center transition-all active:scale-95 ${
-              type === t
-                ? "border-green bg-green/10 font-medium"
-                : "border-border bg-background hover:border-foreground/20"
-            }`}
-          >
-            <span className="text-2xl">{PRESENCE_TYPE_EMOJI[t]}</span>
-            <span className="text-xs">{PRESENCE_TYPE_LABEL[t]}</span>
-          </button>
-        ))}
-      </div>
-
-      {(type === "CHANTIER" || type === "DEPLACEMENT") && travaux.length > 0 && (
-        <div className="mt-5">
-          <p className="mb-1 text-sm text-foreground/70">Travail pour tiers lié (optionnel)</p>
-          <select
-            value={travailId}
-            onChange={(e) => onChangeTravailId(e.target.value)}
-            className="h-12 w-full rounded-lg border border-border bg-background px-3 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green"
-          >
-            <option value="">— Aucune (à associer plus tard) —</option>
-            {travaux.slice(0, 50).map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.titre} — {new Date(t.date).toLocaleDateString("fr-CH")}
-              </option>
-            ))}
-          </select>
-          <p className="mt-1 text-xs text-foreground/50">
-            Les heures seront reportées automatiquement sur ce travail pour tiers.
-          </p>
-        </div>
-      )}
-
-      <Button
-        type="button"
-        onClick={onClockIn}
-        disabled={isPending}
-        className="mt-6 h-16 w-full rounded-2xl bg-green text-lg font-bold hover:bg-green-dark"
-      >
-        <Play className="mr-2 h-6 w-6" />
-        {isPending ? "Pointage…" : "Pointer entrée"}
-      </Button>
-    </section>
-  );
-}
-
-interface ClockOutCardProps {
-  type: PresenceType;
-  dateDebut: string;
-  elapsedMinutes: number;
-  travail: { id: string; titre: string } | null;
-  isPending: boolean;
-  onClockOut: () => void;
-}
-
-function ClockOutCard({
-  type,
-  dateDebut,
-  elapsedMinutes,
-  travail,
-  isPending,
-  onClockOut,
-}: ClockOutCardProps) {
-  return (
-    <section className="rounded-3xl border-2 border-amber-300/60 bg-amber-50 p-5 sm:p-7 dark:border-amber-800 dark:bg-amber-950/30">
-      <div className="flex items-start gap-4">
-        <span className="flex h-16 w-16 flex-shrink-0 items-center justify-center rounded-2xl bg-amber-500 text-white text-3xl shadow-md">
-          {PRESENCE_TYPE_EMOJI[type]}
-        </span>
-        <div className="flex-1">
-          <p className="text-xs uppercase tracking-wider text-amber-800/80 dark:text-amber-300/80">
-            En cours — {PRESENCE_TYPE_LABEL[type]}
-          </p>
-          <p className="mt-1 font-mono text-3xl font-bold tabular-nums text-amber-900 sm:text-4xl dark:text-amber-200">
-            {formatDuree(elapsedMinutes)}
-          </p>
-          <p className="mt-0.5 text-xs text-foreground/70">
-            Depuis{" "}
-            {new Date(dateDebut).toLocaleTimeString("fr-CH", {
-              hour: "2-digit",
-              minute: "2-digit",
-            })}
-          </p>
-          {travail && (
-            <p className="mt-2 text-sm">
-              🚜 Travail pour tiers : <strong>{travail.titre}</strong>
-            </p>
-          )}
-        </div>
-      </div>
-
-      <Button
-        type="button"
-        onClick={onClockOut}
-        disabled={isPending}
-        className="mt-6 h-16 w-full rounded-2xl bg-amber-600 text-lg font-bold hover:bg-amber-700"
-      >
-        <Square className="mr-2 h-6 w-6" />
-        {isPending ? "Pointage…" : "Pointer sortie"}
-      </Button>
-    </section>
-  );
-}
-
-void PauseIcon; // satisfy import (used in PRESENCE_TYPE_EMOJI map indirectly)
