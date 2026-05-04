@@ -71,4 +71,12 @@ export class UpdateTenantDto {
   @IsOptional()
   @IsUUID()
   defaultProjetTravauxTiersId?: string;
+
+  @ApiPropertyOptional({
+    description:
+      "Suivi des heures sur toutes les activités (Carnet, Travail tiers, Travail interne). Quand false, les champs heures + employé(s) sont masqués partout.",
+  })
+  @IsOptional()
+  @IsBoolean()
+  suiviHeuresActif?: boolean;
 }

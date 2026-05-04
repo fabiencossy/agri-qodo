@@ -45,6 +45,7 @@ export class TenantsService {
     if (dto.numeroBdta !== undefined) data.numeroBdta = dto.numeroBdta.trim() || null;
     if (dto.visibleInDirectory !== undefined) data.visibleInDirectory = dto.visibleInDirectory;
     if (dto.noterTempsParProjet !== undefined) data.noterTempsParProjet = dto.noterTempsParProjet;
+    if (dto.suiviHeuresActif !== undefined) data.suiviHeuresActif = dto.suiviHeuresActif;
     if (dto.defaultProjetTravauxTiersId !== undefined) {
       // Validation : le projet doit appartenir au tenant courant.
       if (dto.defaultProjetTravauxTiersId) {
