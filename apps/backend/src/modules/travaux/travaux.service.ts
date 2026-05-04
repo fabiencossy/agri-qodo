@@ -109,7 +109,7 @@ export class TravauxService {
     await this.assertProjet(dto.projetId, tenantId);
     await this.assertLignesValid(dto.lignesProduit, dto.lignesHeure, tenantId);
 
-    return this.prisma.travail.create({
+    const created = await this.prisma.travail.create({
       data: {
         tenantId,
         titre: dto.titre.trim(),
@@ -131,6 +131,20 @@ export class TravauxService {
       },
       include: this.include,
     });
+
+    // Push Odoo automatique en best-effort (review 2026-05-04 : "je veux
+    // que le pousser vers odoo soit automatique"). Ne bloque jamais la
+    // création si Odoo down ou non configuré — l'utilisateur pourra
+    // re-pousser manuellement depuis la fiche détail.
+    // Skip si pas de lignes (pushTravail rejetterait avec
+    // BadRequestException "travail vide") — laisse l'utilisateur ajouter
+    // des lignes puis re-pousser.
+    const hasContent = created.lignesProduit.length > 0 || created.lignesHeure.length > 0;
+    if (hasContent) {
+      this.odooPush.tryPushTravailQuotation(created.id).catch(() => undefined); // already swallowed inside, mais ceinture+bretelles
+    }
+
+    return created;
   }
 
   async update(id: string, dto: UpdateTravailDto) {
@@ -249,6 +263,16 @@ export class TravauxService {
           before,
           after,
         });
+
+        // Push Odoo automatique si le travail n'a pas encore été poussé
+        // et qu'il a des lignes maintenant (review 2026-05-04). Ne touche
+        // pas aux travaux déjà poussés (sale.order ou project.task) pour
+        // éviter les doublons côté Odoo.
+        const alreadyPushed = !!updated.odooSaleOrderId || !!updated.odooTaskId;
+        const hasContent = updated.lignesProduit.length > 0 || updated.lignesHeure.length > 0;
+        if (!alreadyPushed && hasContent) {
+          this.odooPush.tryPushTravailQuotation(id).catch(() => undefined);
+        }
         return updated;
       });
   }
