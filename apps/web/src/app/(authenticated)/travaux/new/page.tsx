@@ -94,12 +94,18 @@ export default function NewTravailPage() {
   // Date pré-remplie via query string (ex: depuis le calendrier
   // /mes-heures qui passe ?date=YYYY-MM-DD).
   const dateParam = searchParams.get("date");
+  // Parcelle pré-remplie quand on arrive depuis une fiche parcelle
+  // (?parcelleId=...). Validée comme UUID light pour éviter d'injecter un
+  // truc bizarre dans l'URL.
+  const parcelleIdParam = searchParams.get("parcelleId");
   const [titre, setTitre] = useState("");
   const [date, setDate] = useState(
     dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam) ? dateParam : todayIso(),
   );
   const [partenaireId, setPartenaireId] = useState("");
-  const [parcelleId, setParcelleId] = useState("");
+  const [parcelleId, setParcelleId] = useState(
+    parcelleIdParam && /^[0-9a-f-]{36}$/i.test(parcelleIdParam) ? parcelleIdParam : "",
+  );
   const [interne, setInterne] = useState(false);
   const [notes, setNotes] = useState("");
   const [lignesProduit, setLignesProduit] = useState<DraftLigneProduit[]>([]);

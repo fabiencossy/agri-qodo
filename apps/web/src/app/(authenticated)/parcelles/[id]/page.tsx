@@ -1,6 +1,17 @@
 "use client";
 
-import { ArrowLeft, Calendar, Check, MapPin, Pencil, Plus, Sprout, Trash2 } from "lucide-react";
+import {
+  ArrowLeft,
+  Calendar,
+  Check,
+  MapPin,
+  Navigation,
+  Pencil,
+  Plus,
+  Sprout,
+  Tractor,
+  Trash2,
+} from "lucide-react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -103,18 +114,26 @@ export default function ParcelleDetailPage() {
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
+                {parcelle.data.lat != null && parcelle.data.lng != null && (
+                  <a
+                    href={`https://www.google.com/maps/dir/?api=1&destination=${parcelle.data.lat},${parcelle.data.lng}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label={`Itinéraire vers ${parcelle.data.nom}`}
+                  >
+                    <Button variant="ghost">
+                      <Navigation className="mr-2 h-4 w-4" />
+                      Itinéraire
+                    </Button>
+                  </a>
+                )}
                 <Link href={`/parcelles/${parcelleId}/edit`}>
                   <Button variant="ghost">
                     <Pencil className="mr-2 h-4 w-4" />
                     Modifier
                   </Button>
                 </Link>
-                <Link href={`/interventions/new?parcelleId=${parcelleId}`}>
-                  <Button>
-                    <Sprout className="mr-2 h-4 w-4" />
-                    Nouvelle intervention
-                  </Button>
-                </Link>
+                <ParcelleSaisieMenu parcelleId={parcelleId} />
               </div>
             </div>
 
@@ -225,6 +244,81 @@ export default function ParcelleDetailPage() {
         )}
       </div>
     </>
+  );
+}
+
+/**
+ * Menu déroulant "+" sur la fiche parcelle. Deux options qui pré-remplissent
+ * la parcelle dans le formulaire cible :
+ *  - Nouvelle intervention (cas A — sur ma parcelle / cas B si parcelle d'un partenaire)
+ *  - Nouveau travail pour tiers
+ */
+function ParcelleSaisieMenu({ parcelleId }: { parcelleId: string }) {
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDocClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest?.("[data-parcelle-saisie-menu]")) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onDocClick);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDocClick);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  return (
+    <div className="relative" data-parcelle-saisie-menu>
+      <Button onClick={() => setOpen((v) => !v)} aria-haspopup="menu" aria-expanded={open}>
+        <Plus className="mr-2 h-4 w-4" />
+        Saisir
+      </Button>
+      {open && (
+        <div
+          role="menu"
+          className="absolute right-0 top-full z-30 mt-1 w-64 overflow-hidden rounded-xl border border-border bg-background shadow-lg"
+        >
+          <Link
+            href={`/interventions/new?parcelleId=${parcelleId}` as never}
+            onClick={() => setOpen(false)}
+            role="menuitem"
+            className="flex items-start gap-3 px-3 py-3 text-sm hover:bg-muted"
+          >
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-green/10 text-green">
+              <Sprout className="h-4 w-4" />
+            </span>
+            <span className="flex-1">
+              <span className="block font-medium">Nouvelle intervention</span>
+              <span className="block text-xs text-foreground/60">
+                Carnet des champs (semis, fumure, phyto…)
+              </span>
+            </span>
+          </Link>
+          <Link
+            href={`/travaux/new?parcelleId=${parcelleId}` as never}
+            onClick={() => setOpen(false)}
+            role="menuitem"
+            className="flex items-start gap-3 border-t border-border px-3 py-3 text-sm hover:bg-muted"
+          >
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-amber-700">
+              <Tractor className="h-4 w-4" />
+            </span>
+            <span className="flex-1">
+              <span className="block font-medium">Nouveau travail pour tiers</span>
+              <span className="block text-xs text-foreground/60">
+                Facturation client / interne, lignes produits + heures
+              </span>
+            </span>
+          </Link>
+        </div>
+      )}
+    </div>
   );
 }
 

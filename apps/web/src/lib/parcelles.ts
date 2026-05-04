@@ -14,6 +14,13 @@ export interface Parcelle {
   notes: string | null;
   couleurHex: string | null;
   geom: GeoJsonPolygon | null;
+  /**
+   * Point garanti à l'intérieur de geom (ST_PointOnSurface) — sert au
+   * lien "Itinéraire Google Maps". Null si geom null.
+   * Présent uniquement sur la fiche détail (GET /api/parcelles/:id).
+   */
+  lat?: number | null;
+  lng?: number | null;
   createdAt: string;
   updatedAt: string;
 }
