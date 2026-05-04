@@ -236,7 +236,7 @@ export default function ProfilPage() {
           type="button"
           onClick={() => logout.mutate()}
           disabled={logout.isPending}
-          className="flex w-full items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700 hover:bg-red-100 disabled:opacity-50 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300"
+          className="flex w-full items-center justify-center gap-2 rounded-xl border border-red-300 bg-background px-4 py-3 text-sm font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50"
         >
           <LogOut className="h-4 w-4" />
           {logout.isPending ? "Déconnexion…" : "Se déconnecter"}

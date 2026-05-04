@@ -78,11 +78,11 @@ export default function ProduitsPage() {
         {/* Bandeau Odoo : visible uniquement aux admins, dès que la config
             Odoo est saisie. Bouton sync mis en évidence. */}
         {isAdmin && odoo.connected && (
-          <div className="mb-4 flex flex-wrap items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 sm:px-5">
+          <div className="mb-4 flex flex-wrap items-center gap-3 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 sm:px-5">
             <RefreshCw className="h-5 w-5 flex-shrink-0 text-amber-700" />
             <div className="flex-1 text-sm">
               <p className="font-semibold text-amber-900">Synchronisation Odoo</p>
-              <p className="text-xs text-amber-700/80">
+              <p className="mt-0.5 text-xs text-foreground/70">
                 Importe tous les <code className="font-mono">product.product</code> actifs depuis
                 ton instance Odoo. Idempotent : les produits existants sont mis à jour.
               </p>
