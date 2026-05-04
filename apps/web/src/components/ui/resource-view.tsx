@@ -265,7 +265,17 @@ export function ResourceView<T>(props: ResourceViewProps<T>) {
       prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key],
     );
   };
-  const setGroupBy = (key: string | null) => setGroupByKey(key);
+  const setGroupBy = (key: string | null) => {
+    setGroupByKey(key);
+    // UX : choisir un groupBy depuis la vue Cartes ou Liste bascule
+    // automatiquement en mode Kanban (où le regroupement a un effet
+    // visuel — les colonnes par groupe). Désactiver le groupBy ne
+    // re-bascule PAS — on laisse l'utilisateur sur le kanban si c'est
+    // ce qu'il veut.
+    if (key !== null && view !== "kanban") {
+      setView("kanban");
+    }
+  };
 
   const saveFavorite = () => {
     const name = window.prompt(
