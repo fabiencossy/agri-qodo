@@ -125,6 +125,14 @@ export class CreateTravailDto {
 
   @ApiPropertyOptional({
     description:
+      "ID Projet de regroupement (étiquette libre cf C2). Optionnel — typiquement utilisé pour les travaux pour tiers.",
+  })
+  @IsOptional()
+  @IsUUID()
+  projetId?: string;
+
+  @ApiPropertyOptional({
+    description:
       "Travail interne (entretien, formation, déplacement) : non facturable, non poussé vers Odoo.",
   })
   @IsOptional()

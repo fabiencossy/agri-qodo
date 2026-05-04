@@ -302,6 +302,7 @@ model Projet {
 
   tenant Exploitation @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   defaultForTenants Exploitation[] @relation("DefaultProjetTravauxTiers")
+  travaux           Travail[]      @relation("TravailProjet")
 
   @@unique([tenantId, nom])
   @@index([tenantId, archive])
@@ -885,12 +886,18 @@ model Travail {
   // dans le chatter Odoo. Sert à tracer côté Odoo sans facturer.
   odooTaskId      Int?       @map("odoo_task_id")
   invoicedAt   DateTime?     @map("invoiced_at")
+  /// Étiquette de regroupement libre (cf C2). Pour les travaux pour tiers
+  /// ce champ est typiquement obligatoire au form (pré-rempli depuis le
+  /// setting tenant defaultProjetTravauxTiersId), pour les travaux
+  /// internes il est optionnel. Set null si le projet est supprimé.
+  projetId     String?       @map("projet_id")
   createdAt    DateTime      @default(now()) @map("created_at")
   updatedAt    DateTime      @updatedAt @map("updated_at")
 
   tenant     Exploitation  @relation("TravailTenant", fields: [tenantId], references: [id], onDelete: Cascade)
   partenaire Exploitation? @relation("TravailPartenaire", fields: [partenaireId], references: [id], onDelete: SetNull)
   parcelle   Parcelle?     @relation(fields: [parcelleId], references: [id], onDelete: SetNull)
+  projet     Projet?       @relation("TravailProjet", fields: [projetId], references: [id], onDelete: SetNull)
 
   lignesProduit LigneTravailProduit[]
   lignesHeure   LigneTravailHeure[]
@@ -904,6 +911,7 @@ model Travail {
   @@index([tenantId])
   @@index([partenaireId])
   @@index([parcelleId])
+  @@index([projetId])
   @@index([statut])
   @@index([date])
   @@map("travaux")
