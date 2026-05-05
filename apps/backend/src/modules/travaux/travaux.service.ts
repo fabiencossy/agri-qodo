@@ -109,12 +109,20 @@ export class TravauxService {
     await this.assertProjet(dto.projetId, tenantId);
     await this.assertLignesValid(dto.lignesProduit, dto.lignesHeure, tenantId);
 
+    // Sprint 2 fusion-interventions — Planning. Un travail créé sans
+    // contenu (pas de lignes) avec une datePrevue est considéré comme
+    // "PLANIFIE". Sinon par défaut DRAFT comme avant.
+    const isPlanningOnly =
+      !!dto.datePrevue &&
+      (!dto.lignesProduit || dto.lignesProduit.length === 0) &&
+      (!dto.lignesHeure || dto.lignesHeure.length === 0);
+
     const created = await this.prisma.travail.create({
       data: {
         tenantId,
         titre: dto.titre.trim(),
         date: new Date(dto.date),
-        statut: TravailStatut.DRAFT,
+        statut: isPlanningOnly ? TravailStatut.PLANIFIE : TravailStatut.DRAFT,
         ...(dto.interne !== undefined ? { interne: dto.interne } : {}),
         ...(dto.dateDebut ? { dateDebut: new Date(dto.dateDebut) } : {}),
         ...(dto.dateFin ? { dateFin: new Date(dto.dateFin) } : {}),
@@ -122,6 +130,8 @@ export class TravauxService {
         ...(dto.parcelleId ? { parcelleId: dto.parcelleId } : {}),
         ...(dto.projetId ? { projetId: dto.projetId } : {}),
         ...(dto.notes ? { notes: dto.notes } : {}),
+        ...(dto.datePrevue ? { datePrevue: new Date(dto.datePrevue) } : {}),
+        ...(dto.assignedToUserId ? { assignedToUserId: dto.assignedToUserId } : {}),
         ...(dto.lignesProduit && dto.lignesProduit.length > 0
           ? { lignesProduit: { create: dto.lignesProduit.map((l) => this.toLigneProduitData(l)) } }
           : {}),
@@ -300,6 +310,32 @@ export class TravauxService {
       await this.odooPush.tryConfirmSaleOrder(id);
     }
 
+    return this.getById(id);
+  }
+
+  /**
+   * Sprint 2 fusion-interventions — Planning. Marque un travail PLANIFIE
+   * comme terminé. Selon le rôle de l'utilisateur :
+   * - OWNER → passe directement en VALIDATED (prêt à facturer Odoo).
+   * - EMPLOYE → passe en PENDING_REVIEW (attente validation OWNER).
+   */
+  async markCompleted(id: string) {
+    const { tenantId, role } = this.tenantContext.get();
+    const travail = await this.prisma.travail.findFirst({
+      where: { id, tenantId },
+      select: { id: true, statut: true },
+    });
+    if (!travail) throw new NotFoundException("Travail introuvable");
+    if (travail.statut !== TravailStatut.PLANIFIE && travail.statut !== TravailStatut.DRAFT) {
+      throw new ConflictException(
+        "Le travail n'est pas planifié ni en brouillon — impossible de marquer comme terminé.",
+      );
+    }
+    const nextStatut = role === "OWNER" ? TravailStatut.VALIDATED : TravailStatut.PENDING_REVIEW;
+    await this.prisma.travail.update({
+      where: { id },
+      data: { statut: nextStatut },
+    });
     return this.getById(id);
   }
 

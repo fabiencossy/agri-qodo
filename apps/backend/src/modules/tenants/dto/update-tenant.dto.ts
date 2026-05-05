@@ -71,4 +71,49 @@ export class UpdateTenantDto {
   @IsOptional()
   @IsUUID()
   defaultProjetTravauxTiersId?: string;
+
+  @ApiPropertyOptional({
+    description: "Affiche les champs heures sur le formulaire Carnet des champs (sinon masqués).",
+  })
+  @IsOptional()
+  @IsBoolean()
+  heuresVisiblesCarnet?: boolean;
+
+  @ApiPropertyOptional({
+    description: "Affiche les champs heures sur le formulaire Travail pour tiers (sinon masqués).",
+  })
+  @IsOptional()
+  @IsBoolean()
+  heuresVisiblesTravauxTiers?: boolean;
+
+  @ApiPropertyOptional({
+    description: "Affiche les champs heures sur le formulaire Travail interne (sinon masqués).",
+  })
+  @IsOptional()
+  @IsBoolean()
+  heuresVisiblesTravauxInterne?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      "Projet où s'imputent les heures du Carnet (UUID). Obligatoire dès que heuresVisiblesCarnet=true.",
+  })
+  @IsOptional()
+  @IsUUID()
+  projetHeuresCarnetId?: string | null;
+
+  @ApiPropertyOptional({
+    description:
+      "Projet où s'imputent les heures de Travaux pour tiers (UUID). Obligatoire dès que heuresVisiblesTravauxTiers=true.",
+  })
+  @IsOptional()
+  @IsUUID()
+  projetHeuresTravauxTiersId?: string | null;
+
+  @ApiPropertyOptional({
+    description:
+      "Projet où s'imputent les heures de Travaux internes (UUID). Obligatoire dès que heuresVisiblesTravauxInterne=true.",
+  })
+  @IsOptional()
+  @IsUUID()
+  projetHeuresTravauxInterneId?: string | null;
 }

@@ -149,4 +149,37 @@ export class CreateInterventionDto {
   @IsString()
   @MaxLength(500)
   notes?: string;
+
+  @ApiPropertyOptional({
+    description: "Heure de début ISO (PRD fusion v0.2 §3.3 — heures sur Carnet, mono-utilisateur).",
+  })
+  @IsOptional()
+  @IsDateString()
+  heureDebut?: string;
+
+  @ApiPropertyOptional({ description: "Heure de fin ISO." })
+  @IsOptional()
+  @IsDateString()
+  heureFin?: string;
+
+  @ApiPropertyOptional({
+    description:
+      "Durée en minutes saisie librement (alternative à heureDebut/heureFin). Si les deux sont fournis, le service recalcule depuis les heures.",
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  dureeMinutes?: number;
+
+  @ApiPropertyOptional({
+    description: "Date prévue d'exécution (Sprint 2 — Planning). ISO YYYY-MM-DD.",
+  })
+  @IsOptional()
+  @IsDateString()
+  datePrevue?: string;
+
+  @ApiPropertyOptional({ description: "User assigné au planning." })
+  @IsOptional()
+  @IsUUID()
+  assignedToUserId?: string;
 }

@@ -1,0 +1,354 @@
+"use client";
+
+/**
+ * Sprint 2 fusion-interventions — page /planning.
+ *
+ * Liste les travaux + interventions ayant une `datePrevue` non null,
+ * groupés par jour (chronologique). Permet de filtrer par employé
+ * assigné. Chaque carte ouvre le formulaire en mode édition pour saisir
+ * les heures réelles. Bouton "Marquer comme terminé" si le statut le
+ * permet (OWNER → VALIDATED direct, EMPLOYE → PENDING_REVIEW).
+ */
+import {
+  CalendarDays,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  Loader2,
+  Plus,
+  Sprout,
+  Tractor,
+  User as UserIcon,
+  Wrench,
+} from "lucide-react";
+import Link from "next/link";
+import type { Route } from "next";
+import { useMemo, useState } from "react";
+import { Breadcrumb } from "@/components/app/breadcrumb";
+import { useCurrentUser } from "@/lib/auth";
+import { useInterventions } from "@/lib/interventions";
+import {
+  STATUT_BADGE,
+  STATUT_LABEL,
+  type TravailStatut,
+  useCompleteTravail,
+  useTravaux,
+} from "@/lib/travaux";
+import { useUsers } from "@/lib/users";
+
+type PlanningKind = "CARNET" | "TIERS" | "INTERNE";
+
+interface PlanningItem {
+  kind: PlanningKind;
+  id: string;
+  datePrevue: Date;
+  titre: string;
+  sousTitre: string;
+  assignedToUserId: string | null;
+  assignedToLabel: string | null;
+  href: Route;
+  /** Pour Travail uniquement (Carnet n'a pas de bouton Marquer terminé V1). */
+  travailStatut: TravailStatut | null;
+}
+
+function startOfDay(d: Date): Date {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  return x;
+}
+
+function formatJour(d: Date): string {
+  const today = startOfDay(new Date());
+  const diff = Math.round((startOfDay(d).getTime() - today.getTime()) / 86_400_000);
+  if (diff === 0) return "Aujourd'hui";
+  if (diff === 1) return "Demain";
+  if (diff === -1) return "Hier";
+  return d.toLocaleDateString("fr-CH", {
+    weekday: "long",
+    day: "2-digit",
+    month: "long",
+  });
+}
+
+const KIND_META: Record<PlanningKind, { label: string; Icon: typeof Sprout; color: string }> = {
+  CARNET: { label: "Carnet", Icon: Sprout, color: "text-emerald-600" },
+  TIERS: { label: "Tiers", Icon: Tractor, color: "text-purple-600" },
+  INTERNE: { label: "Interne", Icon: Wrench, color: "text-sky-600" },
+};
+
+export default function PlanningPage() {
+  const me = useCurrentUser();
+  const interventions = useInterventions();
+  const travaux = useTravaux();
+  const users = useUsers();
+  const completeTravail = useCompleteTravail();
+
+  // Filtre par employé assigné (null = tous, "me" = moi).
+  const [filtreEmploye, setFiltreEmploye] = useState<string | "all" | "me">("me");
+  // Décalage de jours par rapport à aujourd'hui pour la navigation.
+  const [jourOffset, setJourOffset] = useState(0);
+
+  const items = useMemo<PlanningItem[]>(() => {
+    const usersById = new Map((users.data ?? []).map((u) => [u.id, `${u.prenom} ${u.nom}`.trim()]));
+
+    const fromInterventions: PlanningItem[] = (interventions.data ?? [])
+      .filter((iv) => iv.datePrevue)
+      .map((iv) => ({
+        kind: "CARNET" as const,
+        id: iv.id,
+        datePrevue: new Date(iv.datePrevue!),
+        titre: iv.type,
+        sousTitre: `${iv.parcelle.nom}${iv.produit ? ` · ${iv.produit}` : ""}`,
+        assignedToUserId: iv.assignedToUserId,
+        assignedToLabel: iv.assignedToUserId ? (usersById.get(iv.assignedToUserId) ?? null) : null,
+        href: `/interventions/new?edit=${iv.id}` as Route,
+        travailStatut: null,
+      }));
+
+    const fromTravaux: PlanningItem[] = (travaux.data ?? [])
+      .filter((t) => t.datePrevue)
+      .map((t) => ({
+        kind: t.interne ? ("INTERNE" as const) : ("TIERS" as const),
+        id: t.id,
+        datePrevue: new Date(t.datePrevue!),
+        titre: t.titre,
+        sousTitre: t.partenaire?.nom ?? (t.interne ? "Interne" : "—"),
+        assignedToUserId: t.assignedToUserId,
+        assignedToLabel: t.assignedToUserId ? (usersById.get(t.assignedToUserId) ?? null) : null,
+        href: `/travaux/new?edit=${t.id}` as Route,
+        travailStatut: t.statut,
+      }));
+
+    return [...fromInterventions, ...fromTravaux].sort(
+      (a, b) => a.datePrevue.getTime() - b.datePrevue.getTime(),
+    );
+  }, [interventions.data, travaux.data, users.data]);
+
+  // Filtre employé.
+  const itemsFiltres = useMemo(() => {
+    return items.filter((it) => {
+      if (filtreEmploye === "all") return true;
+      if (filtreEmploye === "me") return it.assignedToUserId === me.data?.id;
+      return it.assignedToUserId === filtreEmploye;
+    });
+  }, [items, filtreEmploye, me.data?.id]);
+
+  // Filtre jour (today + offset).
+  const jourCible = useMemo(() => {
+    const d = startOfDay(new Date());
+    d.setDate(d.getDate() + jourOffset);
+    return d;
+  }, [jourOffset]);
+
+  const itemsDuJour = useMemo(() => {
+    const start = jourCible.getTime();
+    const end = start + 86_400_000;
+    return itemsFiltres.filter((it) => {
+      const t = it.datePrevue.getTime();
+      return t >= start && t < end;
+    });
+  }, [itemsFiltres, jourCible]);
+
+  return (
+    <>
+      <Breadcrumb items={[{ label: "Accueil", href: "/app" }, { label: "Planning" }]} />
+      <div className="mx-auto max-w-3xl px-3 py-4 sm:py-6">
+        <header className="mb-4 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <CalendarDays className="h-6 w-6 text-foreground/60" />
+            <h1 className="text-2xl font-bold sm:text-3xl">Planning</h1>
+          </div>
+          <Link
+            href={"/interventions/new" as Route}
+            className="inline-flex items-center gap-1.5 rounded-xl bg-green px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-green-dark"
+          >
+            <Plus className="h-4 w-4" />
+            Planifier
+          </Link>
+        </header>
+
+        {/* Filtres employé */}
+        <div className="mb-3 flex flex-wrap gap-1.5">
+          <FiltreChip
+            actif={filtreEmploye === "me"}
+            onClick={() => setFiltreEmploye("me")}
+            label="Mes assignations"
+          />
+          <FiltreChip
+            actif={filtreEmploye === "all"}
+            onClick={() => setFiltreEmploye("all")}
+            label="Tout l'équipe"
+          />
+          {(users.data ?? [])
+            .filter((u) => u.id !== me.data?.id)
+            .map((u) => (
+              <FiltreChip
+                key={u.id}
+                actif={filtreEmploye === u.id}
+                onClick={() => setFiltreEmploye(u.id)}
+                label={`${u.prenom}`}
+              />
+            ))}
+        </div>
+
+        {/* Navigation jour */}
+        <div className="mb-3 flex items-center justify-between gap-2 rounded-xl border border-border bg-background p-2">
+          <button
+            type="button"
+            onClick={() => setJourOffset((x) => x - 1)}
+            aria-label="Jour précédent"
+            className="flex h-10 w-10 items-center justify-center rounded-lg hover:bg-muted"
+          >
+            <ChevronLeft className="h-5 w-5" />
+          </button>
+          <div className="flex flex-col items-center">
+            <span className="text-base font-semibold capitalize sm:text-lg">
+              {formatJour(jourCible)}
+            </span>
+            <span className="text-xs text-foreground/60">
+              {jourCible.toLocaleDateString("fr-CH", {
+                day: "2-digit",
+                month: "2-digit",
+                year: "numeric",
+              })}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setJourOffset((x) => x + 1)}
+            aria-label="Jour suivant"
+            className="flex h-10 w-10 items-center justify-center rounded-lg hover:bg-muted"
+          >
+            <ChevronRight className="h-5 w-5" />
+          </button>
+        </div>
+        {jourOffset !== 0 && (
+          <div className="mb-3 flex justify-center">
+            <button
+              type="button"
+              onClick={() => setJourOffset(0)}
+              className="rounded-full border border-border bg-background px-3 py-1 text-xs font-medium text-foreground/70 hover:bg-muted"
+            >
+              Revenir à aujourd'hui
+            </button>
+          </div>
+        )}
+
+        {/* Liste du jour */}
+        {itemsDuJour.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-border bg-muted/20 p-8 text-center">
+            <CalendarDays className="mx-auto mb-2 h-10 w-10 text-foreground/30" />
+            <p className="text-sm text-foreground/60">Rien de planifié pour ce jour.</p>
+            <p className="mt-1 text-xs text-foreground/50">
+              Crée une activité avec une date prévue depuis le bouton +.
+            </p>
+          </div>
+        ) : (
+          <ul className="space-y-2">
+            {itemsDuJour.map((it) => (
+              <PlanningCard
+                key={`${it.kind}-${it.id}`}
+                item={it}
+                onComplete={() => completeTravail.mutate(it.id)}
+                completing={completeTravail.isPending && completeTravail.variables === it.id}
+              />
+            ))}
+          </ul>
+        )}
+      </div>
+    </>
+  );
+}
+
+function FiltreChip({
+  actif,
+  onClick,
+  label,
+}: {
+  actif: boolean;
+  onClick: () => void;
+  label: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${
+        actif
+          ? "border-green bg-green text-white"
+          : "border-border bg-background text-foreground/60 hover:text-foreground"
+      }`}
+    >
+      {label}
+    </button>
+  );
+}
+
+function PlanningCard({
+  item,
+  onComplete,
+  completing,
+}: {
+  item: PlanningItem;
+  onComplete: () => void;
+  completing: boolean;
+}) {
+  const meta = KIND_META[item.kind];
+  const Icon = meta.Icon;
+  const peutMarquerTermine = item.travailStatut === "PLANIFIE" || item.travailStatut === "DRAFT";
+  const heureLabel = item.datePrevue.toLocaleTimeString("fr-CH", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+
+  return (
+    <li className="rounded-xl border border-border bg-background p-3">
+      <Link href={item.href} className="flex items-start gap-3">
+        <span className={`shrink-0 ${meta.color}`}>
+          <Icon className="h-5 w-5" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="truncate text-sm font-semibold">{item.titre}</span>
+            <span className="shrink-0 font-mono text-xs tabular-nums text-foreground/60">
+              {heureLabel}
+            </span>
+          </div>
+          <p className="mt-0.5 truncate text-xs text-foreground/70">{item.sousTitre}</p>
+          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+            {item.assignedToLabel && (
+              <span className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-foreground/70">
+                <UserIcon className="h-3 w-3" />
+                {item.assignedToLabel}
+              </span>
+            )}
+            {item.travailStatut && (
+              <span
+                className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${STATUT_BADGE[item.travailStatut]}`}
+              >
+                {STATUT_LABEL[item.travailStatut]}
+              </span>
+            )}
+          </div>
+        </div>
+      </Link>
+      {peutMarquerTermine && (
+        <div className="mt-3 flex justify-end border-t border-border pt-3">
+          <button
+            type="button"
+            onClick={onComplete}
+            disabled={completing}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-green bg-green/10 px-3 py-1.5 text-xs font-semibold text-green hover:bg-green/20 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {completing ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <CheckCircle2 className="h-3.5 w-3.5" />
+            )}
+            Marquer comme terminé
+          </button>
+        </div>
+      )}
+    </li>
+  );
+}

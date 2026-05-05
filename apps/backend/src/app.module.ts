@@ -15,6 +15,7 @@ import { MailerModule } from "./modules/mailer/mailer.module";
 import { MaterielsModule } from "./modules/materiels/materiels.module";
 import { OdooModule } from "./modules/odoo/odoo.module";
 import { OdooConfigModule } from "./modules/odoo-config/odoo-config.module";
+import { OdooPartnersModule } from "./modules/odoo-partners/odoo-partners.module";
 import { ParcellesModule } from "./modules/parcelles/parcelles.module";
 import { PartnerLinksModule } from "./modules/partner-links/partner-links.module";
 import { PerModule } from "./modules/per/per.module";
@@ -81,6 +82,7 @@ import { VeilleModule } from "./modules/veille/veille.module";
     PartnerLinksModule,
     OdooModule,
     OdooConfigModule,
+    OdooPartnersModule,
     TravauxModule,
     PresencesModule,
     VeilleModule,

@@ -3,7 +3,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./api-client";
 
-export type TravailStatut = "DRAFT" | "VALIDATED" | "INVOICED" | "CANCELLED";
+export type TravailStatut =
+  | "PLANIFIE"
+  | "DRAFT"
+  | "PENDING_REVIEW"
+  | "VALIDATED"
+  | "INVOICED"
+  | "CANCELLED";
 
 export interface LigneTravailProduit {
   id: string;
@@ -49,6 +55,10 @@ export interface Travail {
   odooSaleOrderId: number | null;
   odooTaskId: number | null;
   invoicedAt: string | null;
+  /** Sprint 2 fusion-interventions — Planning. */
+  datePrevue: string | null;
+  assignedToUserId: string | null;
+  assignedTo?: { id: string; prenom: string; nom: string } | null;
   lignesProduit: LigneTravailProduit[];
   lignesHeure: LigneTravailHeure[];
   createdAt: string;
@@ -83,6 +93,8 @@ export interface CreateTravailInput {
   projetId?: string;
   interne?: boolean;
   notes?: string;
+  datePrevue?: string;
+  assignedToUserId?: string;
   lignesProduit?: CreateLigneProduitInput[];
   lignesHeure?: CreateLigneHeureInput[];
 }
@@ -172,6 +184,18 @@ export function useCancelTravail() {
   });
 }
 
+/**
+ * Sprint 2 fusion-interventions — Marque un travail PLANIFIE comme terminé.
+ * OWNER → VALIDATED ; EMPLOYE → PENDING_REVIEW (attente OWNER).
+ */
+export function useCompleteTravail() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api<Travail>(`/api/travaux/${id}/complete`, { method: "POST" }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: KEY }),
+  });
+}
+
 export interface PushTravailResult {
   /** "sale_order" pour facturable, "project_task" pour travail interne. */
   odooKind: "sale_order" | "project_task";
@@ -210,17 +234,21 @@ export function useDeleteTravail() {
 }
 
 export const STATUT_LABEL: Record<TravailStatut, string> = {
+  PLANIFIE: "Planifié",
   DRAFT: "Brouillon",
+  PENDING_REVIEW: "À valider",
   VALIDATED: "Validé",
   INVOICED: "Facturé",
   CANCELLED: "Annulé",
 };
 
 export const STATUT_BADGE: Record<TravailStatut, string> = {
-  DRAFT: "bg-foreground/10 text-foreground/70",
-  VALIDATED: "bg-blue-100 text-blue-800",
-  INVOICED: "bg-emerald-100 text-emerald-800",
-  CANCELLED: "bg-red-100 text-red-800",
+  PLANIFIE: "bg-background text-green border border-green",
+  DRAFT: "bg-muted/40 text-foreground/80 border border-border",
+  PENDING_REVIEW: "bg-amber-50 text-amber-900 border border-amber-300",
+  VALIDATED: "bg-emerald-50 text-emerald-900 border border-emerald-300",
+  INVOICED: "bg-blue-50 text-blue-900 border border-blue-300",
+  CANCELLED: "bg-red-50 text-red-900 border border-red-300",
 };
 
 export function totalProduitsCHF(t: Travail): number {

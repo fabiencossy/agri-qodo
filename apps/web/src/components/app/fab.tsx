@@ -1,46 +1,27 @@
 "use client";
 
-import {
-  Beef,
-  ClipboardList,
-  type LucideIcon,
-  MapPin,
-  Plus,
-  Sprout,
-  Tractor,
-  X,
-} from "lucide-react";
+import { Beef, ClipboardList, Clock, type LucideIcon, MapPin, Plus, Sprout, X } from "lucide-react";
 import Link from "next/link";
 import type { Route } from "next";
 import { useEffect, useState } from "react";
 
-interface FabAction {
+interface SecondaryAction {
   href: Route;
   label: string;
-  description?: string;
   icon: LucideIcon;
 }
 
 /**
- * Deux actions principales du module Activités, identiques sur toutes
- * les pages — pivot UX "gros doigts". Tout le reste (parcelle, cheptel,
- * SRPA) descend en accès secondaire compact.
+ * FAB porte unique (PRD fusion v0.2 §3.1).
+ *
+ * Click + → bottom-sheet avec :
+ *   - 1 bouton primaire dominant : Nouvelle activité → /interventions/new
+ *     (le choix Carnet / Tiers / Interne se fait via les onglets en haut
+ *     de la page de saisie)
+ *   - 4 boutons secondaires compacts : Pointage, Parcelle, SRPA, Cheptel
  */
-const PRIMARY_INTERVENTION: FabAction = {
-  href: "/interventions/new",
-  label: "Faire une intervention",
-  description: "Carnet des champs : labour, semis, fumure, phyto, récolte…",
-  icon: Sprout,
-};
-
-const PRIMARY_TRAVAIL: FabAction = {
-  href: "/travaux/new",
-  label: "Saisir un travail pour tiers",
-  description: "Travail pour un client ou interne (mécanique, transport).",
-  icon: Tractor,
-};
-
-const SECONDARY_ACTIONS: FabAction[] = [
+const SECONDARY_ACTIONS: SecondaryAction[] = [
+  { href: "/presences", label: "Pointage", icon: Clock },
   { href: "/parcelles/new", label: "Parcelle", icon: MapPin },
   { href: "/srpa/new", label: "Sortie SRPA", icon: ClipboardList },
   { href: "/animaux", label: "Cheptel BDTA", icon: Beef },
@@ -71,10 +52,11 @@ export function Fab() {
     <>
       <div className="fixed bottom-6 right-6 z-30">
         <button
+          type="button"
           onClick={() => setOpen(!open)}
           aria-label={open ? "Fermer le menu d'actions" : "Ouvrir le menu d'actions"}
           aria-expanded={open}
-          className={`flex h-16 w-16 items-center justify-center rounded-full bg-green text-white shadow-xl transition-transform duration-200 hover:bg-green-dark hover:scale-105 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green focus-visible:ring-offset-2 ${
+          className={`flex h-16 w-16 items-center justify-center rounded-full bg-green text-white shadow-xl transition-transform duration-200 hover:scale-105 hover:bg-green-dark active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green focus-visible:ring-offset-2 ${
             open ? "rotate-[135deg]" : "rotate-0"
           }`}
         >
@@ -89,12 +71,12 @@ export function Fab() {
           style={{ animation: "fadeIn 200ms ease-out" }}
         >
           <div
-            className="w-full max-w-2xl rounded-t-3xl bg-background p-4 shadow-2xl sm:p-6 lg:rounded-3xl lg:mx-4"
+            className="w-full max-w-md rounded-t-3xl bg-background p-4 shadow-2xl sm:p-5 lg:rounded-3xl lg:mx-4"
             onClick={(e) => e.stopPropagation()}
             style={{ animation: "slideUp 250ms cubic-bezier(0.16, 1, 0.3, 1)" }}
           >
             <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-lg font-bold">Que veux-tu saisir&nbsp;?</h2>
+              <h2 className="text-base font-bold">Que veux-tu saisir&nbsp;?</h2>
               <button
                 type="button"
                 onClick={() => setOpen(false)}
@@ -105,23 +87,27 @@ export function Fab() {
               </button>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2">
-              <PrimaryCard
-                action={PRIMARY_INTERVENTION}
-                accent="green"
-                onClick={() => setOpen(false)}
-              />
-              <PrimaryCard
-                action={PRIMARY_TRAVAIL}
-                accent="violet"
-                onClick={() => setOpen(false)}
-              />
-            </div>
+            {/* Action primaire dominante */}
+            <Link
+              href="/interventions/new"
+              onClick={() => setOpen(false)}
+              className="flex items-center gap-3 rounded-2xl border-2 border-green bg-green/5 p-4 transition-all hover:bg-green/10 hover:shadow-md active:scale-[0.99]"
+            >
+              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-green text-white shadow-sm">
+                <Sprout className="h-6 w-6" />
+              </span>
+              <span className="block">
+                <span className="block text-base font-bold">Nouvelle activité</span>
+                <span className="mt-0.5 block text-xs text-foreground/70">
+                  Carnet, travail pour tiers ou interne — tu choisis sur la page suivante.
+                </span>
+              </span>
+            </Link>
 
-            <p className="mb-2 mt-5 text-xs font-semibold uppercase tracking-wider text-foreground/50">
+            <p className="mb-2 mt-4 text-[11px] font-semibold uppercase tracking-wider text-foreground/50">
               Autres saisies
             </p>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
               {SECONDARY_ACTIONS.map((action) => {
                 const Icon = action.icon;
                 return (
@@ -129,7 +115,7 @@ export function Fab() {
                     key={action.href}
                     href={action.href}
                     onClick={() => setOpen(false)}
-                    className="flex flex-col items-center justify-center gap-1.5 rounded-xl border border-border bg-muted/30 p-3 text-center text-xs transition-all hover:border-foreground/20 hover:shadow-sm active:scale-95"
+                    className="flex flex-col items-center justify-center gap-1.5 rounded-xl border border-border bg-muted/30 p-3 text-center text-xs font-medium transition-all hover:border-foreground/20 hover:bg-muted/50 active:scale-95"
                   >
                     <Icon className="h-5 w-5" />
                     <span>{action.label}</span>
@@ -162,41 +148,5 @@ export function Fab() {
         }
       `}</style>
     </>
-  );
-}
-
-function PrimaryCard({
-  action,
-  accent,
-  onClick,
-}: {
-  action: FabAction;
-  accent: "green" | "violet";
-  onClick: () => void;
-}) {
-  const Icon = action.icon;
-  const styles =
-    accent === "green"
-      ? "border-green/30 bg-green/5 hover:border-green text-foreground"
-      : "border-amber-300/60 bg-amber-50 hover:border-amber-500 text-foreground dark:bg-amber-950/30 dark:border-amber-800";
-  const iconBg = accent === "green" ? "bg-green text-white" : "bg-amber-600 text-white";
-  return (
-    <Link
-      href={action.href}
-      onClick={onClick}
-      className={`flex flex-col items-start gap-3 rounded-2xl border-2 p-5 transition-all hover:shadow-md active:scale-[0.99] ${styles}`}
-    >
-      <span
-        className={`flex h-14 w-14 items-center justify-center rounded-2xl shadow-sm ${iconBg}`}
-      >
-        <Icon className="h-7 w-7" />
-      </span>
-      <span className="block">
-        <span className="block text-base font-bold">{action.label}</span>
-        {action.description && (
-          <span className="mt-0.5 block text-xs text-foreground/70">{action.description}</span>
-        )}
-      </span>
-    </Link>
   );
 }

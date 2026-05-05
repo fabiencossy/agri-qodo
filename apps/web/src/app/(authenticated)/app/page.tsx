@@ -16,6 +16,7 @@ import { useCurrentTenant, useCurrentUser } from "@/lib/auth";
 import { useUgb } from "@/lib/animaux";
 import { useInterventions } from "@/lib/interventions";
 import { useParcelles } from "@/lib/parcelles";
+import { useTenantDetail } from "@/lib/tenants";
 import { useMesHeures, useTravaux } from "@/lib/travaux";
 
 function nbDays(start: Date, end: Date): number {
@@ -29,6 +30,13 @@ function startOfWeek(): Date {
   d.setDate(d.getDate() + offset);
   d.setHours(0, 0, 0, 0);
   return d;
+}
+
+function endOfWeekIso(): string {
+  const d = startOfWeek();
+  d.setDate(d.getDate() + 6);
+  d.setHours(23, 59, 59, 999);
+  return d.toISOString().slice(0, 10);
 }
 
 function startOfMonth(): Date {
@@ -55,7 +63,11 @@ export default function HomePage() {
   const interventions = useInterventions();
   const ugb = useUgb();
   const travaux = useTravaux();
-  const heuresWeek = useMesHeures({ dateDebut: startOfWeek().toISOString() });
+  const tenantDetail = useTenantDetail();
+  const heuresWeek = useMesHeures({
+    dateDebut: startOfWeek().toISOString().slice(0, 10),
+    dateFin: endOfWeekIso(),
+  });
 
   const prenom = me.data?.prenom ?? "agriculteur";
 
@@ -69,6 +81,28 @@ export default function HomePage() {
   const nbTravaux30j = travaux.data?.filter((t) => new Date(t.date) >= startOfMonth()).length ?? 0;
   const minutesSemaine = heuresWeek.data?.reduce((s, l) => s + l.dureeMinutes, 0) ?? 0;
 
+  // Résumé semaine compact (déplacé depuis /activites — décision 2026-05-05).
+  const lundi = startOfWeek();
+  const dimanche = new Date(lundi);
+  dimanche.setDate(lundi.getDate() + 6);
+  dimanche.setHours(23, 59, 59, 999);
+  const carnetSemaine =
+    interventions.data?.filter((iv) => {
+      const d = new Date(iv.dateOperation);
+      return d >= lundi && d <= dimanche;
+    }).length ?? 0;
+  const travauxSemaineList = (travaux.data ?? []).filter((t) => {
+    const d = new Date(t.date);
+    return d >= lundi && d <= dimanche;
+  });
+  const tiersSemaine = travauxSemaineList.filter((t) => !t.interne).length;
+  const interneSemaine = travauxSemaineList.filter((t) => t.interne).length;
+  const heuresLabel = `${Math.floor(minutesSemaine / 60)}h${String(minutesSemaine % 60).padStart(2, "0")}`;
+  const showHours =
+    tenantDetail.data?.heuresVisiblesCarnet !== false ||
+    tenantDetail.data?.heuresVisiblesTravauxTiers !== false ||
+    tenantDetail.data?.heuresVisiblesTravauxInterne !== false;
+
   return (
     <div className="mx-auto max-w-6xl px-3 py-6 sm:px-4 sm:py-10">
       <header className="mb-6">
@@ -78,10 +112,45 @@ export default function HomePage() {
         </p>
       </header>
 
+      {/* Résumé activités de la semaine (déplacé depuis /activites). */}
+      <section className="mb-6 rounded-2xl border border-border bg-background p-3 sm:p-4">
+        <header className="mb-3 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <TrendingUp className="h-4 w-4 text-foreground/60" />
+            <h2 className="text-sm font-semibold">Activités de la semaine</h2>
+          </div>
+          <span className="text-[11px] text-foreground/50">
+            {lundi.toLocaleDateString("fr-CH", { day: "2-digit", month: "2-digit" })} →{" "}
+            {dimanche.toLocaleDateString("fr-CH", { day: "2-digit", month: "2-digit" })}
+          </span>
+        </header>
+        <div className={`grid gap-2 ${showHours ? "grid-cols-4" : "grid-cols-3"}`}>
+          <SemKpi label="Carnet" value={carnetSemaine} dotClass="bg-emerald-500" />
+          <SemKpi label="Tiers" value={tiersSemaine} dotClass="bg-purple-500" />
+          <SemKpi label="Interne" value={interneSemaine} dotClass="bg-sky-500" />
+          {showHours && (
+            <Link
+              href="/mes-heures"
+              className="rounded-xl border border-border bg-background p-2.5 text-center transition-colors hover:bg-muted/30"
+            >
+              <div className="flex items-center justify-center gap-1.5">
+                <span className="inline-block h-2 w-2 rounded-full bg-amber-500" />
+                <span className="text-[10px] font-medium uppercase tracking-wide text-foreground/60">
+                  Heures
+                </span>
+              </div>
+              <div className="mt-1 font-mono text-xl font-bold tabular-nums text-foreground sm:text-2xl">
+                {heuresLabel}
+              </div>
+            </Link>
+          )}
+        </div>
+      </section>
+
       {/* Section : Statistiques clés */}
       <section className="mb-8">
         <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-foreground/50">
-          Cette semaine
+          Vue d'ensemble
         </h2>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
           <StatCard
@@ -229,6 +298,20 @@ export default function HomePage() {
         Astuce : le bouton <span className="font-bold text-green">+</span> en bas à droite ouvre les
         actions rapides de la page courante.
       </p>
+    </div>
+  );
+}
+
+function SemKpi({ label, value, dotClass }: { label: string; value: number; dotClass: string }) {
+  return (
+    <div className="rounded-xl border border-border bg-background p-2.5 text-center">
+      <div className="flex items-center justify-center gap-1.5">
+        <span className={`inline-block h-2 w-2 rounded-full ${dotClass}`} />
+        <span className="text-[10px] font-medium uppercase tracking-wide text-foreground/60">
+          {label}
+        </span>
+      </div>
+      <div className="mt-1 text-xl font-bold tabular-nums text-foreground sm:text-2xl">{value}</div>
     </div>
   );
 }

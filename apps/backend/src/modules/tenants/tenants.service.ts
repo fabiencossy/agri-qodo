@@ -1,4 +1,9 @@
-import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
 import { Canton, Prisma } from "@prisma/client";
 import { randomBytes } from "node:crypto";
 import { PrismaService } from "@/common/prisma/prisma.service";
@@ -45,6 +50,15 @@ export class TenantsService {
     if (dto.numeroBdta !== undefined) data.numeroBdta = dto.numeroBdta.trim() || null;
     if (dto.visibleInDirectory !== undefined) data.visibleInDirectory = dto.visibleInDirectory;
     if (dto.noterTempsParProjet !== undefined) data.noterTempsParProjet = dto.noterTempsParProjet;
+    if (dto.heuresVisiblesCarnet !== undefined) {
+      data.heuresVisiblesCarnet = dto.heuresVisiblesCarnet;
+    }
+    if (dto.heuresVisiblesTravauxTiers !== undefined) {
+      data.heuresVisiblesTravauxTiers = dto.heuresVisiblesTravauxTiers;
+    }
+    if (dto.heuresVisiblesTravauxInterne !== undefined) {
+      data.heuresVisiblesTravauxInterne = dto.heuresVisiblesTravauxInterne;
+    }
     if (dto.defaultProjetTravauxTiersId !== undefined) {
       // Validation : le projet doit appartenir au tenant courant.
       if (dto.defaultProjetTravauxTiersId) {
@@ -60,6 +74,84 @@ export class TenantsService {
         ? { connect: { id: dto.defaultProjetTravauxTiersId } }
         : { disconnect: true };
     }
+
+    // 3 projets d'imputation des heures (PRD fusion v0.2 §3.2 +
+    // décision 2026-05-05). On valide ici que le projet appartient au
+    // tenant. La validation "obligatoire si toggle ON" est faite plus bas
+    // sur l'état projeté (current + patch).
+    const projetHeuresPatches: Array<{
+      key: "projetHeuresCarnet" | "projetHeuresTravauxTiers" | "projetHeuresTravauxInterne";
+      id: string | null | undefined;
+    }> = [
+      { key: "projetHeuresCarnet", id: dto.projetHeuresCarnetId },
+      { key: "projetHeuresTravauxTiers", id: dto.projetHeuresTravauxTiersId },
+      { key: "projetHeuresTravauxInterne", id: dto.projetHeuresTravauxInterneId },
+    ];
+    for (const p of projetHeuresPatches) {
+      if (p.id === undefined) continue;
+      if (p.id) {
+        const projet = await this.prisma.projet.findFirst({
+          where: { id: p.id, tenantId },
+          select: { id: true },
+        });
+        if (!projet) {
+          throw new NotFoundException("Projet d'imputation des heures introuvable.");
+        }
+        data[p.key] = { connect: { id: p.id } };
+      } else {
+        data[p.key] = { disconnect: true };
+      }
+    }
+
+    // Validation cohérence : un toggle heuresVisibles_X=true exige un
+    // projetHeures_X non null dans l'état final (post-patch).
+    const current = await this.prisma.exploitation.findUnique({
+      where: { id: tenantId },
+      select: {
+        heuresVisiblesCarnet: true,
+        heuresVisiblesTravauxTiers: true,
+        heuresVisiblesTravauxInterne: true,
+        projetHeuresCarnetId: true,
+        projetHeuresTravauxTiersId: true,
+        projetHeuresTravauxInterneId: true,
+      },
+    });
+    if (!current) throw new NotFoundException("Exploitation introuvable");
+    const projected = {
+      heuresVisiblesCarnet: dto.heuresVisiblesCarnet ?? current.heuresVisiblesCarnet,
+      heuresVisiblesTravauxTiers:
+        dto.heuresVisiblesTravauxTiers ?? current.heuresVisiblesTravauxTiers,
+      heuresVisiblesTravauxInterne:
+        dto.heuresVisiblesTravauxInterne ?? current.heuresVisiblesTravauxInterne,
+      projetHeuresCarnetId:
+        dto.projetHeuresCarnetId !== undefined
+          ? dto.projetHeuresCarnetId
+          : current.projetHeuresCarnetId,
+      projetHeuresTravauxTiersId:
+        dto.projetHeuresTravauxTiersId !== undefined
+          ? dto.projetHeuresTravauxTiersId
+          : current.projetHeuresTravauxTiersId,
+      projetHeuresTravauxInterneId:
+        dto.projetHeuresTravauxInterneId !== undefined
+          ? dto.projetHeuresTravauxInterneId
+          : current.projetHeuresTravauxInterneId,
+    };
+    const incoherences: string[] = [];
+    if (projected.heuresVisiblesCarnet && !projected.projetHeuresCarnetId) {
+      incoherences.push("Carnet");
+    }
+    if (projected.heuresVisiblesTravauxTiers && !projected.projetHeuresTravauxTiersId) {
+      incoherences.push("Travaux pour tiers");
+    }
+    if (projected.heuresVisiblesTravauxInterne && !projected.projetHeuresTravauxInterneId) {
+      incoherences.push("Travaux internes");
+    }
+    if (incoherences.length > 0) {
+      throw new BadRequestException(
+        `Un projet d'imputation des heures est obligatoire pour : ${incoherences.join(", ")}.`,
+      );
+    }
+
     if (Object.keys(data).length === 0) return this.getMine(tenantId);
     try {
       return await this.prisma.exploitation.update({ where: { id: tenantId }, data });

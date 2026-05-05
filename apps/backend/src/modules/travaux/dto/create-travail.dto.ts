@@ -158,4 +158,16 @@ export class CreateTravailDto {
   @ValidateNested({ each: true })
   @Type(() => CreateLigneHeureDto)
   lignesHeure?: CreateLigneHeureDto[];
+
+  @ApiPropertyOptional({
+    description: "Date prévue d'exécution (Sprint 2 — Planning). ISO YYYY-MM-DD.",
+  })
+  @IsOptional()
+  @IsDateString()
+  datePrevue?: string;
+
+  @ApiPropertyOptional({ description: "User assigné au travail planifié." })
+  @IsOptional()
+  @IsUUID()
+  assignedToUserId?: string;
 }

@@ -51,7 +51,7 @@ export function ProduitSearchSelect({
   value,
   onChange,
   placeholder = "Rechercher un produit…",
-  required,
+  required: _required,
   defaultUnite,
 }: ProduitSearchSelectProps) {
   const produits = useProduits(categorie);
@@ -153,9 +153,7 @@ export function ProduitSearchSelect({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className={`flex h-11 w-full items-center justify-between rounded-lg border bg-background px-3 text-left text-base transition-colors hover:bg-muted ${
-          required && !value ? "border-amber-300 ring-1 ring-amber-200" : "border-border"
-        }`}
+        className="flex h-11 w-full items-center justify-between rounded-lg border border-border bg-background px-3 text-left text-base transition-colors hover:bg-muted"
       >
         <span className={`flex-1 truncate ${selected ? "" : "text-foreground/40"}`}>
           {triggerLabel}

@@ -1,6 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
+import { CalendarDays } from "lucide-react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -8,6 +9,14 @@ import { useEffect, useMemo, useState } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import { Breadcrumb } from "@/components/app/breadcrumb";
+import { TypeSaisieHeader } from "@/components/activites/type-saisie-header";
+import { EditActionsMenu } from "@/components/activites/edit-actions-menu";
+import {
+  HeuresSimplesInput,
+  type HeuresSimplesValue,
+} from "@/components/activites/heures-simples-input";
+import { useTenantDetail } from "@/lib/tenants";
+import { useUsers } from "@/lib/users";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { MaterielPicker } from "@/components/ui/materiel-picker";
@@ -23,7 +32,9 @@ import {
   TECHNIQUES_ORDER,
   type TechniqueEpandage,
   TYPES_ORDER,
+  useCompleteIntervention,
   useCreateIntervention,
+  useDeleteIntervention,
   useIntervention,
   useUpdateIntervention,
 } from "@/lib/interventions";
@@ -123,6 +134,22 @@ export default function NewInterventionPage() {
   const existingIntervention = useIntervention(editId || undefined);
   const createMutation = useCreateIntervention();
   const updateMutation = useUpdateIntervention();
+  const deleteIntervention = useDeleteIntervention();
+  const completeIntervention = useCompleteIntervention();
+  const tenantDetail = useTenantDetail();
+  const heuresVisibles = tenantDetail.data?.heuresVisiblesCarnet !== false;
+  const users = useUsers();
+  const [heures, setHeures] = useState<HeuresSimplesValue>({
+    heureDebut: "",
+    heureFin: "",
+    heureDebutPause: "",
+    dureePauseMinutes: 0,
+    dureeMinutes: 0,
+  });
+  // Sprint 2 fusion-interventions — Planning : juste assignedToUserId.
+  // datePrevue n'est plus un champ séparé, on prend `dateOperation` quand
+  // on clique sur "Planifier".
+  const [assignedToUserId, setAssignedToUserId] = useState<string>("");
   const parcelles = useParcelles();
   const accessiblesParcelles = useParcellesAccessibles();
   const produits = useProduits();
@@ -133,6 +160,7 @@ export default function NewInterventionPage() {
     control,
     setValue,
     reset,
+    watch,
     formState: { errors },
   } = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -262,6 +290,56 @@ export default function NewInterventionPage() {
     }
   }, [selectedParcelleId, surfaceParcelleM2, setValue]);
 
+  /**
+   * Sérialise le bloc heures pour le DTO backend (PRD fusion v0.2 §3.3).
+   * - Mode "times" : combine la dateOperation + HH:MM → 2 ISO datetime.
+   * - Mode "duree" : juste dureeMinutes.
+   * - Vide : rien (toggle masqué ou non rempli).
+   */
+  function buildHeuresPayload(date: string): {
+    heureDebut?: string;
+    heureFin?: string;
+    dureeMinutes?: number;
+  } {
+    if (!heuresVisibles) return {};
+    if (heures.heureDebut && heures.heureFin) {
+      return {
+        heureDebut: new Date(`${date}T${heures.heureDebut}:00`).toISOString(),
+        heureFin: new Date(`${date}T${heures.heureFin}:00`).toISOString(),
+      };
+    }
+    if (heures.dureeMinutes > 0) {
+      return { dureeMinutes: heures.dureeMinutes };
+    }
+    return {};
+  }
+
+  /**
+   * Sprint 2 fusion-interventions — submit "Planifier". Crée une pré-tâche
+   * d'intervention avec datePrevue + parcelle + assigné, type AUTRE par
+   * défaut (l'utilisateur précisera quand il complètera la saisie).
+   */
+  async function onSubmitPlanning() {
+    const parcelleId = watch("parcelleId") || "";
+    if (!parcelleId) {
+      alert("Sélectionne une parcelle avant de planifier.");
+      return;
+    }
+    const dateOp = watch("dateOperation") || today();
+    try {
+      await createMutation.mutateAsync({
+        parcelleId,
+        type: "AUTRE",
+        dateOperation: dateOp,
+        datePrevue: dateOp,
+        ...(assignedToUserId ? { assignedToUserId } : {}),
+      });
+      router.push("/planning");
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Échec de la planification.");
+    }
+  }
+
   const onSubmit = (values: FormValues) => {
     // Construction de la portion "surface" de la requête, par priorité :
     //   1. toute la parcelle → on n'envoie ni surface ni geom.
@@ -283,12 +361,15 @@ export default function NewInterventionPage() {
     })();
 
     if (isEditMode && editId) {
-      // Backend interdit la modification de parcelleId / type / produitId
-      // (cf UpdateInterventionDto) — on les omet du payload PATCH.
+      // Sprint 2 fusion-interventions : type, parcelleId et produitId sont
+      // désormais modifiables (utile pour compléter une pré-tâche planning).
       updateMutation.mutate(
         {
           id: editId,
+          parcelleId: values.parcelleId,
+          type: values.type,
           dateOperation: values.dateOperation,
+          ...(values.produitId ? { produitId: values.produitId } : { produitId: "" }),
           ...(values.produit ? { produit: values.produit } : {}),
           ...(values.materielId ? { materielId: values.materielId } : {}),
           ...(values.surfaceHa && !Number.isNaN(values.surfaceHa)
@@ -306,9 +387,11 @@ export default function NewInterventionPage() {
             : {}),
           ...zoneFields,
           ...(values.notes ? { notes: values.notes } : {}),
+          ...buildHeuresPayload(values.dateOperation),
+          ...(assignedToUserId ? { assignedToUserId } : {}),
         },
         {
-          onSuccess: () => router.push(`/interventions/${editId}` as never),
+          onSuccess: () => router.push("/activites"),
         },
       );
       return;
@@ -335,6 +418,8 @@ export default function NewInterventionPage() {
           : {}),
         ...zoneFields,
         ...(values.notes ? { notes: values.notes } : {}),
+        ...buildHeuresPayload(values.dateOperation),
+        ...(assignedToUserId ? { assignedToUserId } : {}),
       },
       {
         onSuccess: () => router.push("/interventions"),
@@ -355,12 +440,34 @@ export default function NewInterventionPage() {
         ]}
       />
       <div className="mx-auto max-w-2xl px-4 py-8">
-        <h1 className="mb-6 text-2xl font-bold">
-          {isEditMode ? "Modifier l'intervention" : "Saisir une intervention"}
-        </h1>
+        {!isEditMode && <TypeSaisieHeader active="carnet" />}
+        <div className="mb-6 flex items-start justify-between gap-3">
+          <h1 className="text-2xl font-bold">
+            {isEditMode ? "Modifier l'intervention" : "Saisir une intervention"}
+          </h1>
+          {isEditMode && editId && (
+            <EditActionsMenu
+              onComplete={() => {
+                completeIntervention.mutate(editId, {
+                  onSuccess: () => router.push("/activites"),
+                });
+              }}
+              onDelete={() => {
+                deleteIntervention.mutate(editId, {
+                  onSuccess: () => router.push("/activites"),
+                });
+              }}
+              completing={completeIntervention.isPending}
+              deleting={deleteIntervention.isPending}
+            />
+          )}
+        </div>
 
         {isEditMode && (
-          <div className="mb-4 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+          <div
+            className="mb-4 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950"
+            hidden
+          >
             Le type d'opération, la parcelle et le produit catalogue ne sont pas modifiables — ils
             gouvernent la culture créée pour les SEMIS. Pour les changer, supprime cette saisie et
             crée-en une nouvelle.
@@ -384,6 +491,21 @@ export default function NewInterventionPage() {
             <Input type="date" {...register("dateOperation")} />
           </Field>
 
+          <Field label="Assigné à">
+            <select
+              value={assignedToUserId}
+              onChange={(e) => setAssignedToUserId(e.target.value)}
+              className="h-11 w-full rounded-lg border border-border bg-background px-3 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green"
+            >
+              <option value="">— Personne —</option>
+              {(users.data ?? []).map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.prenom} {u.nom}
+                </option>
+              ))}
+            </select>
+          </Field>
+
           <Field
             label="Client (optionnel)"
             hint="Si renseigné, filtre les parcelles à celles du client. Laisse vide pour tes parcelles."
@@ -400,11 +522,7 @@ export default function NewInterventionPage() {
             />
           </Field>
 
-          <Field
-            label="Parcelle"
-            error={errors.parcelleId?.message}
-            {...(isEditMode ? { hint: "Non modifiable" } : {})}
-          >
+          <Field label="Parcelle" error={errors.parcelleId?.message}>
             <Controller
               control={control}
               name="parcelleId"
@@ -413,12 +531,27 @@ export default function NewInterventionPage() {
                   value={value ?? ""}
                   onChange={(id) => onChange(id)}
                   required
-                  disabled={noParcelles || isEditMode}
+                  disabled={noParcelles}
                   {...(clientId ? { filtreTenantId: clientId } : {})}
                 />
               )}
             />
           </Field>
+
+          {/* Bouton Planifier inline (Sprint 2 fusion-interventions) :
+              soumet une pré-tâche sans heures/produits, type AUTRE par défaut.
+              Pas dispo en mode édition. */}
+          {!isEditMode && (
+            <button
+              type="button"
+              onClick={() => onSubmitPlanning()}
+              disabled={createMutation.isPending}
+              className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-green bg-background py-3 text-sm font-semibold text-green transition-colors hover:bg-green/10 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <CalendarDays className="h-4 w-4" />
+              Planifier (sans saisir les détails)
+            </button>
+          )}
 
           {casB && proprietaireParcelle && (
             <div className="flex items-start gap-3 rounded-2xl border-2 border-amber-300 bg-white p-4 text-sm dark:border-amber-800 dark:bg-zinc-900">
@@ -439,11 +572,7 @@ export default function NewInterventionPage() {
             </div>
           )}
 
-          <Field
-            label="Type d'opération"
-            error={errors.type?.message}
-            {...(isEditMode ? { hint: "Non modifiable" } : {})}
-          >
+          <Field label="Type d'opération" error={errors.type?.message}>
             <Controller
               control={control}
               name="type"
@@ -453,9 +582,7 @@ export default function NewInterventionPage() {
                     <button
                       key={t}
                       type="button"
-                      disabled={isEditMode}
                       onClick={() => {
-                        if (isEditMode) return;
                         onChange(t);
                         // Reset produit quand on change de type pour
                         // éviter d'envoyer un produit incompatible.
@@ -465,7 +592,7 @@ export default function NewInterventionPage() {
                         value === t
                           ? "border-green bg-green/10 font-medium text-green"
                           : "border-border hover:bg-muted"
-                      } ${isEditMode ? "cursor-not-allowed opacity-60" : ""}`}
+                      }`}
                     >
                       <span className="text-2xl">{emojiType(t)}</span>
                       <span className="text-xs">{libelleType(t)}</span>
@@ -482,6 +609,11 @@ export default function NewInterventionPage() {
               casB
                 ? "Le matériel sélectionné servira à générer la ligne de facture Odoo (quantité = surface en hectares)."
                 : "Outil/machine utilisé : charrue, semoir, pulvé, ensileuse… Optionnel."
+            }
+            actionRight={
+              <Link href="/materiels" className="text-xs font-medium text-green hover:underline">
+                + Gérer
+              </Link>
             }
           >
             <Controller
@@ -550,7 +682,11 @@ export default function NewInterventionPage() {
           ) : null}
 
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Quantité (optionnel)" error={errors.quantite?.message}>
+            <Field
+              label="Quantité (optionnel)"
+              hint="Quantité totale appliquée pour toute la surface concernée (ex : 200 kg de semence sur 2 ha = saisis 200, pas 100 kg/ha)."
+              error={errors.quantite?.message}
+            >
               <Input
                 type="number"
                 step="0.01"
@@ -707,6 +843,14 @@ export default function NewInterventionPage() {
             </Field>
           )}
 
+          {/* Heures en bas (Sprint 2 : pas pertinent pour le planning,
+              utile uniquement quand on saisit en mode immédiat). */}
+          {heuresVisibles && !isEditMode && (
+            <Field label="Heures (optionnel)">
+              <HeuresSimplesInput value={heures} onChange={setHeures} />
+            </Field>
+          )}
+
           <Field label="Notes (optionnel)" error={errors.notes?.message}>
             <textarea
               className="min-h-24 w-full rounded-lg border border-border bg-background px-3 py-2 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green"
@@ -775,16 +919,21 @@ function Field({
   label,
   hint,
   error,
+  actionRight,
   children,
 }: {
   label: string;
   hint?: string;
   error?: string | undefined;
+  actionRight?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
     <div>
-      <label className="mb-1 block text-sm font-medium">{label}</label>
+      <div className="mb-1 flex items-center justify-between gap-2">
+        <label className="block text-sm font-medium">{label}</label>
+        {actionRight}
+      </div>
       {children}
       {hint && !error && <p className="mt-1 text-xs text-foreground/50">{hint}</p>}
       {error && <p className="mt-1 text-sm text-red-600">{error}</p>}
