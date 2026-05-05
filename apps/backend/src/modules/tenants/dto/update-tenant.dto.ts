@@ -92,4 +92,28 @@ export class UpdateTenantDto {
   @IsOptional()
   @IsBoolean()
   heuresVisiblesTravauxInterne?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      "Projet où s'imputent les heures du Carnet (UUID). Obligatoire dès que heuresVisiblesCarnet=true.",
+  })
+  @IsOptional()
+  @IsUUID()
+  projetHeuresCarnetId?: string | null;
+
+  @ApiPropertyOptional({
+    description:
+      "Projet où s'imputent les heures de Travaux pour tiers (UUID). Obligatoire dès que heuresVisiblesTravauxTiers=true.",
+  })
+  @IsOptional()
+  @IsUUID()
+  projetHeuresTravauxTiersId?: string | null;
+
+  @ApiPropertyOptional({
+    description:
+      "Projet où s'imputent les heures de Travaux internes (UUID). Obligatoire dès que heuresVisiblesTravauxInterne=true.",
+  })
+  @IsOptional()
+  @IsUUID()
+  projetHeuresTravauxInterneId?: string | null;
 }

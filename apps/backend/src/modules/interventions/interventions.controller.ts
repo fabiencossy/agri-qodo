@@ -98,6 +98,15 @@ export class InterventionsController {
     return this.interventions.rejectPending(id, body.reason);
   }
 
+  @Post(":id/complete")
+  @ApiOperation({
+    summary:
+      "Sprint 2 — Marque une intervention planifiée comme terminée. OWNER → VALIDATED. EMPLOYE → PENDING (revue OWNER).",
+  })
+  complete(@Param("id", ParseUUIDPipe) id: string) {
+    return this.interventions.markCompleted(id);
+  }
+
   @Delete(":id")
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({

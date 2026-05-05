@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -311,6 +312,9 @@ export class InterventionsService {
           techniqueEpandage: dto.techniqueEpandage ?? null,
           cultureId,
           validationStatus,
+          ...resolveHeures(dto),
+          datePrevue: dto.datePrevue ? new Date(dto.datePrevue) : null,
+          assignedToUserId: dto.assignedToUserId ?? null,
         },
         include: this.includeRelations,
       });
@@ -544,6 +548,9 @@ export class InterventionsService {
         where: { id },
         data: {
           ...(newDate !== null ? { dateOperation: newDate } : {}),
+          ...(dto.type !== undefined ? { type: dto.type } : {}),
+          ...(dto.parcelleId !== undefined ? { parcelleId: dto.parcelleId } : {}),
+          ...(dto.produitId !== undefined ? { produitId: dto.produitId || null } : {}),
           ...(dto.produit !== undefined ? { produit: dto.produit } : {}),
           ...(dto.materielId !== undefined ? { materielId: dto.materielId || null } : {}),
           ...(dto.surfaceHa !== undefined ? { surfaceHa: dto.surfaceHa } : {}),
@@ -559,6 +566,19 @@ export class InterventionsService {
             ? { techniqueEpandage: dto.techniqueEpandage }
             : {}),
           ...(dto.notes !== undefined ? { notes: dto.notes } : {}),
+          ...(dto.heureDebut !== undefined
+            ? { heureDebut: dto.heureDebut ? new Date(dto.heureDebut) : null }
+            : {}),
+          ...(dto.heureFin !== undefined
+            ? { heureFin: dto.heureFin ? new Date(dto.heureFin) : null }
+            : {}),
+          ...(dto.dureeMinutes !== undefined ? { dureeMinutes: dto.dureeMinutes } : {}),
+          ...(dto.datePrevue !== undefined
+            ? { datePrevue: dto.datePrevue ? new Date(dto.datePrevue) : null }
+            : {}),
+          ...(dto.assignedToUserId !== undefined
+            ? { assignedToUserId: dto.assignedToUserId || null }
+            : {}),
         },
       });
 
@@ -662,6 +682,33 @@ export class InterventionsService {
   }
 
   /**
+   * Sprint 2 fusion-interventions — Planning. Marque une intervention
+   * comme terminée. OWNER → validationStatus=VALIDATED direct. EMPLOYE
+   * → validationStatus=PENDING (en attente OWNER).
+   */
+  async markCompleted(id: string) {
+    const { tenantId, role } = this.tenantContext.get();
+    const existing = await this.prisma.intervention.findFirst({
+      where: { id, ownerTenantId: tenantId },
+      select: { id: true, validationStatus: true },
+    });
+    if (!existing) throw new NotFoundException("Intervention introuvable");
+    if (existing.validationStatus === ValidationStatus.VALIDATED) {
+      throw new ConflictException("Intervention déjà validée.");
+    }
+    const nextStatus = role === "OWNER" ? ValidationStatus.VALIDATED : ValidationStatus.PENDING;
+    const updated = await this.prisma.intervention.update({
+      where: { id },
+      data: {
+        validationStatus: nextStatus,
+        ...(nextStatus === ValidationStatus.VALIDATED ? { validatedAt: new Date() } : {}),
+      },
+      include: this.includeRelations,
+    });
+    return updated;
+  }
+
+  /**
    * Supprime l'intervention. Si elle avait généré une Culture (SEMIS),
    * la Culture est aussi supprimée pour éviter d'orpheliner le bilan
    * — l'intervention était la source unique de cette Culture.
@@ -684,4 +731,29 @@ export class InterventionsService {
       }
     });
   }
+}
+
+/**
+ * Calcule le tuple {heureDebut, heureFin, dureeMinutes} cohérent à partir
+ * du DTO. Règle (PRD fusion v0.2 §3.3) :
+ * - Si heureDebut+heureFin fournis : on recalcule dureeMinutes depuis
+ *   l'écart (la valeur du DTO est ignorée pour éviter la divergence).
+ * - Si seul dureeMinutes fourni : on garde, heureDebut/heureFin restent null.
+ * - Sinon (rien) : tout null.
+ */
+function resolveHeures(dto: { heureDebut?: string; heureFin?: string; dureeMinutes?: number }): {
+  heureDebut: Date | null;
+  heureFin: Date | null;
+  dureeMinutes: number | null;
+} {
+  if (dto.heureDebut && dto.heureFin) {
+    const debut = new Date(dto.heureDebut);
+    const fin = new Date(dto.heureFin);
+    const minutes = Math.max(0, Math.round((fin.getTime() - debut.getTime()) / 60_000));
+    return { heureDebut: debut, heureFin: fin, dureeMinutes: minutes };
+  }
+  if (dto.dureeMinutes !== undefined && dto.dureeMinutes !== null) {
+    return { heureDebut: null, heureFin: null, dureeMinutes: dto.dureeMinutes };
+  }
+  return { heureDebut: null, heureFin: null, dureeMinutes: null };
 }

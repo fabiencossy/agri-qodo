@@ -73,6 +73,15 @@ export class TravauxController {
     return this.travaux.validate(id);
   }
 
+  @Post(":id/complete")
+  @ApiOperation({
+    summary:
+      "Sprint 2 — Marque un travail PLANIFIE comme terminé. OWNER → VALIDATED direct. EMPLOYE → PENDING_REVIEW (attente OWNER).",
+  })
+  complete(@Param("id", ParseUUIDPipe) id: string) {
+    return this.travaux.markCompleted(id);
+  }
+
   @Post(":id/cancel")
   @ApiOperation({ summary: "Annule un travail (interdit si déjà INVOICED)." })
   cancel(@Param("id", ParseUUIDPipe) id: string) {

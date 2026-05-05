@@ -275,6 +275,15 @@ model Exploitation {
   heuresVisiblesCarnet         Boolean @default(true) @map("heures_visibles_carnet")
   heuresVisiblesTravauxTiers   Boolean @default(true) @map("heures_visibles_travaux_tiers")
   heuresVisiblesTravauxInterne Boolean @default(true) @map("heures_visibles_travaux_interne")
+  /// Projet où s'imputent les heures saisies par onglet (PRD fusion v0.2 §3.2 +
+  /// décision 2026-05-05). Obligatoire dès que le toggle correspondant est ON
+  /// — validé en service. Null seulement si le toggle est OFF.
+  projetHeuresCarnetId         String? @map("projet_heures_carnet_id")
+  projetHeuresCarnet           Projet? @relation("ProjetHeuresCarnet", fields: [projetHeuresCarnetId], references: [id], onDelete: SetNull)
+  projetHeuresTravauxTiersId   String? @map("projet_heures_travaux_tiers_id")
+  projetHeuresTravauxTiers     Projet? @relation("ProjetHeuresTravauxTiers", fields: [projetHeuresTravauxTiersId], references: [id], onDelete: SetNull)
+  projetHeuresTravauxInterneId String? @map("projet_heures_travaux_interne_id")
+  projetHeuresTravauxInterne   Projet? @relation("ProjetHeuresTravauxInterne", fields: [projetHeuresTravauxInterneId], references: [id], onDelete: SetNull)
 
   @@map("exploitations")
 }
@@ -309,8 +318,11 @@ model Projet {
   updatedAt   DateTime    @updatedAt @map("updated_at")
 
   tenant Exploitation @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  defaultForTenants Exploitation[] @relation("DefaultProjetTravauxTiers")
-  travaux           Travail[]      @relation("TravailProjet")
+  defaultForTenants                Exploitation[] @relation("DefaultProjetTravauxTiers")
+  defaultForHeuresCarnet           Exploitation[] @relation("ProjetHeuresCarnet")
+  defaultForHeuresTravauxTiers     Exploitation[] @relation("ProjetHeuresTravauxTiers")
+  defaultForHeuresTravauxInterne   Exploitation[] @relation("ProjetHeuresTravauxInterne")
+  travaux                          Travail[]      @relation("TravailProjet")
 
   @@unique([tenantId, nom])
   @@index([tenantId, archive])
@@ -359,6 +371,10 @@ model User {
   lignesHeure             LigneTravailHeure[]
   presences               Presence[]
   editHistory             EditHistory[]
+  // Sprint 2 fusion-interventions : assignation planning. L'employé qui
+  // doit réaliser un travail planifié à l'avance.
+  travauxAssignes         Travail[]                @relation("TravailAssignedUser")
+  interventionsAssignees  Intervention[]           @relation("InterventionAssignedUser")
 
   // Email partagé : un comptable / conseiller peut avoir un compte sur
   // plusieurs exploitations. L'unicité est sur (email, tenantId).
@@ -578,9 +594,23 @@ model Intervention {
   // Champs personnalisés tenant (PRD fusion v0.2 §4 q4) — JSON libre pour
   // permettre des extensions sans migration. UI à venir Sprint ultérieur.
   customFields        Json?                                   @map("custom_fields")
+  // Heures passées sur l'intervention (mono-utilisateur — l'auteur).
+  // Affichage conditionné par Exploitation.heuresVisiblesCarnet.
+  // Soit dureeMinutes seul, soit heureDebut+heureFin (auto-calc dureeMinutes).
+  heureDebut          DateTime?                               @map("heure_debut")
+  heureFin            DateTime?                               @map("heure_fin")
+  dureeMinutes        Int?                                    @map("duree_minutes")
+  // Sprint 2 fusion-interventions — Planning. Si datePrevue est
+  // renseignée et que dateOperation est postérieure (ou égale), l'item
+  // apparaît dans /planning. assignedToUserId désigne l'employé en
+  // charge. Une fois la saisie faite, validationStatus passe en
+  // SELF/PENDING comme avant.
+  datePrevue          DateTime?                               @map("date_prevue")
+  assignedToUserId    String?                                 @map("assigned_to_user_id")
   createdAt           DateTime                                @default(now()) @map("created_at")
 
   ownerTenant   Exploitation @relation("InterventionOwner", fields: [ownerTenantId], references: [id], onDelete: Cascade)
+  assignedTo    User?        @relation("InterventionAssignedUser", fields: [assignedToUserId], references: [id], onDelete: SetNull)
   authorTenant  Exploitation @relation("InterventionAuthor", fields: [authorTenantId], references: [id], onDelete: Cascade)
   parcelle      Parcelle     @relation(fields: [parcelleId], references: [id], onDelete: Cascade)
   produitRef    Produit?     @relation(fields: [produitId], references: [id], onDelete: SetNull)
@@ -863,9 +893,11 @@ model PartnerLink {
 // timesheet comptable (PR-E à venir).
 
 enum TravailStatut {
-  DRAFT     // brouillon, l'agriculteur saisit
-  VALIDATED // validé, prêt à facturer
-  INVOICED  // poussé vers Odoo (sale.order créé)
+  PLANIFIE       // Sprint 2 : planifié à l'avance, pas encore réalisé
+  DRAFT          // brouillon, l'agriculteur saisit
+  PENDING_REVIEW // Sprint 2 : employé l'a marqué fait, OWNER doit valider
+  VALIDATED      // validé, prêt à facturer
+  INVOICED       // poussé vers Odoo (sale.order créé)
   CANCELLED
 }
 
@@ -905,6 +937,12 @@ model Travail {
   // Champs personnalisés tenant (PRD fusion v0.2 §4 q4) — JSON libre pour
   // permettre des extensions sans migration. UI à venir Sprint ultérieur.
   customFields Json?         @map("custom_fields")
+  // Sprint 2 fusion-interventions — Planning. datePrevue = date prévue
+  // d'exécution (≠ `date` qui est la date réelle quand saisi).
+  // assignedToUserId = employé en charge. Statut transitionne PLANIFIE
+  // → PENDING_REVIEW (employé) ou VALIDATED (owner) au "Marquer terminé".
+  datePrevue       DateTime? @map("date_prevue")
+  assignedToUserId String?   @map("assigned_to_user_id")
   createdAt    DateTime      @default(now()) @map("created_at")
   updatedAt    DateTime      @updatedAt @map("updated_at")
 
@@ -912,6 +950,7 @@ model Travail {
   partenaire Exploitation? @relation("TravailPartenaire", fields: [partenaireId], references: [id], onDelete: SetNull)
   parcelle   Parcelle?     @relation(fields: [parcelleId], references: [id], onDelete: SetNull)
   projet     Projet?       @relation("TravailProjet", fields: [projetId], references: [id], onDelete: SetNull)
+  assignedTo User?         @relation("TravailAssignedUser", fields: [assignedToUserId], references: [id], onDelete: SetNull)
 
   lignesProduit LigneTravailProduit[]
   lignesHeure   LigneTravailHeure[]

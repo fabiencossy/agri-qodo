@@ -75,6 +75,14 @@ export interface Intervention {
   cultureId: string | null;
   culture: { id: string; espece: string; variete: string | null; campagne: number } | null;
   validationStatus: ValidationStatus;
+  /** Heures saisies sur l'intervention (PRD fusion v0.2 §3.3). */
+  heureDebut: string | null;
+  heureFin: string | null;
+  dureeMinutes: number | null;
+  /** Sprint 2 fusion-interventions — Planning. */
+  datePrevue: string | null;
+  assignedToUserId: string | null;
+  assignedTo?: { id: string; prenom: string; nom: string } | null;
   createdAt: string;
 }
 
@@ -102,6 +110,13 @@ export interface CreateInterventionInput {
   notes?: string;
   /** Sous-zone géométrique (Polygon GeoJSON) — recalcule surfaceTravailleeM2 côté backend. */
   geomGeoJson?: InterventionGeoJsonPolygon;
+  /** Heures (PRD fusion v0.2 §3.3) — soit début+fin (ISO), soit durée libre minutes. */
+  heureDebut?: string;
+  heureFin?: string;
+  dureeMinutes?: number;
+  /** Sprint 2 fusion-interventions — Planning. */
+  datePrevue?: string;
+  assignedToUserId?: string;
 }
 
 export interface InterventionWithGeom {
@@ -173,6 +188,10 @@ export function useCreateIntervention() {
  * la Culture créée par un SEMIS, modifier nécessite de supprimer/recréer.
  */
 export interface UpdateInterventionInput {
+  /** Sprint 2 fusion-interventions : type/parcelle/produit modifiables. */
+  parcelleId?: string;
+  type?: InterventionType;
+  produitId?: string;
   dateOperation?: string;
   produit?: string;
   materielId?: string;
@@ -184,6 +203,11 @@ export interface UpdateInterventionInput {
   surfaceTravailleeM2?: number;
   geomGeoJson?: InterventionGeoJsonPolygon;
   notes?: string;
+  heureDebut?: string;
+  heureFin?: string;
+  dureeMinutes?: number;
+  datePrevue?: string;
+  assignedToUserId?: string;
 }
 
 export function useUpdateIntervention() {
@@ -230,6 +254,21 @@ export function useRejectIntervention() {
         method: "POST",
         body: { reason },
       }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: QUERY_KEY });
+    },
+  });
+}
+
+/**
+ * Sprint 2 fusion-interventions — Marque une intervention comme terminée.
+ * OWNER → validationStatus=VALIDATED ; EMPLOYE → validationStatus=PENDING.
+ */
+export function useCompleteIntervention() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      api<Intervention>(`/api/interventions/${id}/complete`, { method: "POST" }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: QUERY_KEY });
     },

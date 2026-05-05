@@ -24,6 +24,10 @@ export interface TenantDetail {
   heuresVisiblesCarnet: boolean;
   heuresVisiblesTravauxTiers: boolean;
   heuresVisiblesTravauxInterne: boolean;
+  /** Projet d'imputation des heures par onglet (obligatoire si toggle ON). */
+  projetHeuresCarnetId: string | null;
+  projetHeuresTravauxTiersId: string | null;
+  projetHeuresTravauxInterneId: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -35,10 +39,13 @@ export interface UpdateTenantInput {
   numeroBdta?: string;
   visibleInDirectory?: boolean;
   noterTempsParProjet?: boolean;
-  defaultProjetTravauxTiersId?: string;
+  defaultProjetTravauxTiersId?: string | null;
   heuresVisiblesCarnet?: boolean;
   heuresVisiblesTravauxTiers?: boolean;
   heuresVisiblesTravauxInterne?: boolean;
+  projetHeuresCarnetId?: string | null;
+  projetHeuresTravauxTiersId?: string | null;
+  projetHeuresTravauxInterneId?: string | null;
 }
 
 export function useAccessibleTenants() {

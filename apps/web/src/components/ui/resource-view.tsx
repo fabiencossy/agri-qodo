@@ -131,6 +131,11 @@ export interface ResourceViewProps<T> {
    * absent, le mode map est désactivé.
    */
   renderMapView?: (filteredData: T[]) => React.ReactNode;
+  /**
+   * Restreint les vues affichées dans le toolbar. Par défaut card+list+
+   * kanban (+ calendar si dateField, + map si renderMapView).
+   */
+  availableViews?: ViewMode[];
 }
 
 // ---------- Implémentation --------------------------------------------------
@@ -348,6 +353,7 @@ export function ResourceView<T>(props: ResourceViewProps<T>) {
         searchPlaceholder={props.searchPlaceholder ?? "Rechercher…"}
         calendarAvailable={!!props.dateField}
         mapAvailable={!!props.renderMapView}
+        {...(props.availableViews ? { availableViews: props.availableViews } : {})}
       />
 
       {props.data.length === 0 && props.emptyState ? (
@@ -428,11 +434,11 @@ interface CardViewProps<T> {
 
 function CardView<T>({ data, getKey, renderCard, onItemClick }: CardViewProps<T>) {
   return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+    <div className="grid auto-rows-fr grid-cols-1 items-stretch gap-3 sm:grid-cols-2 lg:grid-cols-3">
       {data.map((item) => {
         const key = getKey(item);
         const content = (
-          <div className="rounded-xl border border-border bg-background p-3 transition-colors hover:bg-muted/30">
+          <div className="h-full rounded-xl border border-border bg-background p-3 transition-colors hover:bg-muted/30">
             {renderCard(item)}
           </div>
         );
@@ -441,12 +447,14 @@ function CardView<T>({ data, getKey, renderCard, onItemClick }: CardViewProps<T>
             key={key}
             type="button"
             onClick={() => onItemClick(item)}
-            className="block text-left"
+            className="block h-full w-full text-left"
           >
             {content}
           </button>
         ) : (
-          <div key={key}>{content}</div>
+          <div key={key} className="h-full">
+            {content}
+          </div>
         );
       })}
     </div>
@@ -647,6 +655,7 @@ function SearchBar<T>(props: {
   searchPlaceholder: string;
   calendarAvailable: boolean;
   mapAvailable: boolean;
+  availableViews?: ViewMode[];
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -727,33 +736,40 @@ function SearchBar<T>(props: {
           </button>
         </div>
         <div className="flex gap-1 rounded-lg bg-muted p-1 text-sm">
-          <ViewToggleButton
-            active={props.view === "card"}
-            onClick={() => props.onViewChange("card")}
-            icon={LayoutGrid}
-            label="Cartes"
-          />
-          <ViewToggleButton
-            active={props.view === "list"}
-            onClick={() => props.onViewChange("list")}
-            icon={List}
-            label="Liste"
-          />
-          <ViewToggleButton
-            active={props.view === "kanban"}
-            onClick={() => props.onViewChange("kanban")}
-            icon={Columns}
-            label="Kanban"
-          />
-          {props.calendarAvailable && (
+          {(props.availableViews ?? ["card", "list", "kanban"]).includes("card") && (
             <ViewToggleButton
-              active={props.view === "calendar"}
-              onClick={() => props.onViewChange("calendar")}
-              icon={CalendarDays}
-              label="Calendrier"
+              active={props.view === "card"}
+              onClick={() => props.onViewChange("card")}
+              icon={LayoutGrid}
+              label="Cartes"
             />
           )}
-          {props.mapAvailable && (
+          {(props.availableViews ?? ["card", "list", "kanban"]).includes("list") && (
+            <ViewToggleButton
+              active={props.view === "list"}
+              onClick={() => props.onViewChange("list")}
+              icon={List}
+              label="Liste"
+            />
+          )}
+          {(props.availableViews ?? ["card", "list", "kanban"]).includes("kanban") && (
+            <ViewToggleButton
+              active={props.view === "kanban"}
+              onClick={() => props.onViewChange("kanban")}
+              icon={Columns}
+              label="Kanban"
+            />
+          )}
+          {props.calendarAvailable &&
+            (props.availableViews ?? ["calendar"]).includes("calendar") && (
+              <ViewToggleButton
+                active={props.view === "calendar"}
+                onClick={() => props.onViewChange("calendar")}
+                icon={CalendarDays}
+                label="Calendrier"
+              />
+            )}
+          {props.mapAvailable && (props.availableViews ?? ["map"]).includes("map") && (
             <ViewToggleButton
               active={props.view === "map"}
               onClick={() => props.onViewChange("map")}

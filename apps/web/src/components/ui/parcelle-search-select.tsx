@@ -30,7 +30,7 @@ export function ParcelleSearchSelect({
   value,
   onChange,
   placeholder = "Choisir une parcelle…",
-  required,
+  required: _required,
   disabled,
   filtreTenantId,
 }: ParcelleSearchSelectProps) {
@@ -110,9 +110,9 @@ export function ParcelleSearchSelect({
         type="button"
         onClick={() => !disabled && setOpen((v) => !v)}
         disabled={disabled}
-        className={`flex h-11 w-full items-center justify-between rounded-lg border bg-background px-3 text-left text-base transition-colors ${
+        className={`flex h-11 w-full items-center justify-between rounded-lg border border-border bg-background px-3 text-left text-base transition-colors ${
           disabled ? "cursor-not-allowed opacity-50" : "hover:bg-muted"
-        } ${required && !value ? "border-amber-300 ring-1 ring-amber-200" : "border-border"}`}
+        }`}
       >
         <span className="flex items-center gap-2 truncate">
           {selected && <MapPin className="h-4 w-4 flex-shrink-0 text-foreground/50" />}

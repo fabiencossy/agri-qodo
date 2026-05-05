@@ -13,38 +13,38 @@
  * - Total CHF estimé en bas (caché si interne).
  * - Sticky bottom action bar mobile (Save + Annuler).
  */
-import { ArrowLeft, Plus, Save, Tractor, Trash2, UserCircle } from "lucide-react";
+import { ArrowLeft, CalendarDays, Plus, Save, Tractor, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Breadcrumb } from "@/components/app/breadcrumb";
+import { EditActionsMenu } from "@/components/activites/edit-actions-menu";
+import { TypeSaisieHeader } from "@/components/activites/type-saisie-header";
+import {
+  HeuresSimplesInput,
+  type HeuresSimplesValue,
+} from "@/components/activites/heures-simples-input";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ParcelleSearchSelect } from "@/components/ui/parcelle-search-select";
 import { PartenaireSelect } from "@/components/ui/partenaire-select";
+import { ProduitFullscreenPicker } from "@/components/ui/produit-fullscreen-picker";
 import { useCurrentUser } from "@/lib/auth";
+import { useParcelle } from "@/lib/parcelles";
 import { useProjets } from "@/lib/projets";
+import { useProduits } from "@/lib/produits";
 import { useTenantDetail } from "@/lib/tenants";
 import {
   type CreateLigneHeureInput,
   type CreateLigneProduitInput,
-  formatCHF,
-  formatDuree,
+  useCompleteTravail,
   useCreateTravail,
+  useDeleteTravail,
   useTravail,
   useUpdateTravail,
 } from "@/lib/travaux";
 import { useUsers } from "@/lib/users";
 
-interface DraftLigneProduit {
-  uid: string;
-  produitId?: string | undefined;
-  libelle: string;
-  quantite: number;
-  unite?: string | undefined;
-  prixUnitaireCHF?: number | undefined;
-  notes?: string | undefined;
-}
 interface DraftLigneHeure {
   uid: string;
   userId: string;
@@ -68,20 +68,13 @@ function combineDateTime(date: string, time: string): string | undefined {
   return Number.isNaN(d.getTime()) ? undefined : d.toISOString();
 }
 
-function dureeFromTimes(date: string, debut?: string, fin?: string): number | null {
-  const start = combineDateTime(date, debut ?? "");
-  const end = combineDateTime(date, fin ?? "");
-  if (!start || !end) return null;
-  const diff = new Date(end).getTime() - new Date(start).getTime();
-  if (diff <= 0) return null;
-  return Math.round(diff / 60000);
-}
-
 export default function NewTravailPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const create = useCreateTravail();
   const update = useUpdateTravail();
+  const completeTravail = useCompleteTravail();
+  const deleteTravail = useDeleteTravail();
   const me = useCurrentUser();
   const users = useUsers();
   const projets = useProjets({ type: "TRAVAUX_TIERS" });
@@ -107,15 +100,56 @@ export default function NewTravailPage() {
   const [parcelleId, setParcelleId] = useState(
     parcelleIdParam && /^[0-9a-f-]{36}$/i.test(parcelleIdParam) ? parcelleIdParam : "",
   );
-  // ?interne=true pré-remplit le toggle "Travail interne" — utilisé par
-  // le FAB qui distingue Travail tiers (interne=false) et Travail interne.
   const interneParam = searchParams.get("interne");
   const [interne, setInterne] = useState(interneParam === "true");
+  // En mode création, l'onglet (Tiers/Interne) pilote `interne` via la query.
+  // Sans cet effet, cliquer sur "Interne" depuis "Tiers" ne reset pas le state.
+  useEffect(() => {
+    if (isEditMode) return;
+    setInterne(searchParams.get("interne") === "true");
+  }, [searchParams, isEditMode]);
   const [notes, setNotes] = useState("");
   const [projetId, setProjetId] = useState("");
-  const [lignesProduit, setLignesProduit] = useState<DraftLigneProduit[]>([]);
+  // Sprint 2 fusion-interventions — Planning : juste assignedToUserId.
+  // datePrevue n'est plus un champ séparé, c'est égal à `date` quand on
+  // clique sur "Planifier" (sinon non envoyé en mode saisie classique).
+  const [assignedToUserId, setAssignedToUserId] = useState<string>("");
   const [lignesHeure, setLignesHeure] = useState<DraftLigneHeure[]>([]);
+  // Heures mono-employé (l'auteur connecté). Pas de multi-ligne — on
+  // mappe vers une seule entrée lignesHeure au submit.
+  const [heuresSimples, setHeuresSimples] = useState<HeuresSimplesValue>({
+    heureDebut: "",
+    heureFin: "",
+    heureDebutPause: "",
+    dureePauseMinutes: 0,
+    dureeMinutes: 0,
+  });
+  const [tauxCHF, setTauxCHF] = useState<string>("");
+  // Multi-produits : tableau de lignes empilables.
+  interface DraftProduitSimple {
+    uid: string;
+    produitId: string;
+    quantite: string;
+  }
+  const [produitsLignes, setProduitsLignes] = useState<DraftProduitSimple[]>([]);
   const [error, setError] = useState<string | null>(null);
+
+  const parcelleQuery = useParcelle(parcelleId || undefined);
+  const produitsQuery = useProduits();
+  const produitsCatalogue = produitsQuery.data ?? [];
+  const surfaceHa = parcelleQuery.data?.surfaceM2
+    ? Number(parcelleQuery.data.surfaceM2) / 10_000
+    : null;
+
+  function addProduitLigne() {
+    setProduitsLignes((prev) => [...prev, { uid: uid(), produitId: "", quantite: "" }]);
+  }
+  function updateProduitLigne(idx: number, patch: Partial<DraftProduitSimple>) {
+    setProduitsLignes((prev) => prev.map((l, i) => (i === idx ? { ...l, ...patch } : l)));
+  }
+  function removeProduitLigne(idx: number) {
+    setProduitsLignes((prev) => prev.filter((_, i) => i !== idx));
+  }
 
   // Pré-remplissage en mode édition depuis le travail existant.
   const loadedRef = useState({ id: "" })[0];
@@ -131,16 +165,21 @@ export default function NewTravailPage() {
     setProjetId(t.projetId ?? "");
     setInterne(t.interne);
     setNotes(t.notes ?? "");
-    setLignesProduit(
-      t.lignesProduit.map((l) => ({
-        uid: uid(),
-        ...(l.produitId ? { produitId: l.produitId } : {}),
-        libelle: l.libelle,
-        quantite: Number(l.quantite),
-        unite: l.unite,
-        ...(l.prixUnitaireCHF ? { prixUnitaireCHF: Number(l.prixUnitaireCHF) } : {}),
-        ...(l.notes ? { notes: l.notes } : {}),
-      })),
+    setAssignedToUserId(t.assignedToUserId ?? "");
+    // Si édition d'un planning : la date du form devient la datePrevue.
+    if (t.datePrevue && t.statut === "PLANIFIE") {
+      setDate(t.datePrevue.slice(0, 10));
+    }
+    // Pré-remplit les produits en mode édition (V1 : 1 ligne = 1 produit
+    // catalogué, on ignore les lignes libellé libre sans produitId).
+    setProduitsLignes(
+      t.lignesProduit
+        .filter((l) => l.produitId)
+        .map((l) => ({
+          uid: uid(),
+          produitId: l.produitId ?? "",
+          quantite: String(l.quantite),
+        })),
     );
     setLignesHeure(
       t.lignesHeure.map((l) => ({
@@ -155,14 +194,22 @@ export default function NewTravailPage() {
     );
   }, [existingTravail.data, isEditMode, loadedRef]);
 
-  // Présélection : ligne heures vide pour l'utilisateur courant (create only).
+  // Présélection mono-employé : on charge les heures depuis l'édit si la
+  // ligne existe, sinon on les laisse vides.
   const meId = me.data?.id;
   useEffect(() => {
-    if (!meId || isEditMode) return;
-    setLignesHeure((prev) =>
-      prev.length === 0 ? [{ uid: uid(), userId: meId, dureeMinutes: 0 }] : prev,
-    );
-  }, [meId, isEditMode]);
+    if (!isEditMode) return;
+    const first = lignesHeure[0];
+    if (!first) return;
+    setHeuresSimples({
+      heureDebut: first.heureDebut ?? "",
+      heureFin: first.heureFin ?? "",
+      heureDebutPause: "",
+      dureePauseMinutes: 0,
+      dureeMinutes: first.dureeMinutes,
+    });
+    if (first.tauxHoraireCHF != null) setTauxCHF(String(first.tauxHoraireCHF));
+  }, [isEditMode, lignesHeure]);
 
   // Présélection projet par défaut (create only, et seulement si vide).
   useEffect(() => {
@@ -171,79 +218,93 @@ export default function NewTravailPage() {
     if (def) setProjetId((prev) => prev || def);
   }, [tenantDetail.data?.defaultProjetTravauxTiersId, isEditMode]);
 
-  const totalHeures = useMemo(
-    () => lignesHeure.reduce((s, l) => s + (l.tauxHoraireCHF ?? 0) * (l.dureeMinutes / 60), 0),
-    [lignesHeure],
-  );
-  const totalDureeMin = useMemo(
-    () => lignesHeure.reduce((s, l) => s + l.dureeMinutes, 0),
-    [lignesHeure],
-  );
+  const tauxNum = tauxCHF ? Number(tauxCHF) : 0;
 
-  const isChef = me.data?.role === "OWNER";
-
-  const addLigneHeure = () => {
-    setLignesHeure((prev) => [...prev, { uid: uid(), userId: me.data?.id ?? "", dureeMinutes: 0 }]);
-  };
-  const updateHeure = (idx: number, patch: Partial<DraftLigneHeure>) => {
-    setLignesHeure((prev) =>
-      prev.map((l, i) => {
-        if (i !== idx) return l;
-        const next = { ...l, ...patch };
-        // Recalcule la durée si début et fin saisis.
-        if (patch.heureDebut !== undefined || patch.heureFin !== undefined) {
-          const d = dureeFromTimes(date, next.heureDebut, next.heureFin);
-          if (d !== null) next.dureeMinutes = d;
-        }
-        return next;
-      }),
-    );
-  };
-  const removeHeure = (idx: number) => {
-    setLignesHeure((prev) => prev.filter((_, i) => i !== idx));
-  };
+  /**
+   * Sprint 2 fusion-interventions — submit "Planifier" : crée une pré-tâche
+   * avec datePrevue = date, sans heures ni produits. Le service Travaux
+   * détecte ce cas et met le statut en PLANIFIE.
+   */
+  async function onSubmitPlanning() {
+    setError(null);
+    if (!interne && !partenaireId) {
+      setError("Sélectionne un client (obligatoire pour un travail pour tiers).");
+      return;
+    }
+    const titreFinal =
+      titre.trim() ||
+      `Travail ${new Date(date).toLocaleDateString("fr-CH")}${partenaireId ? "" : " — interne"}`;
+    const payload = {
+      titre: titreFinal,
+      date,
+      datePrevue: date,
+      interne,
+      ...(partenaireId && !interne ? { partenaireId } : {}),
+      ...(parcelleId ? { parcelleId } : {}),
+      ...(projetId ? { projetId } : {}),
+      ...(assignedToUserId ? { assignedToUserId } : {}),
+    };
+    try {
+      const created = await create.mutateAsync(payload);
+      router.push(`/planning?from=${created.id}` as never);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Échec de la planification.");
+    }
+  }
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    if (!titre.trim()) {
-      setError("Donne un titre au travail (ex : Récolte champ Loup).");
+    if (!interne && !partenaireId) {
+      setError("Sélectionne un client (obligatoire pour un travail pour tiers).");
       return;
     }
-    const lignesProduitClean: CreateLigneProduitInput[] = lignesProduit
-      .filter((l) => l.libelle.trim() && l.quantite > 0)
+    // Titre auto-généré si vide (Fabien préfère ne pas le saisir).
+    const titreFinal =
+      titre.trim() ||
+      `Travail ${new Date(date).toLocaleDateString("fr-CH")}${partenaireId ? "" : " — interne"}`;
+    // Multi-produits : on construit une ligne par produit valide.
+    const lignesProduitClean: CreateLigneProduitInput[] = produitsLignes
       .map((l) => {
+        const produit = produitsCatalogue.find((p) => p.id === l.produitId);
+        const qte = Number(l.quantite);
+        if (!produit || !(qte > 0)) return null;
         const out: CreateLigneProduitInput = {
-          libelle: l.libelle.trim(),
-          quantite: l.quantite,
-          unite: l.unite ?? "kg",
+          produitId: produit.id,
+          libelle: produit.libelle,
+          quantite: qte,
+          unite: produit.unite,
         };
-        if (l.produitId) out.produitId = l.produitId;
-        if (!interne && l.prixUnitaireCHF !== undefined) out.prixUnitaireCHF = l.prixUnitaireCHF;
-        if (l.notes) out.notes = l.notes;
+        if (!interne && produit.prixVenteCHF != null) {
+          out.prixUnitaireCHF = Number(produit.prixVenteCHF);
+        }
         return out;
-      });
-    const lignesHeureClean: CreateLigneHeureInput[] = lignesHeure
-      .filter((l) => l.userId && l.dureeMinutes > 0)
-      .map((l) => {
-        const out: CreateLigneHeureInput = { userId: l.userId, dureeMinutes: l.dureeMinutes };
-        const debutIso = combineDateTime(date, l.heureDebut ?? "");
-        const finIso = combineDateTime(date, l.heureFin ?? "");
-        if (debutIso) out.heureDebut = debutIso;
-        if (finIso) out.heureFin = finIso;
-        if (!interne && l.tauxHoraireCHF !== undefined) out.tauxHoraireCHF = l.tauxHoraireCHF;
-        if (l.notes) out.notes = l.notes;
-        return out;
-      });
+      })
+      .filter((l): l is CreateLigneProduitInput => l !== null);
+    // Heures mono-employé (l'auteur).
+    const lignesHeureClean: CreateLigneHeureInput[] = [];
+    if (meId && heuresSimples.dureeMinutes > 0) {
+      const out: CreateLigneHeureInput = {
+        userId: meId,
+        dureeMinutes: heuresSimples.dureeMinutes,
+      };
+      const debutIso = combineDateTime(date, heuresSimples.heureDebut);
+      const finIso = combineDateTime(date, heuresSimples.heureFin);
+      if (debutIso) out.heureDebut = debutIso;
+      if (finIso) out.heureFin = finIso;
+      if (!interne && tauxNum > 0) out.tauxHoraireCHF = tauxNum;
+      lignesHeureClean.push(out);
+    }
 
     const payload = {
-      titre: titre.trim(),
+      titre: titreFinal,
       date,
       interne,
       ...(partenaireId && !interne ? { partenaireId } : {}),
       ...(parcelleId ? { parcelleId } : {}),
       ...(projetId ? { projetId } : {}),
       ...(notes ? { notes } : {}),
+      ...(assignedToUserId ? { assignedToUserId } : {}),
       ...(lignesProduitClean.length > 0 ? { lignesProduit: lignesProduitClean } : {}),
       ...(lignesHeureClean.length > 0 ? { lignesHeure: lignesHeureClean } : {}),
     };
@@ -270,43 +331,49 @@ export default function NewTravailPage() {
         ]}
       />
       <div className="mx-auto max-w-3xl px-4 pb-32 pt-6 sm:py-8">
-        <div className="mb-6 flex items-center gap-3">
-          <Link
-            href={isEditMode && editId ? (`/travaux/${editId}` as never) : "/travaux"}
-            className="text-foreground/60 hover:text-foreground"
-          >
-            <ArrowLeft className="h-5 w-5" />
-          </Link>
-          <h1 className="flex items-center gap-2 text-2xl font-bold sm:text-3xl">
-            <Tractor className="h-6 w-6 text-green sm:h-7 sm:w-7" />
-            {isEditMode ? "Modifier le travail pour tiers" : "Nouveau travail pour tiers"}
-          </h1>
-        </div>
+        {!isEditMode && <TypeSaisieHeader active={interne ? "interne" : "tiers"} />}
+        {isEditMode && editId && (
+          <div className="mb-6 flex items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-3">
+              <Link
+                href={"/activites" as never}
+                className="text-foreground/60 hover:text-foreground"
+              >
+                <ArrowLeft className="h-5 w-5" />
+              </Link>
+              <h1 className="flex min-w-0 items-center gap-2 text-2xl font-bold sm:text-3xl">
+                <Tractor className="h-6 w-6 shrink-0 text-green sm:h-7 sm:w-7" />
+                <span className="truncate">Modifier le travail</span>
+              </h1>
+            </div>
+            <EditActionsMenu
+              onComplete={() => {
+                completeTravail.mutate(editId, {
+                  onSuccess: () => router.push("/activites"),
+                });
+              }}
+              onDelete={() => {
+                deleteTravail.mutate(editId, {
+                  onSuccess: () => router.push("/activites"),
+                });
+              }}
+              completing={completeTravail.isPending}
+              deleting={deleteTravail.isPending}
+            />
+          </div>
+        )}
 
         <form
           onSubmit={onSubmit}
           className="space-y-4 rounded-2xl border border-border bg-background p-4 sm:p-6"
         >
-          {/* Formulaire d'une traite façon qodo-clock — pas de sous-sections,
-            tous les champs s'enchaînent. Suppression de la section "Produits"
-            (review 2026-05-04 : "pas besoin de rajouter des produit, juste
-            des heures"). */}
-          <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-border bg-muted/30 p-3">
-            <input
-              type="checkbox"
-              checked={interne}
-              onChange={(e) => setInterne(e.target.checked)}
-              className="mt-0.5 h-5 w-5 cursor-pointer accent-green"
-            />
-            <span className="flex-1">
-              <span className="block text-sm font-semibold">Travail interne (non facturable)</span>
-              <span className="mt-0.5 block text-xs text-foreground/60">
-                Entretien, formation, déplacement… Pas de client, pas de prix, tâche Odoo simple.
-              </span>
-            </span>
-          </label>
+          {/* Le toggle Tiers/Interne est désormais piloté par l'onglet en
+              haut (TypeSaisieHeader). Plus de checkbox dans le formulaire. */}
 
-          <Field label="Date">
+          <Field
+            label="Date"
+            hint="Sert de date d'exécution prévue (planning) ou réelle (saisie). Pré-remplie au jour."
+          >
             <Input
               type="date"
               value={date}
@@ -315,8 +382,23 @@ export default function NewTravailPage() {
             />
           </Field>
 
+          <Field label="Assigné à">
+            <select
+              value={assignedToUserId}
+              onChange={(e) => setAssignedToUserId(e.target.value)}
+              className="h-12 w-full rounded-lg border border-border bg-background px-3 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green"
+            >
+              <option value="">— Personne —</option>
+              {(users.data ?? []).map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.prenom} {u.nom}
+                </option>
+              ))}
+            </select>
+          </Field>
+
           {!interne && (
-            <Field label="Client (optionnel)">
+            <Field label="Client" required>
               <PartenaireSelect
                 value={partenaireId}
                 onChange={setPartenaireId}
@@ -333,11 +415,31 @@ export default function NewTravailPage() {
             />
           </Field>
 
+          {/* Bouton Planifier inline (Sprint 2 fusion-interventions) :
+              soumet une pré-tâche sans heures/produits, statut PLANIFIE.
+              Disponible uniquement en mode création (pas édition). */}
+          {!isEditMode && (
+            <button
+              type="button"
+              onClick={() => onSubmitPlanning()}
+              disabled={create.isPending}
+              className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-green bg-background py-3 text-sm font-semibold text-green transition-colors hover:bg-green/10 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <CalendarDays className="h-4 w-4" />
+              Planifier (sans saisir les détails)
+            </button>
+          )}
+
+          {/* Heures mono-employé (l'auteur) — style qodo-clock + pause. */}
           <Field
             label={interne ? "Projet (optionnel)" : "Projet"}
-            {...(!interne && (projets.data?.length ?? 0) === 0
-              ? { hint: "Aucun projet créé. Va dans Paramètres → Projets pour en créer." }
-              : {})}
+            {...(tenantDetail.data?.defaultProjetTravauxTiersId && !interne
+              ? {
+                  hint: "Pré-rempli avec ton projet par défaut (modifiable dans Paramètres → Exploitation).",
+                }
+              : (projets.data?.length ?? 0) === 0
+                ? { hint: "Aucun projet créé. Va dans Paramètres → Projets pour en créer." }
+                : {})}
           >
             <select
               value={projetId}
@@ -353,15 +455,79 @@ export default function NewTravailPage() {
             </select>
           </Field>
 
-          <Field label="Titre / description" required>
-            <Input
-              value={titre}
-              onChange={(e) => setTitre(e.target.value)}
-              placeholder="Ex : Récolte champ Loup, Pulvérisation prés…"
-              required
-              className="h-12 text-base"
-            />
+          <Field
+            label="Produits ajoutés (optionnel)"
+            hint={
+              surfaceHa != null
+                ? `Astuce : pour une dose à l'hectare × ${surfaceHa.toFixed(2)} ha = quantité totale.`
+                : "Choisis un ou plusieurs produits du catalogue."
+            }
+          >
+            <div className="space-y-2">
+              {produitsLignes.map((ligne, idx) => {
+                const produit = produitsCatalogue.find((p) => p.id === ligne.produitId);
+                return (
+                  <div
+                    key={ligne.uid}
+                    className="rounded-xl border border-border bg-background p-3"
+                  >
+                    <div className="flex items-start gap-2">
+                      <div className="min-w-0 flex-1">
+                        <ProduitFullscreenPicker
+                          value={ligne.produitId}
+                          onChange={(id) => updateProduitLigne(idx, { produitId: id })}
+                          placeholder="Choisir un produit…"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => removeProduitLigne(idx)}
+                        aria-label="Supprimer cette ligne"
+                        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-border text-red-700 hover:bg-red-50"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                    {ligne.produitId && (
+                      <div className="mt-2 grid grid-cols-[1fr_auto] gap-2">
+                        <Input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          inputMode="decimal"
+                          value={ligne.quantite}
+                          onChange={(e) => updateProduitLigne(idx, { quantite: e.target.value })}
+                          placeholder="Quantité totale"
+                          className="h-11"
+                        />
+                        <span className="flex h-11 items-center justify-center rounded-lg border border-border bg-muted/30 px-3 text-sm font-medium text-foreground/70">
+                          {produit?.unite ?? ""}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+              <button
+                type="button"
+                onClick={addProduitLigne}
+                className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-border bg-muted/20 py-3 text-sm font-medium text-foreground/60 hover:bg-muted/40"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                Ajouter un produit
+              </button>
+            </div>
           </Field>
+
+          {/* Heures en bas (Sprint 2 : pas pertinent pour le planning,
+              utile uniquement quand on saisit en mode immédiat). */}
+          {(interne
+            ? tenantDetail.data?.heuresVisiblesTravauxInterne
+            : tenantDetail.data?.heuresVisiblesTravauxTiers) !== false && (
+            <Field label="Heures (optionnel)">
+              <HeuresSimplesInput value={heuresSimples} onChange={setHeuresSimples} />
+            </Field>
+          )}
 
           <Field label="Notes (optionnel)">
             <textarea
@@ -371,60 +537,6 @@ export default function NewTravailPage() {
               placeholder="Conditions, particularités…"
             />
           </Field>
-
-          {/* Heures — toggle granulaire par onglet (PRD fusion v0.2 §3.2). */}
-          {(interne
-            ? tenantDetail.data?.heuresVisiblesTravauxInterne
-            : tenantDetail.data?.heuresVisiblesTravauxTiers) !== false && (
-            <div className="space-y-3 border-t border-border pt-4">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium">
-                  Heures{lignesHeure.length > 0 ? ` (${lignesHeure.length})` : ""}
-                </span>
-                <Button type="button" variant="secondary" size="sm" onClick={addLigneHeure}>
-                  <Plus className="mr-1 h-4 w-4" />
-                  Ajouter
-                </Button>
-              </div>
-              {lignesHeure.length === 0 ? (
-                <p className="text-sm text-foreground/50">
-                  Aucune heure. Ajoute le temps passé — alimente automatiquement le timesheet.
-                </p>
-              ) : (
-                <div className="space-y-3">
-                  {lignesHeure.map((l, idx) => (
-                    <LigneHeureRow
-                      key={l.uid}
-                      ligne={l}
-                      users={users.data ?? []}
-                      canChangeUser={isChef}
-                      onChange={(patch) => updateHeure(idx, patch)}
-                      onRemove={() => removeHeure(idx)}
-                      showPrice={!interne}
-                    />
-                  ))}
-                </div>
-              )}
-              {totalDureeMin > 0 && (
-                <p className="text-right text-sm font-medium">
-                  Sous-total : <span>{formatDuree(totalDureeMin)}</span>
-                  {!interne && totalHeures > 0 && (
-                    <span className="ml-2 font-mono">{formatCHF(totalHeures)}</span>
-                  )}
-                </p>
-              )}
-            </div>
-          )}
-
-          {/* Total — uniquement si facturable */}
-          {!interne && totalHeures > 0 && (
-            <div className="rounded-2xl border-2 border-green bg-green/5 p-4 text-right">
-              <p className="text-sm text-foreground/60">Total estimé HT</p>
-              <p className="font-mono text-2xl font-bold text-green-dark">
-                {formatCHF(totalHeures)}
-              </p>
-            </div>
-          )}
 
           {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
 
@@ -456,273 +568,26 @@ function Field({
   label,
   required,
   hint,
+  actionRight,
   children,
 }: {
   label: string;
   required?: boolean;
   hint?: string;
+  actionRight?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
-    <label className="block">
-      <span className="mb-1 block text-sm font-medium">
-        {label}
-        {required && <span className="ml-1 text-red-600">*</span>}
-      </span>
+    <div className="block">
+      <div className="mb-1 flex items-center justify-between gap-2">
+        <span className="block text-sm font-medium">
+          {label}
+          {required && <span className="ml-1 text-red-600">*</span>}
+        </span>
+        {actionRight}
+      </div>
       {children}
       {hint && <span className="mt-1 block text-xs text-foreground/50">{hint}</span>}
-    </label>
-  );
-}
-
-/**
- * Parse une chaîne saisie style qodo-clock en minutes :
- * - "720"   → 7h20  (HHMM compact)
- * - "7h20"  → 7h20
- * - "7:20"  → 7h20
- * - "7.5"   → 7h30  (décimal)
- * - "90"    → 1h30  (minutes)
- * - "1h"    → 1h00
- * - ""      → null
- */
-function parseHhmm(input: string): number | null {
-  const s = input.trim().toLowerCase();
-  if (!s) return null;
-  // 7h20 / 7h
-  const hMatch = /^(\d+)\s*h\s*(\d+)?$/.exec(s);
-  if (hMatch) {
-    const h = parseInt(hMatch[1] ?? "0", 10);
-    const m = hMatch[2] ? parseInt(hMatch[2], 10) : 0;
-    if (m >= 60) return null;
-    return h * 60 + m;
-  }
-  // 7:20
-  const cMatch = /^(\d+):(\d+)$/.exec(s);
-  if (cMatch) {
-    const h = parseInt(cMatch[1] ?? "0", 10);
-    const m = parseInt(cMatch[2] ?? "0", 10);
-    if (m >= 60) return null;
-    return h * 60 + m;
-  }
-  // 7.5 ou 7,5 décimal
-  const dMatch = /^(\d+)[.,](\d+)$/.exec(s);
-  if (dMatch) {
-    const v = parseFloat(s.replace(",", "."));
-    if (!Number.isFinite(v)) return null;
-    return Math.round(v * 60);
-  }
-  // pure number : si > 24, c'est HHMM compact ou minutes
-  const nMatch = /^(\d+)$/.exec(s);
-  if (nMatch) {
-    const n = parseInt(nMatch[1] ?? "0", 10);
-    // Heuristique qodo-clock : ≤ 24 = heures, sinon HHMM si valide, sinon minutes
-    if (n <= 24) return n * 60;
-    // HHMM compact : les 2 derniers chiffres sont les minutes
-    const m = n % 100;
-    const h = Math.floor(n / 100);
-    if (m < 60) return h * 60 + m;
-    // Sinon traite comme minutes brutes
-    return n;
-  }
-  return null;
-}
-
-function formatHhmmInput(dureeMinutes: number): string {
-  if (dureeMinutes <= 0) return "";
-  const h = Math.floor(dureeMinutes / 60);
-  const m = dureeMinutes % 60;
-  return `${h}h${String(m).padStart(2, "0")}`;
-}
-
-function HhmmInput({
-  dureeMinutes,
-  onChange,
-}: {
-  dureeMinutes: number;
-  onChange: (d: number) => void;
-}) {
-  const [draft, setDraft] = useState(() => formatHhmmInput(dureeMinutes));
-  const [error, setError] = useState(false);
-
-  // Re-sync si parent change (toggle mode times → duree).
-  useEffect(() => {
-    setDraft(formatHhmmInput(dureeMinutes));
-  }, [dureeMinutes]);
-
-  const handleBlur = () => {
-    const parsed = parseHhmm(draft);
-    if (parsed === null && draft.trim() !== "") {
-      setError(true);
-      return;
-    }
-    setError(false);
-    const value = parsed ?? 0;
-    onChange(value);
-    setDraft(formatHhmmInput(value));
-  };
-
-  return (
-    <div>
-      <label className="block">
-        <span className="mb-0.5 block text-xs text-foreground/60">
-          Durée (saisie rapide style qodo-clock)
-        </span>
-        <Input
-          type="text"
-          inputMode="numeric"
-          value={draft}
-          onChange={(e) => {
-            setDraft(e.target.value);
-            setError(false);
-          }}
-          onBlur={handleBlur}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              handleBlur();
-            }
-          }}
-          placeholder="720 = 7h20  ·  7.5 = 7h30  ·  90 = 1h30"
-          className={`h-11 ${error ? "border-red-400" : ""}`}
-        />
-      </label>
-      <p className="mt-1 text-[11px] text-foreground/50">
-        Tape <code className="font-mono">720</code> pour 7h20, ou{" "}
-        <code className="font-mono">7.5</code>, <code className="font-mono">7h20</code>,{" "}
-        <code className="font-mono">7:20</code>, <code className="font-mono">90</code> (= 1h30).
-      </p>
-    </div>
-  );
-}
-
-function LigneHeureRow({
-  ligne,
-  users,
-  canChangeUser,
-  onChange,
-  onRemove,
-  showPrice,
-}: {
-  ligne: DraftLigneHeure;
-  users: { id: string; prenom: string; nom: string; email: string }[];
-  canChangeUser: boolean;
-  onChange: (patch: Partial<DraftLigneHeure>) => void;
-  onRemove: () => void;
-  showPrice: boolean;
-}) {
-  const [mode, setMode] = useState<"times" | "duree">(
-    ligne.heureDebut || ligne.heureFin ? "times" : "duree",
-  );
-  const userObj = users.find((u) => u.id === ligne.userId);
-
-  return (
-    <div className="grid gap-2 rounded-xl border border-border bg-muted/20 p-3">
-      <div className="grid gap-2 sm:grid-cols-[2fr_auto]">
-        {canChangeUser ? (
-          <select
-            className="h-12 w-full rounded-lg border border-border bg-background px-3 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green"
-            value={ligne.userId}
-            onChange={(e) => onChange({ userId: e.target.value })}
-          >
-            <option value="">Choisir un employé…</option>
-            {users.map((u) => (
-              <option key={u.id} value={u.id}>
-                {u.prenom} {u.nom}
-              </option>
-            ))}
-          </select>
-        ) : (
-          <div className="flex h-12 items-center gap-2 rounded-lg border border-border bg-muted/30 px-3 text-sm">
-            <UserCircle className="h-4 w-4 text-foreground/60" />
-            <span className="font-medium">
-              {userObj ? `${userObj.prenom} ${userObj.nom}` : "Toi"}
-            </span>
-          </div>
-        )}
-        <button
-          type="button"
-          onClick={onRemove}
-          className="flex h-12 w-12 items-center justify-center rounded-lg border border-border bg-background text-red-700 hover:bg-red-50"
-          aria-label="Supprimer cette ligne"
-        >
-          <Trash2 className="h-4 w-4" />
-        </button>
-      </div>
-
-      <div className="flex gap-1 rounded-lg bg-muted p-1 text-xs">
-        <button
-          type="button"
-          onClick={() => setMode("times")}
-          className={`flex-1 rounded-md px-2 py-1 ${mode === "times" ? "bg-background font-medium shadow-sm" : "text-foreground/60"}`}
-        >
-          Heure début / fin
-        </button>
-        <button
-          type="button"
-          onClick={() => setMode("duree")}
-          className={`flex-1 rounded-md px-2 py-1 ${mode === "duree" ? "bg-background font-medium shadow-sm" : "text-foreground/60"}`}
-        >
-          Durée libre
-        </button>
-      </div>
-
-      {mode === "times" ? (
-        <div className="grid grid-cols-2 gap-2">
-          <label className="block">
-            <span className="mb-0.5 block text-xs text-foreground/60">Début</span>
-            <Input
-              type="time"
-              value={ligne.heureDebut ?? ""}
-              onChange={(e) => onChange({ heureDebut: e.target.value })}
-              className="h-11"
-            />
-          </label>
-          <label className="block">
-            <span className="mb-0.5 block text-xs text-foreground/60">Fin</span>
-            <Input
-              type="time"
-              value={ligne.heureFin ?? ""}
-              onChange={(e) => onChange({ heureFin: e.target.value })}
-              className="h-11"
-            />
-          </label>
-        </div>
-      ) : (
-        <HhmmInput
-          dureeMinutes={ligne.dureeMinutes}
-          onChange={(d) => onChange({ dureeMinutes: d })}
-        />
-      )}
-
-      {showPrice && (
-        <Input
-          type="number"
-          step="0.5"
-          min="0"
-          inputMode="decimal"
-          value={ligne.tauxHoraireCHF ?? ""}
-          onChange={(e) =>
-            onChange({
-              tauxHoraireCHF: e.target.value ? Number(e.target.value) : undefined,
-            })
-          }
-          placeholder="Taux CHF/h (vide = non facturable)"
-          aria-label="Taux horaire CHF"
-          className="h-11"
-        />
-      )}
-
-      {ligne.dureeMinutes > 0 && (
-        <p className="text-right text-xs text-foreground/60">
-          {formatDuree(ligne.dureeMinutes)}
-          {showPrice && ligne.tauxHoraireCHF && (
-            <>
-              {" · "}
-              {formatCHF((ligne.dureeMinutes / 60) * ligne.tauxHoraireCHF)}
-            </>
-          )}
-        </p>
-      )}
     </div>
   );
 }
