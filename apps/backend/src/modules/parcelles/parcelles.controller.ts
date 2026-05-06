@@ -11,12 +11,43 @@ import {
   Post,
   UseGuards,
 } from "@nestjs/common";
-import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
+import { ApiBearerAuth, ApiOperation, ApiPropertyOptional, ApiTags } from "@nestjs/swagger";
+import {
+  IsLatitude,
+  IsLongitude,
+  IsNumber,
+  IsOptional,
+  IsString,
+  MaxLength,
+  MinLength,
+  Min,
+} from "class-validator";
 import { JwtAuthGuard } from "@/modules/auth/guards/jwt-auth.guard";
 import { CreateParcelleDto } from "./dto/create-parcelle.dto";
 import { ImportParcellesDto } from "./dto/import-parcelles.dto";
 import { UpdateParcelleDto } from "./dto/update-parcelle.dto";
 import { ParcellesService } from "./parcelles.service";
+
+class QuickParcelleDto {
+  @IsString()
+  @MinLength(2)
+  @MaxLength(120)
+  nom!: string;
+
+  @IsNumber()
+  @Min(1)
+  surfaceM2!: number;
+
+  @ApiPropertyOptional({ description: "Latitude WGS84 du centre (-90 à 90)." })
+  @IsOptional()
+  @IsLatitude()
+  centreLat?: number;
+
+  @ApiPropertyOptional({ description: "Longitude WGS84 du centre (-180 à 180)." })
+  @IsOptional()
+  @IsLongitude()
+  centreLng?: number;
+}
 
 @ApiTags("parcelles")
 @ApiBearerAuth()
@@ -58,6 +89,15 @@ export class ParcellesController {
   @ApiOperation({ summary: "Créer une nouvelle parcelle" })
   create(@Body() dto: CreateParcelleDto) {
     return this.parcelles.create(dto);
+  }
+
+  @Post("quick")
+  @ApiOperation({
+    summary:
+      "Création rapide d'une parcelle (nom + surface + point GPS), sans polygone. Utilisé depuis le sélecteur de parcelle dans /interventions/new pour les clients Odoo non-partenaires.",
+  })
+  createQuick(@Body() dto: QuickParcelleDto) {
+    return this.parcelles.createQuick(dto);
   }
 
   @Post("import")

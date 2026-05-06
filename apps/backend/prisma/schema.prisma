@@ -452,6 +452,12 @@ model Parcelle {
   nom                  String
   identifiantCadastral String?                                      @map("identifiant_cadastral")
   surfaceM2            Decimal                                      @map("surface_m2") @db.Decimal(12, 2)
+  /// Point GPS du centre de la parcelle (création rapide depuis le
+  /// formulaire d'intervention pour les clients Odoo "seuls" qui n'ont
+  /// pas dessiné leurs parcelles). Optionnel — à terme remplacé par le
+  /// `geom` MultiPolygon. WGS84 (SRID 4326).
+  centreLat            Float?                                       @map("centre_lat")
+  centreLng            Float?                                       @map("centre_lng")
   zone                 ZoneAgricole
   // Couleur de surbrillance sur les cartes — hex 7-char (#RRGGBB).
   // Permet à l'agriculteur de différencier visuellement ses parcelles.

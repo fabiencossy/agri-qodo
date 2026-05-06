@@ -9,11 +9,15 @@
  *
  * Filtre sur nom + identifiant cadastral + zone agricole.
  */
-import { Check, Loader2, MapPin, Plus, Search, X } from "lucide-react";
+import { Check, Crosshair, Loader2, MapPin, Plus, Search, X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Input } from "@/components/ui/input";
-import { type AccessibleParcelle, useParcellesAccessibles } from "@/lib/parcelles";
+import {
+  type AccessibleParcelle,
+  useCreateQuickParcelle,
+  useParcellesAccessibles,
+} from "@/lib/parcelles";
 
 interface ParcelleSearchSelectProps {
   value: string;
@@ -280,18 +284,191 @@ function Panel({
       </div>
 
       <div className="border-t border-border bg-muted/30 p-3">
+        <QuickCreatePanel onCreated={onSelect} onClose={onClose} />
         <Link
           href="/parcelles/new"
           onClick={onClose}
-          className="flex w-full items-center justify-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-sm font-medium text-foreground/80 transition-colors hover:bg-muted"
+          className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-xs text-foreground/60 transition-colors hover:bg-muted"
         >
-          <Plus className="h-4 w-4" />
-          Créer une nouvelle parcelle
+          Créer avec géométrie cadastrale (GeoJSON / carte) →
         </Link>
-        <p className="mt-2 text-center text-xs text-foreground/50">
-          Une parcelle nécessite une géométrie cadastrale (import GeoJSON ou dessin sur carte).
-        </p>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Mini formulaire inline de création rapide de parcelle (nom + surface
+ * + point GPS). Pour les clients Odoo non-partenaires qui n'ont pas
+ * dessiné leurs parcelles. Le polygone précis sera ajouté plus tard
+ * via la fiche /parcelles/[id].
+ */
+function QuickCreatePanel({
+  onCreated,
+  onClose,
+}: {
+  onCreated: (p: AccessibleParcelle) => void;
+  onClose: () => void;
+}) {
+  const create = useCreateQuickParcelle();
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState({
+    nom: "",
+    surfaceHa: "",
+    lat: "",
+    lng: "",
+  });
+  const [geoLoading, setGeoLoading] = useState(false);
+
+  function locate() {
+    if (!navigator.geolocation) {
+      alert("Géolocalisation indisponible sur ce navigateur.");
+      return;
+    }
+    setGeoLoading(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setDraft((d) => ({
+          ...d,
+          lat: pos.coords.latitude.toFixed(6),
+          lng: pos.coords.longitude.toFixed(6),
+        }));
+        setGeoLoading(false);
+      },
+      () => {
+        setGeoLoading(false);
+        alert("Impossible de récupérer ta position.");
+      },
+      { enableHighAccuracy: true, timeout: 10_000 },
+    );
+  }
+
+  async function submit() {
+    const surfaceHa = Number(draft.surfaceHa);
+    if (!draft.nom.trim() || !(surfaceHa > 0)) {
+      alert("Renseigne un nom et une surface en hectares.");
+      return;
+    }
+    try {
+      const created = await create.mutateAsync({
+        nom: draft.nom.trim(),
+        surfaceM2: Math.round(surfaceHa * 10_000),
+        ...(draft.lat ? { centreLat: Number(draft.lat) } : {}),
+        ...(draft.lng ? { centreLng: Number(draft.lng) } : {}),
+      });
+      // Adapter en AccessibleParcelle (le hook renvoie Parcelle, on
+      // fabrique la forme attendue côté caller — les champs absents sont
+      // récupérés au prochain refetch de useParcellesAccessibles).
+      onCreated({
+        id: created.id,
+        nom: created.nom,
+        surfaceM2: String(created.surfaceM2),
+        zone: created.zone,
+        identifiantCadastral: created.identifiantCadastral ?? null,
+        isOwn: true,
+        tenant: { id: "", nom: "", code: "", canton: "" },
+      } as unknown as AccessibleParcelle);
+      setDraft({ nom: "", surfaceHa: "", lat: "", lng: "" });
+      setOpen(false);
+      onClose();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Création échouée.");
+    }
+  }
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="flex w-full items-center justify-center gap-2 rounded-lg border-2 border-green bg-background px-3 py-2 text-sm font-semibold text-green transition-colors hover:bg-green/10"
+      >
+        <Plus className="h-4 w-4" />
+        Créer une parcelle rapide (surface + GPS)
+      </button>
+    );
+  }
+
+  return (
+    <div className="space-y-2 rounded-lg border border-border bg-background p-3">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-bold uppercase tracking-wider text-foreground/60">
+          Nouvelle parcelle
+        </span>
+        <button
+          type="button"
+          onClick={() => setOpen(false)}
+          aria-label="Annuler"
+          className="rounded-full p-1 text-foreground/50 hover:bg-muted"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </div>
+      <input
+        autoFocus
+        value={draft.nom}
+        onChange={(e) => setDraft({ ...draft, nom: e.target.value })}
+        placeholder="Nom de la parcelle *"
+        className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green"
+      />
+      <div className="grid grid-cols-[1fr_auto] gap-2">
+        <input
+          type="number"
+          step="0.01"
+          min="0"
+          inputMode="decimal"
+          value={draft.surfaceHa}
+          onChange={(e) => setDraft({ ...draft, surfaceHa: e.target.value })}
+          placeholder="Surface (ha) *"
+          className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green"
+        />
+        <span className="flex h-9 items-center justify-center rounded-md border border-border bg-muted/30 px-2 text-xs font-medium text-foreground/60">
+          ha
+        </span>
+      </div>
+      <div className="grid grid-cols-[1fr_1fr_auto] gap-2">
+        <input
+          type="number"
+          step="0.000001"
+          inputMode="decimal"
+          value={draft.lat}
+          onChange={(e) => setDraft({ ...draft, lat: e.target.value })}
+          placeholder="Latitude"
+          className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green"
+        />
+        <input
+          type="number"
+          step="0.000001"
+          inputMode="decimal"
+          value={draft.lng}
+          onChange={(e) => setDraft({ ...draft, lng: e.target.value })}
+          placeholder="Longitude"
+          className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green"
+        />
+        <button
+          type="button"
+          onClick={locate}
+          disabled={geoLoading}
+          aria-label="Utiliser ma position GPS"
+          title="Utiliser ma position GPS actuelle"
+          className="flex h-9 w-9 items-center justify-center rounded-md border border-border bg-background hover:bg-muted disabled:opacity-50"
+        >
+          {geoLoading ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Crosshair className="h-4 w-4" />
+          )}
+        </button>
+      </div>
+      <button
+        type="button"
+        onClick={submit}
+        disabled={create.isPending || !draft.nom.trim() || !draft.surfaceHa}
+        className="flex w-full items-center justify-center gap-1.5 rounded-md bg-green py-2 text-sm font-semibold text-white hover:bg-green-dark disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        {create.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+        Créer et sélectionner
+      </button>
     </div>
   );
 }

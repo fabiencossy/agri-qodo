@@ -188,6 +188,34 @@ export class ParcellesService {
     return parcelle;
   }
 
+  /**
+   * Création rapide d'une parcelle pour les clients Odoo non-partenaires
+   * (Fabien 2026-05-06). Champs minimaux : nom, surfaceM2, point GPS
+   * (centreLat/Lng). Pas de polygone — la parcelle peut être enrichie
+   * plus tard via la fiche /parcelles/[id].
+   *
+   * Le tenantId est posé via le tenant context — la parcelle appartient
+   * donc à mon exploitation, même si je travaille à façon pour un client
+   * Odoo (logique : la traçabilité agronomique reste de mon côté).
+   */
+  async createQuick(input: {
+    nom: string;
+    surfaceM2: number;
+    centreLat?: number;
+    centreLng?: number;
+    zone?: ZoneAgricole;
+  }) {
+    return this.prisma.tenantAware.parcelle.create({
+      data: {
+        nom: input.nom.trim(),
+        surfaceM2: input.surfaceM2,
+        zone: input.zone ?? ZoneAgricole.ZA,
+        ...(input.centreLat !== undefined ? { centreLat: input.centreLat } : {}),
+        ...(input.centreLng !== undefined ? { centreLng: input.centreLng } : {}),
+      } as unknown as Prisma.ParcelleUncheckedCreateInput,
+    });
+  }
+
   async update(id: string, data: UpdateParcelleDto) {
     const { geomGeoJson, ...rest } = data;
     const result = await this.prisma.tenantAware.parcelle.updateMany({

@@ -118,6 +118,32 @@ export function useCreateParcelle() {
   });
 }
 
+export interface QuickParcelleInput {
+  nom: string;
+  surfaceM2: number;
+  centreLat?: number;
+  centreLng?: number;
+}
+
+/**
+ * Création rapide d'une parcelle (nom + surface + point GPS, sans
+ * polygone). Utilisée depuis le sélecteur de parcelle dans
+ * /interventions/new pour les clients Odoo non-partenaires.
+ */
+export function useCreateQuickParcelle() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: QuickParcelleInput) =>
+      api<Parcelle>("/api/parcelles/quick", { method: "POST", body: input }),
+    onSuccess: (created) => {
+      qc.setQueryData<Parcelle[]>(QUERY_KEY, (old) => (old ? [...old, created] : [created]));
+      void qc.invalidateQueries({ queryKey: QUERY_KEY });
+      void qc.invalidateQueries({ queryKey: MAP_QUERY_KEY });
+      void qc.invalidateQueries({ queryKey: ["parcelles-accessibles"] });
+    },
+  });
+}
+
 export function useUpdateParcelle() {
   const qc = useQueryClient();
   return useMutation({
