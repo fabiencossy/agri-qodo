@@ -307,18 +307,20 @@ export default function ActivitesPage() {
               confirm: "Supprimer {n} activité(s) ?",
               handler: async (selected) => {
                 let ok = 0;
-                let ko = 0;
+                const errors: string[] = [];
                 for (const it of selected) {
                   try {
                     if (it.kind === "CARNET")
                       await deleteIntervention.mutateAsync(it.intervention.id);
                     else await deleteTravail.mutateAsync(it.travail.id);
                     ok++;
-                  } catch {
-                    ko++;
+                  } catch (err) {
+                    const msg = err instanceof Error ? err.message : String(err);
+                    errors.push(`${it.kind === "CARNET" ? "Carnet" : "Travail"} : ${msg}`);
                   }
                 }
-                if (ko > 0) alert(`${ok} supprimées, ${ko} échecs.`);
+                if (errors.length > 0)
+                  alert(`${ok} supprimée(s), ${errors.length} échec(s) :\n\n${errors.join("\n")}`);
               },
             },
           ]}

@@ -754,6 +754,14 @@ function CalendarView<T>({
   onItemClick,
 }: CalendarViewProps<T>) {
   const [cursor, setCursor] = useState<Date>(() => startOfMonth(new Date()));
+  // Mode jour vs mois. Default = "day" sur mobile (<sm) car la grille
+  // mensuelle est inutilisable sur petit écran (image 119, demande
+  // Fabien 2026-05-06). Sur desktop on garde le mensuel.
+  const [mode, setMode] = useState<"day" | "month">(() => {
+    if (typeof window === "undefined") return "month";
+    return window.matchMedia("(max-width: 639px)").matches ? "day" : "month";
+  });
+  const [dayCursor, setDayCursor] = useState<Date>(() => new Date());
 
   // Map jour ISO (YYYY-MM-DD) → items pour ce jour. Skip items sans date.
   const itemsByDay = useMemo(() => {
@@ -793,6 +801,87 @@ function CalendarView<T>({
   const goNext = () => setCursor((c) => new Date(c.getFullYear(), c.getMonth() + 1, 1));
   const goToday = () => setCursor(startOfMonth(new Date()));
 
+  // ─── Mode JOUR ──────────────────────────────────────────────────────
+  if (mode === "day") {
+    const dayKey = `${dayCursor.getFullYear()}-${String(dayCursor.getMonth() + 1).padStart(2, "0")}-${String(dayCursor.getDate()).padStart(2, "0")}`;
+    const dayItems = itemsByDay.get(dayKey) ?? [];
+    const dayLabel = dayCursor.toLocaleDateString("fr-CH", {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    });
+    const goPrevDay = () =>
+      setDayCursor((c) => new Date(c.getFullYear(), c.getMonth(), c.getDate() - 1));
+    const goNextDay = () =>
+      setDayCursor((c) => new Date(c.getFullYear(), c.getMonth(), c.getDate() + 1));
+    const goTodayDay = () => setDayCursor(new Date());
+    return (
+      <div className="space-y-2">
+        <div className="flex flex-col gap-2 rounded-xl border border-border bg-background px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center justify-between gap-2 sm:flex-1">
+            <button
+              type="button"
+              onClick={goPrevDay}
+              className="rounded-md px-3 py-1.5 hover:bg-muted"
+              aria-label="Jour précédent"
+            >
+              ←
+            </button>
+            <span className="text-sm font-semibold capitalize">{dayLabel}</span>
+            <button
+              type="button"
+              onClick={goNextDay}
+              className="rounded-md px-3 py-1.5 hover:bg-muted"
+              aria-label="Jour suivant"
+            >
+              →
+            </button>
+          </div>
+          <div className="flex gap-1">
+            <button
+              type="button"
+              onClick={goTodayDay}
+              className="rounded-md px-2 py-1 text-xs hover:bg-muted"
+            >
+              Aujourd&apos;hui
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode("month")}
+              className="rounded-md px-2 py-1 text-xs hover:bg-muted"
+            >
+              Mois
+            </button>
+          </div>
+        </div>
+        {dayItems.length === 0 ? (
+          <p className="rounded-xl border border-dashed border-border bg-muted/30 p-6 text-center text-sm text-foreground/60">
+            Aucune activité ce jour.
+          </p>
+        ) : (
+          <ul className="divide-y divide-border rounded-xl border border-border bg-background">
+            {dayItems.map((item) => (
+              <li key={getKey(item)}>
+                {onItemClick ? (
+                  <button
+                    type="button"
+                    onClick={() => onItemClick(item)}
+                    className="block w-full px-4 py-3 text-left hover:bg-muted/30"
+                  >
+                    {renderItem(item)}
+                  </button>
+                ) : (
+                  <div className="px-4 py-3">{renderItem(item)}</div>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between gap-2 rounded-xl border border-border bg-background px-3 py-2">
@@ -812,6 +901,13 @@ function CalendarView<T>({
             className="rounded-md px-2 py-1 text-xs hover:bg-muted"
           >
             Aujourd&apos;hui
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode("day")}
+            className="rounded-md px-2 py-1 text-xs hover:bg-muted"
+          >
+            Jour
           </button>
           <button
             type="button"
