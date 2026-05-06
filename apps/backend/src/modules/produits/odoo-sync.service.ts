@@ -94,11 +94,21 @@ export class OdooSyncService {
 
     let rows: OdooProductRow[];
     try {
-      rows = await client.searchRead<OdooProductRow>("product.product", [["active", "=", true]], {
-        fields: ["id", "name", "default_code", "list_price", "uom_id", "categ_id", "active"],
-        limit: 5000,
-        order: "name ASC",
-      });
+      // Décision Fabien 2026-05-06 : la sync Biens ne doit PAS importer
+      // les services (sinon doublon avec l'onglet Prestations qui les
+      // gère). On filtre type ∈ {consu, product} côté Odoo.
+      rows = await client.searchRead<OdooProductRow>(
+        "product.product",
+        [
+          ["active", "=", true],
+          ["type", "in", ["consu", "product"]],
+        ],
+        {
+          fields: ["id", "name", "default_code", "list_price", "uom_id", "categ_id", "active"],
+          limit: 5000,
+          order: "name ASC",
+        },
+      );
     } catch (err) {
       this.logger.error(
         `Sync Odoo produits — search_read échoué pour tenant ${tenantId} : ${err instanceof Error ? err.message : err}`,

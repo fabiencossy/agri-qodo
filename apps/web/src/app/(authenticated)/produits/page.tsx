@@ -141,6 +141,27 @@ export default function ProduitsPage() {
     alert(`Push Odoo terminé : ${ok} OK${ko > 0 ? `, ${ko} échecs` : ""}.`);
   }
 
+  async function deleteSelected() {
+    const ids = Array.from(selected);
+    if (!confirm(`Supprimer ${ids.length} élément${ids.length > 1 ? "s" : ""} ?`)) return;
+    let ok = 0;
+    let ko = 0;
+    for (const id of ids) {
+      try {
+        if (onglet === "biens") {
+          await deleteProduit.mutateAsync(id);
+        } else {
+          await deleteMateriel.mutateAsync(id);
+        }
+        ok++;
+      } catch {
+        ko++;
+      }
+    }
+    setSelected(new Set());
+    if (ko > 0) alert(`Supprimés : ${ok} OK, ${ko} échecs (probablement globaux).`);
+  }
+
   const onDeleteProduit = (p: Produit) => {
     if (p.tenantId === null) return;
     if (!confirm(`Supprimer "${p.libelle}" ?`)) return;
@@ -323,6 +344,15 @@ export default function ProduitsPage() {
             >
               <RefreshCw className="mr-1 h-3.5 w-3.5" />
               Pousser vers Odoo
+            </Button>
+            <Button
+              size="sm"
+              onClick={deleteSelected}
+              disabled={deleteProduit.isPending || deleteMateriel.isPending}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              <Trash2 className="mr-1 h-3.5 w-3.5" />
+              Supprimer
             </Button>
             <button
               type="button"

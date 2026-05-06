@@ -255,27 +255,19 @@ export class OdooPushService {
       name: sectionTitle,
     });
 
-    // 2pre-anchor. Ligne service "ancrage task" en 2e position.
-    // On veut que la project.task soit visiblement liée au sale.order
-    // ET que les heures pointées sur la task soient NON facturables.
-    // Or les lignes facturables (ex "Plantation pommes de terre" 380
-    // CHF/ha avec is_expense=true) refusent d'être liées via
-    // sale_line_id. Solution : ligne service "Suivi des heures (non
-    // facturable)" qty=0/prix=0 qu'on utilise comme cible de
-    // sale_line_id sur la task. Effet :
-    //   - smart button "Devis" visible sur la task
-    //   - "Article de la commande client" rempli (= ligne placeholder)
-    //   - les heures pointées s'attachent à cette ligne, qty = somme
-    //     des heures, mais price_unit = 0 → NON facturable
-    //   - les vraies lignes facturables (matériel à l'ha) restent
-    //     intactes en dessous
+    // Décision Fabien 2026-05-06 : ne PAS ajouter de ligne placeholder
+    // "Main d'œuvre" sur le devis — il n'en veut pas car non facturable
+    // donc inutile pour le client. Conséquences :
+    //   - Le devis ne contient que la section + les vraies lignes
+    //     facturables (matériel à l'ha).
+    //   - sale_line_id reste best-effort : la task sera liée à la 1re
+    //     ligne facturable si Odoo l'accepte, sinon "Non facturable"
+    //     (cas produits is_expense). Le smart button "Devis" reste
+    //     visible via sale_order_id.
+    //   - Les heures pointées remontent quand même sur la task via
+    //     account.analytic.line direct (project_id + task_id), pas
+    //     via sale_line_id — donc "Temps passé" non nul.
     const hourProductId = await this.ensureHourProductId(client, tenantId);
-    orderLines.push({
-      product_id: hourProductId,
-      name: "Suivi des heures (non facturable)",
-      product_uom_qty: 0,
-      price_unit: 0,
-    });
 
     // 2a. Lignes produit
     for (const lp of travail.lignesProduit) {
@@ -344,17 +336,21 @@ export class OdooPushService {
     }
 
     // 2b. Lignes heures saisies dans Agri Qodo (LigneTravailHeure).
-    // On utilise le même hourProductId que la ligne placeholder en tête
-    // — pas de doublon de produit côté Odoo.
+    // Décision Fabien 2026-05-06 : ne PAS afficher la main d'œuvre
+    // dans le devis quand elle n'est pas facturable (tauxHoraireCHF
+    // null/0). On garde la ligne uniquement si l'agriculteur a
+    // explicitement saisi un taux horaire (= il VEUT la facturer).
+    // Les heures non facturables remontent quand même côté task via
+    // account.analytic.line direct (cf push timesheet plus bas).
     for (const lh of travail.lignesHeure) {
+      if (!lh.tauxHoraireCHF || Number(lh.tauxHoraireCHF) <= 0) continue;
       const heures = Number(lh.dureeMinutes) / 60;
-      const line: OdooSaleOrderLineCreate = {
+      orderLines.push({
         product_id: hourProductId,
         name: lh.notes ?? `Travail (${heures.toFixed(2)}h)`,
         product_uom_qty: heures,
-      };
-      if (lh.tauxHoraireCHF) line.price_unit = Number(lh.tauxHoraireCHF);
-      orderLines.push(line);
+        price_unit: Number(lh.tauxHoraireCHF),
+      });
     }
 
     // 3. Création du sale.order brouillon -------------------------------
