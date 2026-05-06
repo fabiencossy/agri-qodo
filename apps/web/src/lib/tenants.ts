@@ -28,6 +28,10 @@ export interface TenantDetail {
   projetHeuresCarnetId: string | null;
   projetHeuresTravauxTiersId: string | null;
   projetHeuresTravauxInterneId: string | null;
+  /** Sprint B prestations v0.3 §2 — projets Odoo cibles (IDs Odoo). */
+  odooProjectIdTravauxTiers: number | null;
+  odooProjectIdCarnetTiers: number | null;
+  odooProjectIdCarnetInterne: number | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -46,6 +50,9 @@ export interface UpdateTenantInput {
   projetHeuresCarnetId?: string | null;
   projetHeuresTravauxTiersId?: string | null;
   projetHeuresTravauxInterneId?: string | null;
+  odooProjectIdTravauxTiers?: number | null;
+  odooProjectIdCarnetTiers?: number | null;
+  odooProjectIdCarnetInterne?: number | null;
 }
 
 export function useAccessibleTenants() {

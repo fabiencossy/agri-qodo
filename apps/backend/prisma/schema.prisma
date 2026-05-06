@@ -284,6 +284,13 @@ model Exploitation {
   projetHeuresTravauxTiers     Projet? @relation("ProjetHeuresTravauxTiers", fields: [projetHeuresTravauxTiersId], references: [id], onDelete: SetNull)
   projetHeuresTravauxInterneId String? @map("projet_heures_travaux_interne_id")
   projetHeuresTravauxInterne   Projet? @relation("ProjetHeuresTravauxInterne", fields: [projetHeuresTravauxInterneId], references: [id], onDelete: SetNull)
+  /// Projets Odoo (`project.project`) cibles pour les 3 cas du PRD prestations
+  /// v0.3 §2. IDs Odoo (Int) — pas de FK vers une table locale puisque la
+  /// vérité vit côté Odoo. Configurés dans /parametres/exploitation par un
+  /// sélecteur qui liste GET /api/odoo/projects.
+  odooProjectIdTravauxTiers   Int? @map("odoo_project_id_travaux_tiers")
+  odooProjectIdCarnetTiers    Int? @map("odoo_project_id_carnet_tiers")
+  odooProjectIdCarnetInterne  Int? @map("odoo_project_id_carnet_interne")
 
   @@map("exploitations")
 }

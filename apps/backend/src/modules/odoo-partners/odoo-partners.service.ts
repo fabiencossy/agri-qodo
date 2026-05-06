@@ -202,4 +202,25 @@ export class OdooPartnersService {
 
     return { exploitationId: shadow.id, nom: shadow.nom, odooPartnerId };
   }
+
+  /**
+   * Sprint B prestations — liste les `project.project` Odoo du tenant.
+   * Renvoyé tel quel pour alimenter les 3 sélecteurs dans
+   * /parametres/exploitation. Vide si Odoo non configuré.
+   */
+  async listProjects(tenantId: string): Promise<Array<{ odooId: number; name: string }>> {
+    const client = await this.odoo.forTenant(tenantId).catch(() => null);
+    if (!client) return [];
+    try {
+      const rows = await client.searchRead<{ id: number; name: string }>(
+        "project.project",
+        [["active", "=", true]],
+        { fields: ["id", "name"], limit: 200, order: "name asc" },
+      );
+      return rows.map((r) => ({ odooId: r.id, name: r.name }));
+    } catch (e) {
+      this.log.warn(`Échec listage project.project Odoo : ${(e as Error).message}`);
+      return [];
+    }
+  }
 }
