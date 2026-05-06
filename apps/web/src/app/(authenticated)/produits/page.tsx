@@ -99,10 +99,33 @@ export default function ProduitsPage() {
 
   // Liste combinée : un seul tableau d'items, discriminés par `kind`.
   // Tri : par libellé (les deux types mélangés alphabétiquement).
+  //
+  // Dédup : quand on push un GLOBAL vers Odoo, on duplique en perso
+  // pour pouvoir stocker odooProductId (les globaux sont read-only).
+  // Le global reste en base mais on le cache de la liste si un perso
+  // avec même libellé+catégorie existe — sinon Fabien voit 2 lignes
+  // identiques (l'une avec badge #odooId, l'autre "Pousser").
   const items = useMemo<CatalogueItem[]>(() => {
+    const persoBienKeys = new Set<string>();
+    const persoPrestationKeys = new Set<string>();
+    for (const p of produits.data ?? []) {
+      if (p.tenantId !== null) persoBienKeys.add(`${p.libelle.toLowerCase()}|${p.categorie}`);
+    }
+    for (const m of materiels.data ?? []) {
+      if (m.tenantId !== null) persoPrestationKeys.add(`${m.libelle.toLowerCase()}|${m.categorie}`);
+    }
+
     const all: CatalogueItem[] = [];
-    for (const p of produits.data ?? []) all.push({ kind: "bien", data: p });
-    for (const m of materiels.data ?? []) all.push({ kind: "prestation", data: m });
+    for (const p of produits.data ?? []) {
+      const key = `${p.libelle.toLowerCase()}|${p.categorie}`;
+      if (p.tenantId === null && persoBienKeys.has(key)) continue; // global masqué par perso
+      all.push({ kind: "bien", data: p });
+    }
+    for (const m of materiels.data ?? []) {
+      const key = `${m.libelle.toLowerCase()}|${m.categorie}`;
+      if (m.tenantId === null && persoPrestationKeys.has(key)) continue;
+      all.push({ kind: "prestation", data: m });
+    }
     all.sort((a, b) => libelle(a).localeCompare(libelle(b), "fr"));
     return all;
   }, [produits.data, materiels.data]);
