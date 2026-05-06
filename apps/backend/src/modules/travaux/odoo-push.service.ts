@@ -453,6 +453,40 @@ export class OdooPushService {
         await client.write("sale.order", [saleOrderId], {
           tasks_ids: [[4, projectTaskId, 0]],
         });
+
+        // Force le recompute de sale_order_count en réécrivant
+        // sale_order_id sur la task (Odoo ne déclenche pas toujours
+        // le compute sur le create, surtout avec les @api.depends
+        // qui pointent vers sale.order.line.task_id).
+        await client
+          .write("project.task", [projectTaskId], { sale_order_id: saleOrderId })
+          .catch(() => undefined);
+
+        // Diagnostic : on lit sale_order_count + sale_line_id pour
+        // savoir côté serveur si le smart button "Commande client"
+        // sera visible côté UI Odoo.
+        try {
+          const probe = await client.searchRead<{
+            id: number;
+            sale_order_count?: number;
+            sale_order_id?: [number, string] | false;
+            sale_line_id?: [number, string] | false;
+          }>("project.task", [["id", "=", projectTaskId]], {
+            fields: ["id", "sale_order_count", "sale_order_id", "sale_line_id"],
+            limit: 1,
+          });
+          const t = probe[0];
+          if (t) {
+            this.logger.log(
+              `Task #${projectTaskId} probe : sale_order_count=${t.sale_order_count ?? "?"} sale_order_id=${
+                Array.isArray(t.sale_order_id) ? t.sale_order_id[0] : t.sale_order_id
+              } sale_line_id=${Array.isArray(t.sale_line_id) ? t.sale_line_id[0] : t.sale_line_id}`,
+            );
+          }
+        } catch {
+          // diagnostic best-effort
+        }
+
         await this.prisma.travail.update({
           where: { id: travailId },
           data: { odooTaskId: projectTaskId },
