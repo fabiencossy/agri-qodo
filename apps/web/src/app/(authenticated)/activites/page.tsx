@@ -1,6 +1,6 @@
 "use client";
 
-import { ClipboardCheck, Sprout, Timer } from "lucide-react";
+import { ClipboardCheck, Sprout, Timer, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo } from "react";
@@ -19,11 +19,12 @@ import {
 import {
   type Intervention,
   libelleType,
+  useDeleteIntervention,
   useInterventions,
   useInterventionsPending,
 } from "@/lib/interventions";
 import { useCurrentPresence } from "@/lib/presences";
-import { type Travail, useTravaux } from "@/lib/travaux";
+import { type Travail, useDeleteTravail, useTravaux } from "@/lib/travaux";
 
 function startOfDay(d: Date): Date {
   const x = new Date(d);
@@ -152,24 +153,29 @@ const COLUMNS: ListColumn<ActiviteUnifiee>[] = [
   {
     key: "titre",
     header: "Titre",
+    cell: (it) => (
+      <span className="font-medium">
+        {it.kind === "CARNET" ? libelleType(it.intervention.type) : it.travail.titre}
+      </span>
+    ),
+  },
+  {
+    key: "parcelle",
+    header: "Parcelle",
     cell: (it) =>
-      it.kind === "CARNET" ? (
-        <div>
-          <div className="font-medium">{libelleType(it.intervention.type)}</div>
-          <div className="text-xs text-foreground/60">
-            {it.intervention.parcelle.nom}
-            {it.intervention.produitRef ? ` · ${it.intervention.produitRef.libelle}` : ""}
-          </div>
-        </div>
-      ) : (
-        <div>
-          <div className="font-medium">{it.travail.titre}</div>
-          <div className="text-xs text-foreground/60">
-            {it.travail.partenaire?.nom ?? (it.kind === "INTERNE" ? "Interne" : "—")}
-            {it.travail.parcelle ? ` · ${it.travail.parcelle.nom}` : ""}
-          </div>
-        </div>
-      ),
+      it.kind === "CARNET"
+        ? (it.intervention.parcelle.nom ?? "—")
+        : (it.travail.parcelle?.nom ?? "—"),
+    hideBelow: "sm",
+  },
+  {
+    key: "client",
+    header: "Client",
+    cell: (it) => {
+      if (it.kind === "CARNET") return "—";
+      return it.travail.partenaire?.nom ?? (it.kind === "INTERNE" ? "Interne" : "—");
+    },
+    hideBelow: "md",
   },
   {
     key: "date",
@@ -206,6 +212,8 @@ export default function ActivitesPage() {
   const travaux = useTravaux();
   const pending = useInterventionsPending();
   const presenceCourante = useCurrentPresence();
+  const deleteIntervention = useDeleteIntervention();
+  const deleteTravail = useDeleteTravail();
 
   const items = useMemo<ActiviteUnifiee[]>(() => {
     const fromIv: ActiviteUnifiee[] = (interventions.data ?? []).map((iv: Intervention) => ({
@@ -244,7 +252,7 @@ export default function ActivitesPage() {
   return (
     <>
       <Breadcrumb items={[{ label: "Accueil", href: "/app" }, { label: "Activités" }]} />
-      <div className="mx-auto max-w-3xl px-3 py-4 sm:py-6">
+      <div className="mx-auto w-full px-3 py-4 sm:py-6">
         <h1 className="mb-3 text-2xl font-bold sm:text-3xl">Activités</h1>
 
         {presenceCourante.data && (
@@ -289,6 +297,31 @@ export default function ActivitesPage() {
           searchPlaceholder="Rechercher type, titre, parcelle, client, produit, notes…"
           filters={filters}
           groupBys={GROUPBYS}
+          selectable
+          bulkActions={[
+            {
+              key: "delete",
+              label: "Supprimer",
+              icon: Trash2,
+              className: "bg-red-600 hover:bg-red-700",
+              confirm: "Supprimer {n} activité(s) ?",
+              handler: async (selected) => {
+                let ok = 0;
+                let ko = 0;
+                for (const it of selected) {
+                  try {
+                    if (it.kind === "CARNET")
+                      await deleteIntervention.mutateAsync(it.intervention.id);
+                    else await deleteTravail.mutateAsync(it.travail.id);
+                    ok++;
+                  } catch {
+                    ko++;
+                  }
+                }
+                if (ko > 0) alert(`${ok} supprimées, ${ko} échecs.`);
+              },
+            },
+          ]}
           emptyState={
             <div>
               <Sprout className="mx-auto mb-2 h-10 w-10 text-foreground/30" />

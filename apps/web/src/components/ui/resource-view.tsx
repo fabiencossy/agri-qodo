@@ -417,6 +417,18 @@ export function ResourceView<T>(props: ResourceViewProps<T>) {
           getKey={props.getKey}
           renderCard={props.renderCard ?? props.renderKanbanCard}
           {...(props.onItemClick ? { onItemClick: props.onItemClick } : {})}
+          {...(props.selectable
+            ? {
+                selectable: true,
+                selectedKeys,
+                onToggleSelect: (k: string) => {
+                  const next = new Set(selectedKeys);
+                  if (next.has(k)) next.delete(k);
+                  else next.add(k);
+                  setSelectedKeys(next);
+                },
+              }
+            : {})}
         />
       ) : view === "calendar" ? (
         props.dateField ? (
@@ -456,6 +468,18 @@ export function ResourceView<T>(props: ResourceViewProps<T>) {
           getKey={props.getKey}
           renderKanbanCard={props.renderKanbanCard}
           {...(props.onItemClick ? { onItemClick: props.onItemClick } : {})}
+          {...(props.selectable
+            ? {
+                selectable: true,
+                selectedKeys,
+                onToggleSelect: (k: string) => {
+                  const next = new Set(selectedKeys);
+                  if (next.has(k)) next.delete(k);
+                  else next.add(k);
+                  setSelectedKeys(next);
+                },
+              }
+            : {})}
         />
       )}
 
@@ -507,6 +531,7 @@ function buildSelectColumn<T>(
           if (allChecked || someChecked) setSelectedKeys(new Set());
           else setSelectedKeys(new Set(allKeys));
         }}
+        className="h-5 w-5 cursor-pointer"
       />
     ),
     cell: (item) => {
@@ -524,6 +549,7 @@ function buildSelectColumn<T>(
             else next.add(k);
             setSelectedKeys(next);
           }}
+          className="h-5 w-5 cursor-pointer"
         />
       );
     },
@@ -546,8 +572,14 @@ function BulkActionBar<T>({
   onAction: (action: BulkAction<T>) => void | Promise<void>;
 }) {
   return (
-    <div className="fixed bottom-4 left-1/2 z-40 -translate-x-1/2 rounded-full border border-border bg-background px-4 py-2 shadow-2xl">
-      <div className="flex items-center gap-3">
+    <div
+      className="
+        fixed bottom-0 left-0 right-0 z-40
+        border-t border-border bg-background px-3 py-2 shadow-2xl
+        sm:bottom-4 sm:left-1/2 sm:right-auto sm:rounded-full sm:border sm:px-4 sm:-translate-x-1/2
+      "
+    >
+      <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3">
         <span className="text-sm font-medium">
           {count} sélectionné{count > 1 ? "s" : ""}
         </span>
@@ -558,11 +590,11 @@ function BulkActionBar<T>({
               key={a.key}
               type="button"
               onClick={() => void onAction(a)}
-              className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-semibold text-white transition-colors hover:opacity-90 ${
+              className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold text-white transition-colors hover:opacity-90 active:opacity-80 sm:py-1.5 ${
                 a.className ?? "bg-green hover:bg-green-dark"
               }`}
             >
-              {Icon && <Icon className="h-3.5 w-3.5" />}
+              {Icon && <Icon className="h-4 w-4" />}
               {a.label}
             </button>
           );
@@ -570,7 +602,7 @@ function BulkActionBar<T>({
         <button
           type="button"
           onClick={onClear}
-          className="text-xs text-foreground/60 hover:text-foreground"
+          className="rounded-lg px-3 py-2 text-xs text-foreground/60 hover:bg-muted hover:text-foreground sm:py-1"
         >
           Annuler
         </button>
@@ -586,16 +618,45 @@ interface CardViewProps<T> {
   getKey: (item: T) => string;
   renderCard: (item: T) => React.ReactNode;
   onItemClick?: (item: T) => void;
+  selectable?: boolean;
+  selectedKeys?: Set<string>;
+  onToggleSelect?: (key: string) => void;
 }
 
-function CardView<T>({ data, getKey, renderCard, onItemClick }: CardViewProps<T>) {
+function CardView<T>({
+  data,
+  getKey,
+  renderCard,
+  onItemClick,
+  selectable,
+  selectedKeys,
+  onToggleSelect,
+}: CardViewProps<T>) {
   return (
     <div className="grid auto-rows-fr grid-cols-1 items-stretch gap-3 sm:grid-cols-2 lg:grid-cols-3">
       {data.map((item) => {
         const key = getKey(item);
+        const isSelected = selectedKeys?.has(key) ?? false;
         const content = (
-          <div className="h-full rounded-xl border border-border bg-background p-3 transition-colors hover:bg-muted/30">
-            {renderCard(item)}
+          <div
+            className={`relative h-full rounded-xl border bg-background p-3 transition-colors hover:bg-muted/30 ${
+              isSelected ? "border-green ring-2 ring-green/20" : "border-border"
+            }`}
+          >
+            {selectable && (
+              <input
+                type="checkbox"
+                aria-label="Sélectionner"
+                checked={isSelected}
+                onClick={(e) => e.stopPropagation()}
+                onChange={(e) => {
+                  e.stopPropagation();
+                  onToggleSelect?.(key);
+                }}
+                className="absolute left-2 top-2 z-10 h-5 w-5 cursor-pointer"
+              />
+            )}
+            <div className={selectable ? "pl-6" : undefined}>{renderCard(item)}</div>
           </div>
         );
         return onItemClick ? (
@@ -1334,6 +1395,9 @@ function KanbanView<T>(props: {
   getKey: (item: T) => string;
   renderKanbanCard: (item: T) => React.ReactNode;
   onItemClick?: (item: T) => void;
+  selectable?: boolean;
+  selectedKeys?: Set<string>;
+  onToggleSelect?: (key: string) => void;
 }) {
   return (
     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
@@ -1363,17 +1427,38 @@ function KanbanView<T>(props: {
                   Aucun
                 </p>
               ) : (
-                group.items.map((item) => (
-                  <div
-                    key={props.getKey(item)}
-                    {...(props.onItemClick ? { onClick: () => props.onItemClick?.(item) } : {})}
-                    className={`rounded-lg border border-border bg-background p-3 ${
-                      props.onItemClick ? "cursor-pointer hover:border-green hover:bg-green/5" : ""
-                    }`}
-                  >
-                    {props.renderKanbanCard(item)}
-                  </div>
-                ))
+                group.items.map((item) => {
+                  const k = props.getKey(item);
+                  const isSelected = props.selectedKeys?.has(k) ?? false;
+                  return (
+                    <div
+                      key={k}
+                      {...(props.onItemClick ? { onClick: () => props.onItemClick?.(item) } : {})}
+                      className={`relative rounded-lg border bg-background p-3 ${
+                        props.onItemClick
+                          ? "cursor-pointer hover:border-green hover:bg-green/5"
+                          : ""
+                      } ${isSelected ? "border-green ring-2 ring-green/20" : "border-border"}`}
+                    >
+                      {props.selectable && (
+                        <input
+                          type="checkbox"
+                          aria-label="Sélectionner"
+                          checked={isSelected}
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={(e) => {
+                            e.stopPropagation();
+                            props.onToggleSelect?.(k);
+                          }}
+                          className="absolute left-2 top-2 z-10 h-5 w-5 cursor-pointer"
+                        />
+                      )}
+                      <div className={props.selectable ? "pl-6" : undefined}>
+                        {props.renderKanbanCard(item)}
+                      </div>
+                    </div>
+                  );
+                })
               )}
             </div>
           </div>

@@ -275,7 +275,7 @@ export default function InterventionsPage() {
   return (
     <>
       <Breadcrumb items={[{ label: "Accueil", href: "/app" }, { label: "Carnet des champs" }]} />
-      <div className="mx-auto max-w-5xl px-2 py-4 sm:px-4 sm:py-8">
+      <div className="mx-auto w-full px-2 py-4 sm:px-4 sm:py-8">
         <PageHeader
           title="Carnet des champs"
           icon={Sprout}
@@ -346,6 +346,29 @@ export default function InterventionsPage() {
           searchPlaceholder="Rechercher type, parcelle, produit, culture, notes…"
           filters={filters}
           groupBys={groupBys}
+          selectable
+          bulkActions={[
+            {
+              key: "delete",
+              label: "Supprimer",
+              icon: Trash2,
+              className: "bg-red-600 hover:bg-red-700",
+              confirm: "Supprimer {n} intervention(s) ?",
+              handler: async (selected) => {
+                let ok = 0;
+                let ko = 0;
+                for (const iv of selected) {
+                  try {
+                    await deleteMutation.mutateAsync(iv.id);
+                    ok++;
+                  } catch {
+                    ko++;
+                  }
+                }
+                if (ko > 0) alert(`${ok} supprimées, ${ko} échecs.`);
+              },
+            },
+          ]}
           emptyState={
             <div>
               <Sprout className="mx-auto mb-2 h-10 w-10 text-foreground/30" />

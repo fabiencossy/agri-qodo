@@ -7,7 +7,7 @@
  * recherche Odoo-like, filtres, regroupements, favoris). En haut :
  * total UGB + bouton import BDTA. Plus de "vue compteurs" séparée.
  */
-import { Beef, Download, Upload } from "lucide-react";
+import { Beef, Download, Trash2, Upload } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
@@ -31,6 +31,7 @@ import {
   libelleLabel,
   libelleUsage,
   useAnimaux,
+  useDeleteAnimal,
   useUgb,
 } from "@/lib/animaux";
 import {
@@ -82,6 +83,7 @@ export default function CheptelPage() {
   const router = useRouter();
   const animauxQuery = useAnimaux();
   const ugb = useUgb();
+  const deleteMutation = useDeleteAnimal();
   const [importOpen, setImportOpen] = useState(false);
   const animaux = useMemo(() => animauxQuery.data ?? [], [animauxQuery.data]);
 
@@ -272,7 +274,7 @@ export default function CheptelPage() {
   return (
     <>
       <Breadcrumb items={[{ label: "Accueil", href: "/app" }, { label: "Cheptel" }]} />
-      <div className="mx-auto max-w-6xl px-2 py-4 sm:px-4 sm:py-8">
+      <div className="mx-auto w-full px-2 py-4 sm:px-4 sm:py-8">
         <PageHeader
           title="Cheptel"
           icon={Beef}
@@ -394,6 +396,29 @@ export default function CheptelPage() {
           filters={filters}
           groupBys={groupBys}
           onItemClick={(a) => router.push(`/animaux/${a.id}` as never)}
+          selectable
+          bulkActions={[
+            {
+              key: "delete",
+              label: "Supprimer",
+              icon: Trash2,
+              className: "bg-red-600 hover:bg-red-700",
+              confirm: "Supprimer {n} animal(aux) du cheptel ?",
+              handler: async (selected) => {
+                let ok = 0;
+                let ko = 0;
+                for (const a of selected) {
+                  try {
+                    await deleteMutation.mutateAsync(a.id);
+                    ok++;
+                  } catch {
+                    ko++;
+                  }
+                }
+                if (ko > 0) alert(`${ok} supprimés, ${ko} échecs.`);
+              },
+            },
+          ]}
           emptyState={
             <div>
               <p className="mb-3 text-sm text-foreground/60">
