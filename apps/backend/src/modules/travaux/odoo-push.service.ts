@@ -417,9 +417,18 @@ export class OdooPushService {
         // devis SANS jamais facturer les heures pointées. Best-effort :
         // si Odoo refuse pour une raison inattendue, on continue.
         try {
+          // Exclure les sections (display_type='line_section') et notes
+          // (display_type='line_note') — sinon on récupère la 1re ligne
+          // qui est la section "Travaux du JJ/MM" et Odoo refuse de la
+          // lier à la task ("Vous ne pouvez pas lier la ligne X car
+          // dépense refacturée" = faux positif Odoo, en réalité c'est
+          // juste qu'une section sans product_id n'est pas liable).
           const lines = await client.searchRead<{ id: number }>(
             "sale.order.line",
-            [["order_id", "=", saleOrderId]],
+            [
+              ["order_id", "=", saleOrderId],
+              ["display_type", "=", false],
+            ],
             { fields: ["id"], order: "sequence,id", limit: 1 },
           );
           const firstLineId = lines[0]?.id;
@@ -445,6 +454,36 @@ export class OdooPushService {
         this.logger.log(
           `project.task #${projectTaskId} créée pour travail ${travailId} ↔ sale.order #${saleOrderId} (projet #${tenantProject.odooProjectIdTravauxTiers})`,
         );
+
+        // Push des feuilles de temps : pour chaque LigneTravailHeure,
+        // on crée un account.analytic.line (= timesheet) sur la task,
+        // ce qui remplit "Temps passé" côté Odoo. Best-effort : si la
+        // table n'existe pas ou le mapping employé manque, on log et
+        // on continue. Si User.odooEmployeeId mappé, on l'utilise ;
+        // sinon Odoo prendra l'employé associé au compte API.
+        for (const lh of travail.lignesHeure) {
+          try {
+            const heures = Number(lh.dureeMinutes) / 60;
+            // Lookup employé Odoo si User a un odooEmployeeId mappé.
+            const userRow = await this.prisma.user.findUnique({
+              where: { id: lh.user.id },
+              select: { odooEmployeeId: true },
+            });
+            const employeeId = userRow?.odooEmployeeId ?? undefined;
+            await client.create("account.analytic.line", {
+              name: lh.notes ?? travail.titre,
+              date: travail.date.toISOString().slice(0, 10),
+              unit_amount: heures,
+              project_id: tenantProject.odooProjectIdTravauxTiers,
+              task_id: projectTaskId,
+              ...(employeeId ? { employee_id: employeeId } : {}),
+            });
+          } catch (err) {
+            this.logger.warn(
+              `Timesheet non créé sur task #${projectTaskId} : ${err instanceof Error ? err.message : err}`,
+            );
+          }
+        }
       }
     } catch (err) {
       this.logger.warn(

@@ -319,6 +319,13 @@ export class InterventionsService {
         include: this.includeRelations,
       });
 
+      // Durée résolue pour propagation au Travail (LigneTravailHeure) :
+      // si l'agriculteur a saisi heureDebut/heureFin OU dureeMinutes,
+      // on remonte la durée pour que le push Odoo crée un timesheet
+      // sur la project.task.
+      const heuresResolved = resolveHeures(dto);
+      const dureeMin = heuresResolved.dureeMinutes;
+
       if (dto.geomGeoJson) {
         await tx.$executeRawUnsafe(
           `UPDATE interventions
@@ -349,6 +356,7 @@ export class InterventionsService {
           materielId: dto.materielId,
           surfaceHa: surfaceHaResolu,
           notes: dto.notes,
+          dureeMinutes: dureeMin,
         });
 
         return {
@@ -401,6 +409,8 @@ export class InterventionsService {
       materielId: string | undefined;
       surfaceHa: number;
       notes: string | undefined;
+      /** Durée de l'intervention en minutes — propagée en LigneTravailHeure. */
+      dureeMinutes?: number | null;
     },
   ): Promise<string> {
     const parcelle = await tx.parcelle.findUnique({
@@ -432,6 +442,24 @@ export class InterventionsService {
     // champs (création de la Culture côté SEMIS). Seul le matériel
     // (prestation à l'hectare) entre dans le devis client.
 
+    // Propage la durée de l'intervention en LigneTravailHeure pour
+    // que le push Odoo crée un account.analytic.line (timesheet) sur
+    // la project.task → "Temps passé" non nul côté Odoo.
+    // userId = author de l'intervention. Tarif horaire : null pour
+    // que la ligne ne fasse pas grimper le total facturé (heures
+    // non-facturables, demande Fabien 2026-05-06).
+    const lignesHeure: Prisma.LigneTravailHeureCreateWithoutTravailInput[] = [];
+    if (args.dureeMinutes && args.dureeMinutes > 0) {
+      const ctx = this.tenantContext.tryGet();
+      if (ctx?.userId) {
+        lignesHeure.push({
+          dureeMinutes: args.dureeMinutes,
+          user: { connect: { id: ctx.userId } },
+          notes: titre,
+        });
+      }
+    }
+
     const travail = await tx.travail.create({
       data: {
         tenantId: args.authorTenantId,
@@ -443,6 +471,7 @@ export class InterventionsService {
         statut: TravailStatut.DRAFT,
         notes: args.notes ?? null,
         ...(lignesProduit.length > 0 ? { lignesProduit: { create: lignesProduit } } : {}),
+        ...(lignesHeure.length > 0 ? { lignesHeure: { create: lignesHeure } } : {}),
       },
       select: { id: true },
     });
