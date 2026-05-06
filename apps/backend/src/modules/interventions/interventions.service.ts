@@ -348,9 +348,6 @@ export class InterventionsService {
           dateOperation,
           materielId: dto.materielId,
           surfaceHa: surfaceHaResolu,
-          produit,
-          produitQuantite: dto.quantite,
-          produitUnite: dto.unite,
           notes: dto.notes,
         });
 
@@ -403,9 +400,6 @@ export class InterventionsService {
       dateOperation: Date;
       materielId: string | undefined;
       surfaceHa: number;
-      produit: { id: string; libelle: string } | null;
-      produitQuantite: number | undefined;
-      produitUnite: string | undefined;
       notes: string | undefined;
     },
   ): Promise<string> {
@@ -433,14 +427,10 @@ export class InterventionsService {
       }
     }
 
-    if (args.produit && args.produitQuantite !== undefined && args.produitQuantite > 0) {
-      lignesProduit.push({
-        libelle: args.produit.libelle,
-        quantite: args.produitQuantite,
-        unite: args.produitUnite ?? "kg",
-        produit: { connect: { id: args.produit.id } },
-      });
-    }
+    // NOTE Fabien 2026-05-06 : on ne facture PAS la semence/le produit
+    // au client. C'est juste de l'info agronomique pour le carnet des
+    // champs (création de la Culture côté SEMIS). Seul le matériel
+    // (prestation à l'hectare) entre dans le devis client.
 
     const travail = await tx.travail.create({
       data: {
