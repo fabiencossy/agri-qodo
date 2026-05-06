@@ -1,10 +1,11 @@
-import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { ForbiddenException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { type Materiel, type MaterielCategorie, type UserRole } from "@prisma/client";
 import { randomBytes } from "node:crypto";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { TenantContextService } from "@/common/tenant/tenant-context.service";
 import type { CreateMaterielDto } from "./dto/create-materiel.dto";
 import type { UpdateMaterielDto } from "./dto/update-materiel.dto";
+import { MaterielsOdooSyncService } from "./odoo-sync.service";
 
 /**
  * Catalogue Matériel — symétrique de Produits (global + tenant).
@@ -21,9 +22,11 @@ const ADMIN_ROLES: ReadonlySet<UserRole> = new Set<UserRole>(["OWNER", "COMPTABL
 
 @Injectable()
 export class MaterielsService {
+  private readonly logger = new Logger(MaterielsService.name);
   constructor(
     private readonly prisma: PrismaService,
     private readonly tenantContext: TenantContextService,
+    private readonly odooSync: MaterielsOdooSyncService,
   ) {}
 
   private isAdmin(): boolean {
@@ -87,7 +90,7 @@ export class MaterielsService {
     if (existing.tenantId !== tenantId) {
       throw new NotFoundException("Matériel introuvable");
     }
-    return this.prisma.materiel.update({
+    const updated = await this.prisma.materiel.update({
       where: { id },
       data: {
         ...(dto.libelle !== undefined ? { libelle: dto.libelle } : {}),
@@ -98,6 +101,18 @@ export class MaterielsService {
         ...(dto.actif !== undefined ? { actif: dto.actif } : {}),
       },
     });
+    // Sync bidirectionnelle (demande Fabien 2026-05-06 : "je veux
+    // pouvoir modifier les produits dans Odoo ou dans Agri Qodo").
+    if (updated.odooProductId) {
+      this.odooSync
+        .ensureOdooProduct(id)
+        .catch((err) =>
+          this.logger.warn(
+            `Sync Odoo après update matériel ${id} échouée : ${err instanceof Error ? err.message : err}`,
+          ),
+        );
+    }
+    return updated;
   }
 
   async remove(id: string): Promise<void> {

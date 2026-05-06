@@ -1,10 +1,11 @@
-import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { ForbiddenException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { type Produit, type ProduitCategorie, type UserRole } from "@prisma/client";
 import { randomBytes } from "node:crypto";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { TenantContextService } from "@/common/tenant/tenant-context.service";
 import type { CreateProduitDto } from "./dto/create-produit.dto";
 import type { UpdateProduitDto } from "./dto/update-produit.dto";
+import { OdooSyncService } from "./odoo-sync.service";
 
 /**
  * Module Produits — catalogue mixte global + tenant.
@@ -21,9 +22,11 @@ const ADMIN_ROLES: ReadonlySet<UserRole> = new Set<UserRole>(["OWNER", "COMPTABL
 
 @Injectable()
 export class ProduitsService {
+  private readonly logger = new Logger(ProduitsService.name);
   constructor(
     private readonly prisma: PrismaService,
     private readonly tenantContext: TenantContextService,
+    private readonly odooSync: OdooSyncService,
   ) {}
 
   private isAdmin(): boolean {
@@ -121,6 +124,21 @@ export class ProduitsService {
         ...(dto.actif !== undefined ? { actif: dto.actif } : {}),
       },
     });
+
+    // Sync bidirectionnelle (demande Fabien 2026-05-06 : "je veux
+    // pouvoir modifier les produits dans Odoo ou dans Agri Qodo").
+    // Si le produit est mappé Odoo, on push les valeurs locales
+    // mises à jour en best-effort. ensureOdooProduct gère le push
+    // bidir : write libelle/prix/uom puis pull pour aligner.
+    if (updated.odooProductId) {
+      this.odooSync
+        .ensureOdooProduct(id)
+        .catch((err) =>
+          this.logger.warn(
+            `Sync Odoo après update produit ${id} échouée : ${err instanceof Error ? err.message : err}`,
+          ),
+        );
+    }
     return this.maskPrice(updated);
   }
 
