@@ -534,9 +534,23 @@ export function ResourceView<T>(props: ResourceViewProps<T>) {
           actions={props.bulkActions ?? []}
           onAction={async (action) => {
             const items = filteredData.filter((it) => selectedKeys.has(props.getKey(it)));
-            if (action.confirm && !confirm(action.confirm.replace("{n}", String(items.length))))
-              return;
-            await action.handler(items);
+            console.log("[bulk-action] click", { key: action.key, count: items.length });
+            if (action.confirm) {
+              const ok = window.confirm(action.confirm.replace("{n}", String(items.length)));
+              console.log("[bulk-action] confirm result", ok);
+              if (!ok) return;
+            }
+            try {
+              await action.handler(items);
+              console.log("[bulk-action] handler done");
+            } catch (err) {
+              console.error("[bulk-action] handler threw", err);
+              alert(
+                `Erreur lors de l'action "${action.label}" :\n${
+                  err instanceof Error ? err.message : String(err)
+                }`,
+              );
+            }
             setSelectedKeys(new Set());
           }}
         />

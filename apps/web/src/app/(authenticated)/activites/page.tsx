@@ -306,21 +306,30 @@ export default function ActivitesPage() {
               className: "bg-red-600 hover:bg-red-700",
               confirm: "Supprimer {n} activité(s) ?",
               handler: async (selected) => {
+                console.log("[delete-bulk] start", { count: selected.length });
                 let ok = 0;
                 const errors: string[] = [];
                 for (const it of selected) {
+                  const id = it.kind === "CARNET" ? it.intervention.id : it.travail.id;
+                  console.log("[delete-bulk] deleting", { kind: it.kind, id });
                   try {
                     if (it.kind === "CARNET")
                       await deleteIntervention.mutateAsync(it.intervention.id);
                     else await deleteTravail.mutateAsync(it.travail.id);
                     ok++;
+                    console.log("[delete-bulk] ok", { kind: it.kind, id });
                   } catch (err) {
                     const msg = err instanceof Error ? err.message : String(err);
+                    console.error("[delete-bulk] failed", { kind: it.kind, id, err });
                     errors.push(`${it.kind === "CARNET" ? "Carnet" : "Travail"} : ${msg}`);
                   }
                 }
-                if (errors.length > 0)
+                console.log("[delete-bulk] done", { ok, errors });
+                if (errors.length > 0) {
                   alert(`${ok} supprimée(s), ${errors.length} échec(s) :\n\n${errors.join("\n")}`);
+                } else {
+                  alert(`✓ ${ok} activité${ok > 1 ? "s" : ""} supprimée${ok > 1 ? "s" : ""}.`);
+                }
               },
             },
           ]}
