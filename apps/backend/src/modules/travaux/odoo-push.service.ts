@@ -363,30 +363,47 @@ export class OdooPushService {
         select: { odooProjectIdTravauxTiers: true },
       });
       if (tenantProject?.odooProjectIdTravauxTiers) {
-        // Pour qu'Odoo affiche "Article de la commande client" sur la
-        // task (et pas "Non facturable"), il faut sale_line_id pointant
-        // vers une ligne précise du sale.order — pas seulement
-        // sale_order_id. On prend la 1re ligne service si présente,
-        // sinon la 1re ligne tout court.
-        const lines = await client.searchRead<{
-          id: number;
-          product_type?: string;
-          product_id?: [number, string] | false;
-        }>("sale.order.line", [["order_id", "=", saleOrderId]], {
-          fields: ["id", "product_type", "product_id"],
-          order: "sequence,id",
-        });
-        const serviceLine = lines.find((l) => l.product_type === "service");
-        const billableLineId = serviceLine?.id ?? lines[0]?.id;
-
+        // Création de la project.task SANS sale_line_id : on lie juste
+        // sale_order_id (le devis global). Si on essaie de poser
+        // sale_line_id direct dans le create, Odoo rejette toute la
+        // création quand le produit est marqué "dépense refacturée"
+        // (is_expense=true) ou que le service_tracking ne le permet
+        // pas — ce qui ferait perdre la task entière.
         projectTaskId = await client.create("project.task", {
           name: travail.titre,
           project_id: tenantProject.odooProjectIdTravauxTiers,
           partner_id: partnerId,
           date_deadline: travail.date.toISOString().slice(0, 10),
           sale_order_id: saleOrderId,
-          ...(billableLineId ? { sale_line_id: billableLineId } : {}),
         });
+
+        // Best-effort : on tente sale_line_id sur la 1re ligne service
+        // (ou à défaut la 1re ligne tout court). Si Odoo refuse — par
+        // exemple "Vous ne pouvez pas lier la ligne … car il s'agit
+        // d'une dépense refacturée" — on logue et on continue : la
+        // task reste liée au devis, juste pas à une ligne précise.
+        try {
+          const lines = await client.searchRead<{
+            id: number;
+            product_type?: string;
+            product_id?: [number, string] | false;
+          }>("sale.order.line", [["order_id", "=", saleOrderId]], {
+            fields: ["id", "product_type", "product_id"],
+            order: "sequence,id",
+          });
+          const serviceLine = lines.find((l) => l.product_type === "service");
+          const billableLineId = serviceLine?.id ?? lines[0]?.id;
+          if (billableLineId) {
+            await client.write("project.task", [projectTaskId], {
+              sale_line_id: billableLineId,
+            });
+          }
+        } catch (err) {
+          this.logger.warn(
+            `sale_line_id non lié sur task #${projectTaskId} (devis ${saleOrderId} créé OK) : ${err instanceof Error ? err.message : err}`,
+          );
+        }
+
         // Liaison bidirectionnelle (tasks_ids est Many2many côté sale.order).
         await client.write("sale.order", [saleOrderId], {
           tasks_ids: [[4, projectTaskId, 0]],
