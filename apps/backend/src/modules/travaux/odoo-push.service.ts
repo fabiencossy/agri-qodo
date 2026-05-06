@@ -391,18 +391,46 @@ export class OdooPushService {
         select: { odooProjectIdTravauxTiers: true },
       });
       if (tenantProject?.odooProjectIdTravauxTiers) {
+        // Active allow_billable et allow_timesheets sur le projet (one-time
+        // idempotent) — sans ces flags, Odoo masque le smart button
+        // "Devis" sur la task même si sale_order_id est posé. Best-effort.
+        try {
+          await client.write("project.project", [tenantProject.odooProjectIdTravauxTiers], {
+            allow_billable: true,
+            allow_timesheets: true,
+          });
+        } catch (err) {
+          this.logger.warn(
+            `Impossible d'activer allow_billable sur projet #${tenantProject.odooProjectIdTravauxTiers} : ${err instanceof Error ? err.message : err}`,
+          );
+        }
+
         // Création de la project.task SANS sale_line_id : on lie juste
         // sale_order_id (le devis global). Si on essaie de poser
         // sale_line_id direct dans le create, Odoo rejette toute la
         // création quand le produit est marqué "dépense refacturée"
         // (is_expense=true) ou que le service_tracking ne le permet
         // pas — ce qui ferait perdre la task entière.
+        const tenantOdooUrl = (
+          await this.prisma.exploitation.findUnique({
+            where: { id: tenantId },
+            select: { odooUrl: true },
+          })
+        )?.odooUrl;
+        const devisUrl = tenantOdooUrl
+          ? `${tenantOdooUrl.replace(/\/+$/, "")}/odoo/sales/${saleOrderId}`
+          : null;
+        const description = devisUrl
+          ? `<p>📄 <a href="${devisUrl}" target="_blank">Voir le devis associé</a></p>`
+          : "";
+
         projectTaskId = await client.create("project.task", {
           name: travail.titre,
           project_id: tenantProject.odooProjectIdTravauxTiers,
           partner_id: partnerId,
           date_deadline: travail.date.toISOString().slice(0, 10),
           sale_order_id: saleOrderId,
+          description,
         });
 
         // sale_line_id : on cible la PREMIÈRE ligne du sale.order, qui
