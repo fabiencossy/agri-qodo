@@ -368,6 +368,11 @@ model User {
   // re-prompt si nouvelle version publiée.
   cguAcceptedAt   DateTime? @map("cgu_accepted_at")
   cguVersion      String?   @map("cgu_version")
+  /// ID hr.employee Odoo associé à cet utilisateur. Utilisé pour
+  /// pousser les heures saisies dans Agri Qodo en account.analytic.line
+  /// (feuilles de temps Odoo) sous l'employé correspondant. Null = pas
+  /// encore mappé, les heures restent sur le tenant générique.
+  odooEmployeeId  Int?      @map("odoo_employee_id")
   createdAt    DateTime  @default(now()) @map("created_at")
   updatedAt    DateTime  @updatedAt @map("updated_at")
 

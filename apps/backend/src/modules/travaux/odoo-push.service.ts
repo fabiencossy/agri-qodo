@@ -41,10 +41,18 @@ export interface PushTravailResult {
 }
 
 interface OdooSaleOrderLineCreate {
-  product_id: number;
+  product_id?: number;
   name?: string;
-  product_uom_qty: number;
+  product_uom_qty?: number;
   price_unit?: number;
+  /** Unité de mesure Odoo (uom.uom). Si absent, Odoo prend l'unité par défaut du produit. */
+  product_uom?: number;
+  /**
+   * "line_section" pour un titre de section, "line_note" pour une note
+   * libre. Si renseigné, Odoo n'attend ni product_id ni quantité —
+   * c'est juste un séparateur visuel dans le devis.
+   */
+  display_type?: "line_section" | "line_note";
 }
 
 interface ResPartnerRow {
@@ -63,6 +71,10 @@ export class OdooPushService {
   // Cache mémoire (par process) du product.product "Heure de travail"
   // résolu/créé par tenant. Évite d'aller le rechercher à chaque push.
   private readonly hourProductCache = new Map<string, number>();
+
+  // Cache mémoire du mapping uom (string → uom_id) par tenant. Évite
+  // de relire uom.uom à chaque ligne. Clé : `${tenantId}:${uomLabelNormalized}`.
+  private readonly uomIdCache = new Map<string, number>();
 
   // Cache mémoire du project.project "Agri Qodo — Carnet des champs"
   // résolu/créé par tenant. Sert de container aux project.task créées
@@ -228,15 +240,29 @@ export class OdooPushService {
     // lignes côté FSM si on en crée une.
     const physicalLines: { productId: number; qty: number; name: string }[] = [];
 
-    // 2pre. Ligne service "ancrage task" en TÊTE du devis.
-    // Décision Fabien 2026-05-06 : on veut que la project.task soit
-    // visiblement liée au sale.order ET que les heures pointées sur
-    // la task soient NON facturables. Or les lignes facturables (ex
-    // "Plantation pommes de terre" 380 CHF/ha avec is_expense=true)
-    // refusent d'être liées via sale_line_id. Solution : on ajoute
-    // toujours une ligne service "Suivi des heures (non facturable)"
-    // en première position (qty=0, prix=0) qu'on utilise comme cible
-    // de sale_line_id sur la task. Effet :
+    // 2pre-section. Section en tête du devis avec date des travaux et
+    // nom de la parcelle (demande Fabien 2026-05-06). Permet à
+    // l'agriculteur et au client de voir d'un coup d'œil "à quoi
+    // correspond ce devis" sans aller fouiller dans la note ou la
+    // référence client.
+    const dateLabel = travail.date.toLocaleDateString("fr-CH");
+    const parcelleNom = travail.parcelle?.nom ?? null;
+    const sectionTitle = parcelleNom
+      ? `Travaux du ${dateLabel} — ${parcelleNom}`
+      : `Travaux du ${dateLabel}`;
+    orderLines.push({
+      display_type: "line_section",
+      name: sectionTitle,
+    });
+
+    // 2pre-anchor. Ligne service "ancrage task" en 2e position.
+    // On veut que la project.task soit visiblement liée au sale.order
+    // ET que les heures pointées sur la task soient NON facturables.
+    // Or les lignes facturables (ex "Plantation pommes de terre" 380
+    // CHF/ha avec is_expense=true) refusent d'être liées via
+    // sale_line_id. Solution : ligne service "Suivi des heures (non
+    // facturable)" qty=0/prix=0 qu'on utilise comme cible de
+    // sale_line_id sur la task. Effet :
     //   - smart button "Devis" visible sur la task
     //   - "Article de la commande client" rempli (= ligne placeholder)
     //   - les heures pointées s'attachent à cette ligne, qty = somme
@@ -297,6 +323,11 @@ export class OdooPushService {
         product_uom_qty: Number(lp.quantite),
       };
       if (lp.prixUnitaireCHF) line.price_unit = Number(lp.prixUnitaireCHF);
+      // Unité de mesure : on essaie de mapper lp.unite ("ha", "kg", "L"…)
+      // vers un uom.uom Odoo. Si non résolu, Odoo prend l'unité par
+      // défaut du produit (souvent "Unité(s)" — pas idéal pour des ha).
+      const uomId = await this.resolveUomId(client, tenantId, lp.unite);
+      if (uomId) line.product_uom = uomId;
       orderLines.push(line);
       // Routage FSM : seuls les produits "biens" (consu/product) — pas
       // les services — alimentent la future industry.fsm.task. Si
@@ -564,6 +595,59 @@ export class OdooPushService {
       linesCount: travail.lignesHeure.length,
       odooFsmTaskId: null,
     };
+  }
+
+  /**
+   * Résout l'ID uom.uom Odoo correspondant à une string métier ("ha",
+   * "kg", "L", "t", "m³"…). Cache par tenant. Lookup tolérant à la
+   * casse via name=ilike. Renvoie undefined si pas trouvé (Odoo
+   * utilisera l'unité par défaut du produit).
+   *
+   * Demande Fabien 2026-05-06 : "l'unité est fausse alors que sur
+   * agri qodo elle est juste". Avant ce helper, le push n'envoyait
+   * pas product_uom et Odoo prenait "Unité(s)" même pour des ha/kg.
+   */
+  private async resolveUomId(
+    client: OdooClient,
+    tenantId: string,
+    uomLabel: string | null | undefined,
+  ): Promise<number | undefined> {
+    if (!uomLabel) return undefined;
+    const normalized = uomLabel.trim().toLowerCase();
+    if (!normalized) return undefined;
+    const cacheKey = `${tenantId}:${normalized}`;
+    const cached = this.uomIdCache.get(cacheKey);
+    if (cached !== undefined) return cached;
+
+    // Synonymes courants côté Odoo FR pour matcher correctement même
+    // quand l'agriculteur a saisi en minuscules ou avec/sans accent.
+    const candidates: string[] = [uomLabel.trim()];
+    const synonyms: Record<string, string[]> = {
+      ha: ["ha", "Hectare", "hectares"],
+      kg: ["kg", "Kg", "Kilogramme", "kilogrammes"],
+      g: ["g", "Gramme", "grammes"],
+      t: ["t", "Tonne", "tonnes"],
+      l: ["L", "l", "Litre", "litres"],
+      m3: ["m³", "m3", "Mètre cube", "mètres cubes"],
+      "m³": ["m³", "m3", "Mètre cube"],
+      dose: ["dose", "Dose", "doses"],
+      unite: ["Unité(s)", "Unité", "unit"],
+      heure: ["Heures", "heure", "h"],
+    };
+    if (synonyms[normalized]) candidates.push(...synonyms[normalized]);
+
+    for (const candidate of candidates) {
+      const found = await client.searchRead<{ id: number }>(
+        "uom.uom",
+        [["name", "=ilike", candidate]],
+        { fields: ["id"], limit: 1 },
+      );
+      if (found.length > 0 && found[0]) {
+        this.uomIdCache.set(cacheKey, found[0].id);
+        return found[0].id;
+      }
+    }
+    return undefined;
   }
 
   /**
