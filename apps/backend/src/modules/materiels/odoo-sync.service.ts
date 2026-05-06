@@ -298,32 +298,77 @@ export class MaterielsOdooSyncService {
     if (!materiel) throw new NotFoundException("Matériel introuvable");
     if (materiel.odooProductId) return materiel.odooProductId;
 
+    // Dédup #1 : si on a déjà un matériel perso pour le même libellé
+    // côté tenant avec un odooProductId, on renvoie celui-ci sans rien
+    // recréer côté Odoo (cas où Fabien clique "Pousser" 2 fois sur un
+    // matériel global → on évite le doublon Odoo et le doublon perso).
+    if (materiel.tenantId === null) {
+      const existingPerso = await this.prisma.materiel.findFirst({
+        where: { tenantId, libelle: materiel.libelle, odooProductId: { not: null } },
+        select: { id: true, odooProductId: true },
+      });
+      if (existingPerso?.odooProductId) {
+        return existingPerso.odooProductId;
+      }
+    }
+
     const client = await this.odooClientManager.forTenant(tenantId);
 
     // Résout l'unité de mesure Odoo correspondant à matériel.unite.
     // Si introuvable, on laisse Odoo prendre l'unité par défaut.
     const uomId = await this.resolveUomId(client, tenantId, materiel.unite);
 
-    let odooId: number;
+    // Dédup #2 : avant de créer côté Odoo, on cherche par
+    // default_code AQ-{code} ou par name=service. Si trouvé, on
+    // réutilise au lieu de créer un doublon Odoo.
+    const defaultCode = `AQ-${materiel.code}`;
+    let odooId: number | undefined;
     try {
-      odooId = await client.create("product.product", {
-        name: materiel.libelle,
-        type: "service",
-        list_price: materiel.prixUnitaireCHF ? Number(materiel.prixUnitaireCHF) : 0,
-        // Code interne traçable côté Odoo — repère que ce service a été
-        // créé par agri-qodo.
-        default_code: `AQ-${materiel.code}`,
-        // Unité de mesure (uom.uom Odoo) — sert à afficher "ha" / "m³" /
-        // "t" / "h" sur le sale.order au lieu du défaut "Unité(s)".
-        ...(uomId ? { uom_id: uomId, uom_po_id: uomId } : {}),
-      });
-    } catch (err) {
-      this.logger.error(
-        `Création product.product service échouée pour matériel ${materielId} : ${err instanceof Error ? err.message : err}`,
+      const found = await client.searchRead<{ id: number }>(
+        "product.product",
+        [
+          "|",
+          ["default_code", "=", defaultCode],
+          "&",
+          ["name", "=", materiel.libelle],
+          ["type", "=", "service"],
+        ],
+        { fields: ["id"], limit: 1 },
       );
-      throw new ServiceUnavailableException(
-        "Impossible de créer le service côté Odoo. Vérifie la config.",
-      );
+      if (found.length > 0 && found[0]) {
+        odooId = found[0].id;
+      }
+    } catch {
+      // Lookup best-effort, on continue avec création si échec.
+    }
+
+    if (!odooId) {
+      try {
+        odooId = await client.create("product.product", {
+          name: materiel.libelle,
+          type: "service",
+          list_price: materiel.prixUnitaireCHF ? Number(materiel.prixUnitaireCHF) : 0,
+          // Code interne traçable côté Odoo — repère que ce service a été
+          // créé par agri-qodo.
+          default_code: defaultCode,
+          // Unité de mesure (uom.uom Odoo) — sert à afficher "ha" / "m³" /
+          // "t" / "h" sur le sale.order au lieu du défaut "Unité(s)".
+          ...(uomId ? { uom_id: uomId, uom_po_id: uomId } : {}),
+        });
+      } catch (err) {
+        this.logger.error(
+          `Création product.product service échouée pour matériel ${materielId} : ${err instanceof Error ? err.message : err}`,
+        );
+        throw new ServiceUnavailableException(
+          "Impossible de créer le service côté Odoo. Vérifie la config.",
+        );
+      }
+    } else if (uomId) {
+      // Produit existant côté Odoo : on aligne son unité sur celle
+      // d'Agri Qodo (ha/m³/t/h…) — best-effort.
+      await client
+        .write("product.product", [odooId], { uom_id: uomId, uom_po_id: uomId })
+        .catch(() => undefined);
     }
 
     // Si le matériel est global (tenantId null), on ne peut pas y stocker

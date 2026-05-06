@@ -64,11 +64,58 @@ function mapCategorie(categLabel: string | undefined): ProduitCategorie {
 export class OdooSyncService {
   private readonly logger = new Logger(OdooSyncService.name);
 
+  /** Cache du mapping ProduitUnite → uom.uom Odoo, par tenant. */
+  private readonly uomCache = new Map<string, Map<ProduitUnite, number>>();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly tenantContext: TenantContextService,
     private readonly odooClientManager: OdooClientManager,
   ) {}
+
+  /**
+   * Résout l'uom.uom Odoo correspondant à une ProduitUnite locale.
+   * Cache par tenant pour éviter les lookups répétés. Retourne null
+   * si Odoo n'a pas l'unité — auquel cas on laisse Odoo prendre son
+   * unité par défaut (souvent "Unité(s)").
+   */
+  private async resolveUomId(
+    client: import("@agri-qodo/odoo-client").OdooClient,
+    tenantId: string,
+    unite: ProduitUnite,
+  ): Promise<number | null> {
+    let cache = this.uomCache.get(tenantId);
+    if (!cache) {
+      cache = new Map();
+      this.uomCache.set(tenantId, cache);
+    }
+    const cached = cache.get(unite);
+    if (cached !== undefined) return cached || null;
+
+    const candidates: Record<ProduitUnite, string[]> = {
+      KG: ["kg", "Kilogramme(s)", "Kilogramme"],
+      T: ["Tonne(s)", "Tonne", "t"],
+      L: ["L", "Litre(s)", "Litre"],
+      M3: ["m³", "m3", "Mètre(s) cube", "Mètre cube"],
+      DOSE: ["Dose(s)", "Dose"],
+    };
+    for (const name of candidates[unite]) {
+      try {
+        const found = await client.searchRead<{ id: number }>("uom.uom", [["name", "=", name]], {
+          fields: ["id"],
+          limit: 1,
+        });
+        if (found.length > 0 && found[0]) {
+          cache.set(unite, found[0].id);
+          return found[0].id;
+        }
+      } catch {
+        // Continue trying next candidate
+      }
+    }
+    cache.set(unite, 0);
+    return null;
+  }
 
   private assertAdmin(): void {
     const ctx = this.tenantContext.tryGet();
@@ -197,23 +244,72 @@ export class OdooSyncService {
     if (!produit) throw new NotFoundException("Produit introuvable");
     if (produit.odooProductId) return produit.odooProductId;
 
+    // Dédup : si on a déjà un produit perso avec même libellé côté
+    // tenant, et qu'il a un odooProductId, on renvoie celui-ci.
+    if (produit.tenantId === null) {
+      const existingPerso = await this.prisma.produit.findFirst({
+        where: { tenantId, libelle: produit.libelle, odooProductId: { not: null } },
+        select: { id: true, odooProductId: true },
+      });
+      if (existingPerso?.odooProductId) {
+        return existingPerso.odooProductId;
+      }
+    }
+
     const client = await this.odooClientManager.forTenant(tenantId);
 
-    let odooId: number;
+    // Lookup Odoo par default_code AQ-{code} ou name+type=consu pour
+    // éviter un doublon côté Odoo si un produit identique existe déjà.
+    const defaultCode = `AQ-${produit.code}`;
+    let odooId: number | undefined;
     try {
-      odooId = await client.create("product.product", {
-        name: produit.libelle,
-        type: "consu",
-        list_price: produit.prixVenteCHF ? Number(produit.prixVenteCHF) : 0,
-        default_code: `AQ-${produit.code}`,
-      });
-    } catch (err) {
-      this.logger.error(
-        `Création product.product échouée pour produit ${produitId} : ${err instanceof Error ? err.message : err}`,
+      const found = await client.searchRead<{ id: number }>(
+        "product.product",
+        [
+          "|",
+          ["default_code", "=", defaultCode],
+          "&",
+          ["name", "=", produit.libelle],
+          ["type", "in", ["consu", "product"]],
+        ],
+        { fields: ["id"], limit: 1 },
       );
-      throw new ServiceUnavailableException(
-        "Impossible de créer le produit côté Odoo. Vérifie la config.",
-      );
+      if (found.length > 0 && found[0]) {
+        odooId = found[0].id;
+      }
+    } catch {
+      // Lookup best-effort.
+    }
+
+    // Unité de mesure Odoo correspondant à produit.unite (kg, t, L,
+    // m³, dose). Si trouvée on la pose à la création — sinon Odoo
+    // prend son défaut "Unité(s)" qui n'est pas adapté.
+    const uomId = await this.resolveUomId(client, tenantId, produit.unite);
+
+    if (!odooId) {
+      try {
+        odooId = await client.create("product.product", {
+          name: produit.libelle,
+          type: "consu",
+          list_price: produit.prixVenteCHF ? Number(produit.prixVenteCHF) : 0,
+          default_code: defaultCode,
+          ...(uomId ? { uom_id: uomId, uom_po_id: uomId } : {}),
+        });
+      } catch (err) {
+        this.logger.error(
+          `Création product.product échouée pour produit ${produitId} : ${err instanceof Error ? err.message : err}`,
+        );
+        throw new ServiceUnavailableException(
+          "Impossible de créer le produit côté Odoo. Vérifie la config.",
+        );
+      }
+    } else if (uomId) {
+      // Produit existant côté Odoo : on s'assure que son unité est
+      // alignée avec celle d'Agri Qodo (best-effort, ne casse pas si
+      // l'admin a verrouillé les unités côté Odoo).
+      await client
+        .write("product.product", [odooId], { uom_id: uomId, uom_po_id: uomId })
+        .catch(() => undefined);
     }
 
     if (produit.tenantId === null) {
