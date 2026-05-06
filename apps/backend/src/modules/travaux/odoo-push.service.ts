@@ -363,12 +363,29 @@ export class OdooPushService {
         select: { odooProjectIdTravauxTiers: true },
       });
       if (tenantProject?.odooProjectIdTravauxTiers) {
+        // Pour qu'Odoo affiche "Article de la commande client" sur la
+        // task (et pas "Non facturable"), il faut sale_line_id pointant
+        // vers une ligne précise du sale.order — pas seulement
+        // sale_order_id. On prend la 1re ligne service si présente,
+        // sinon la 1re ligne tout court.
+        const lines = await client.searchRead<{
+          id: number;
+          product_type?: string;
+          product_id?: [number, string] | false;
+        }>("sale.order.line", [["order_id", "=", saleOrderId]], {
+          fields: ["id", "product_type", "product_id"],
+          order: "sequence,id",
+        });
+        const serviceLine = lines.find((l) => l.product_type === "service");
+        const billableLineId = serviceLine?.id ?? lines[0]?.id;
+
         projectTaskId = await client.create("project.task", {
           name: travail.titre,
           project_id: tenantProject.odooProjectIdTravauxTiers,
           partner_id: partnerId,
           date_deadline: travail.date.toISOString().slice(0, 10),
           sale_order_id: saleOrderId,
+          ...(billableLineId ? { sale_line_id: billableLineId } : {}),
         });
         // Liaison bidirectionnelle (tasks_ids est Many2many côté sale.order).
         await client.write("sale.order", [saleOrderId], {
