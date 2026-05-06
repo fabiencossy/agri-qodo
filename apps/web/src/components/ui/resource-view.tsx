@@ -785,12 +785,22 @@ function SearchBar<T>(props: {
         // filtres doit passer au-dessus de la top-bar (sinon il se masque
         // quand on scroll le carnet sur mobile) mais rester sous le drawer
         // ouvert. 8500 satisfait les deux contraintes.
-        <div className="absolute left-0 right-0 top-full z-[8500] mt-2 grid max-h-[70vh] grid-cols-1 gap-0 overflow-y-auto rounded-xl border border-border bg-background shadow-xl md:grid-cols-3">
-          <PanelColumn title="Filtres" icon={FilterIcon} accent="text-purple-700">
-            {props.filters.length === 0 ? (
-              <p className="text-xs text-foreground/40">Pas de filtre prédéfini.</p>
-            ) : (
-              props.filters.map((f) => (
+        <div
+          className={`absolute left-0 right-0 top-full z-[8500] mt-2 grid max-h-[70vh] grid-cols-1 gap-0 overflow-y-auto rounded-xl border border-border bg-background shadow-xl ${
+            // Adapter le nombre de colonnes selon ce qui est dispo —
+            // évite les colonnes vides "Filtres / Regrouper par" sur
+            // les pages qui ne passent rien (demande Fabien
+            // 2026-05-06 : pas de filtres préconçus).
+            props.filters.length > 0 && props.groupBys.length > 0
+              ? "md:grid-cols-3"
+              : props.filters.length > 0 || props.groupBys.length > 0
+                ? "md:grid-cols-2"
+                : "md:grid-cols-1"
+          }`}
+        >
+          {props.filters.length > 0 && (
+            <PanelColumn title="Filtres" icon={FilterIcon} accent="text-purple-700">
+              {props.filters.map((f) => (
                 <PanelItem
                   key={f.key}
                   active={props.activeFilterKeys.includes(f.key)}
@@ -798,23 +808,28 @@ function SearchBar<T>(props: {
                 >
                   {f.label}
                 </PanelItem>
-              ))
-            )}
-          </PanelColumn>
-          <PanelColumn title="Regrouper par" icon={LayersIcon} accent="text-blue-700">
-            <PanelItem active={props.groupByKey === null} onClick={() => props.onSetGroupBy(null)}>
-              Aucun regroupement
-            </PanelItem>
-            {props.groupBys.map((g) => (
+              ))}
+            </PanelColumn>
+          )}
+          {props.groupBys.length > 0 && (
+            <PanelColumn title="Regrouper par" icon={LayersIcon} accent="text-blue-700">
               <PanelItem
-                key={g.key}
-                active={props.groupByKey === g.key}
-                onClick={() => props.onSetGroupBy(g.key)}
+                active={props.groupByKey === null}
+                onClick={() => props.onSetGroupBy(null)}
               >
-                {g.label}
+                Aucun regroupement
               </PanelItem>
-            ))}
-          </PanelColumn>
+              {props.groupBys.map((g) => (
+                <PanelItem
+                  key={g.key}
+                  active={props.groupByKey === g.key}
+                  onClick={() => props.onSetGroupBy(g.key)}
+                >
+                  {g.label}
+                </PanelItem>
+              ))}
+            </PanelColumn>
+          )}
           <PanelColumn title="Favoris" icon={Star} accent="text-amber-700">
             {props.favorites.length === 0 ? (
               <p className="text-xs text-foreground/40">Aucun favori.</p>
