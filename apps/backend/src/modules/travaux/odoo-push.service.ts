@@ -345,6 +345,44 @@ export class OdooPushService {
       data: { odooSaleOrderId: saleOrderId },
     });
 
+    // 4.5. Sprint D prestations v0.3 §5.4 — création d'une project.task
+    // standard liée au sale.order quand le tenant a configuré son projet
+    // Travaux pour tiers dans /parametres/exploitation. Best-effort :
+    // un échec ici ne casse pas le push sale.order. Permet de retrouver
+    // le travail dans la vue projet Odoo et de le visualiser comme une
+    // intervention terrain (sans dépendre d'industry_fsm).
+    let projectTaskId: number | null = null;
+    try {
+      const tenantProject = await this.prisma.exploitation.findUnique({
+        where: { id: tenantId },
+        select: { odooProjectIdTravauxTiers: true },
+      });
+      if (tenantProject?.odooProjectIdTravauxTiers) {
+        projectTaskId = await client.create("project.task", {
+          name: travail.titre,
+          project_id: tenantProject.odooProjectIdTravauxTiers,
+          partner_id: partnerId,
+          date_deadline: travail.date.toISOString().slice(0, 10),
+          sale_order_id: saleOrderId,
+        });
+        // Liaison bidirectionnelle (tasks_ids est Many2many côté sale.order).
+        await client.write("sale.order", [saleOrderId], {
+          tasks_ids: [[4, projectTaskId, 0]],
+        });
+        await this.prisma.travail.update({
+          where: { id: travailId },
+          data: { odooTaskId: projectTaskId },
+        });
+        this.logger.log(
+          `project.task #${projectTaskId} créée pour travail ${travailId} ↔ sale.order #${saleOrderId} (projet #${tenantProject.odooProjectIdTravauxTiers})`,
+        );
+      }
+    } catch (err) {
+      this.logger.warn(
+        `Création project.task best-effort échouée pour travail ${travailId} : ${err instanceof Error ? err.message : err}`,
+      );
+    }
+
     // 5. Création optionnelle de la industry.fsm.task ------------------
     // Si au moins une ligne physique ET le module FSM est installé,
     // on crée une tâche Field Service liée au sale.order. Permet à
@@ -371,8 +409,8 @@ export class OdooPushService {
 
     this.logger.log(
       `Push Odoo OK : travail ${travailId} → sale.order #${saleOrderId} (${orderLines.length} lignes)${
-        odooFsmTaskId ? ` + fsm.task #${odooFsmTaskId}` : ""
-      }`,
+        projectTaskId ? ` + project.task #${projectTaskId}` : ""
+      }${odooFsmTaskId ? ` + fsm.task #${odooFsmTaskId}` : ""}`,
     );
 
     return {
