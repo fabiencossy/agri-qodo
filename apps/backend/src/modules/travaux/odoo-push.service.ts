@@ -499,6 +499,18 @@ export class OdooPushService {
     const cached = this.carnetProjectCache.get(cacheKey);
     if (cached) return cached;
 
+    // Sprint B prestations v0.3 §2 : si l'OWNER a configuré le projet
+    // Odoo Carnet interne, on le réutilise pour les Travaux internes
+    // (même rôle métier : tâche sans devis). Sinon fallback historique.
+    const tenant = await this.prisma.exploitation.findUnique({
+      where: { id: tenantId },
+      select: { odooProjectIdCarnetInterne: true },
+    });
+    if (tenant?.odooProjectIdCarnetInterne) {
+      this.carnetProjectCache.set(cacheKey, tenant.odooProjectIdCarnetInterne);
+      return tenant.odooProjectIdCarnetInterne;
+    }
+
     const projectName = "Agri Qodo — Travaux internes";
     const found = await client.searchRead<{ id: number }>(
       "project.project",
@@ -757,6 +769,19 @@ export class OdooPushService {
   private async ensureCarnetProject(client: OdooClient, tenantId: string): Promise<number> {
     const cached = this.carnetProjectCache.get(tenantId);
     if (cached) return cached;
+
+    // Sprint B prestations v0.3 §2 : si l'OWNER a configuré le projet
+    // Odoo cible pour le Carnet interne dans Paramètres → Exploitation,
+    // on l'utilise. Sinon fallback sur l'auto-creation historique pour
+    // ne pas casser les tenants pré-Sprint B.
+    const tenant = await this.prisma.exploitation.findUnique({
+      where: { id: tenantId },
+      select: { odooProjectIdCarnetInterne: true },
+    });
+    if (tenant?.odooProjectIdCarnetInterne) {
+      this.carnetProjectCache.set(tenantId, tenant.odooProjectIdCarnetInterne);
+      return tenant.odooProjectIdCarnetInterne;
+    }
 
     const projectName = "Agri Qodo — Carnet des champs";
     const found = await client.searchRead<{ id: number }>(
