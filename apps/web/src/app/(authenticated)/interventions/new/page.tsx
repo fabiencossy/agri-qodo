@@ -23,7 +23,7 @@ import { Input } from "@/components/ui/input";
 import { MaterielPicker } from "@/components/ui/materiel-picker";
 import { ParcelleSearchSelect } from "@/components/ui/parcelle-search-select";
 import { PartenaireSelect } from "@/components/ui/partenaire-select";
-import { ProduitSearchSelect } from "@/components/ui/produit-search-select";
+import { ProduitFullscreenPicker } from "@/components/ui/produit-fullscreen-picker";
 import {
   emojiType,
   type InterventionGeoJsonPolygon,
@@ -677,8 +677,7 @@ export default function NewInterventionPage() {
                 control={control}
                 name="produitId"
                 render={({ field: { value, onChange } }) => (
-                  <ProduitSearchSelect
-                    categorie={categorie}
+                  <ProduitFullscreenPicker
                     value={value ?? ""}
                     onChange={(id) => onChange(id)}
                     placeholder={
@@ -686,7 +685,7 @@ export default function NewInterventionPage() {
                         ? "Choisir une semence…"
                         : "Choisir un produit du catalogue…"
                     }
-                    required={selectedType === "SEMIS"}
+                    defaultCategorie={categorie}
                   />
                 )}
               />

@@ -29,19 +29,33 @@ export function ProduitFullscreenPicker({
   value,
   onChange,
   placeholder = "Choisir un produit…",
+  defaultCategorie,
 }: {
   value: string;
   onChange: (id: string) => void;
   placeholder?: string;
+  /**
+   * Catégorie pré-cochée à l'ouverture (ex SEMENCE pour la semence
+   * d'un SEMIS). L'utilisateur peut basculer en "Toutes" pour voir
+   * tout le catalogue. Demande Fabien 2026-05-06 : "ouvrir la
+   * semence en pleine page aussi".
+   */
+  defaultCategorie?: ProduitCategorie;
 }) {
   const allProduits = useProduits();
   const odoo = useOdooConnected();
   const syncOdoo = useSyncProduitsOdoo();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const [filtreCat, setFiltreCat] = useState<ProduitCategorie | null>(null);
+  const [filtreCat, setFiltreCat] = useState<ProduitCategorie | null>(defaultCategorie ?? null);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Resync filtreCat quand le parent change defaultCategorie (ex
+  // changement de type d'intervention SEMIS → FUMURE).
+  useEffect(() => {
+    setFiltreCat(defaultCategorie ?? null);
+  }, [defaultCategorie]);
 
   const handleSyncOdoo = () => {
     setSyncMsg(null);
