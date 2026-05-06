@@ -240,12 +240,14 @@ export default function ActivitesPage() {
     return it.kind === "CARNET" ? `iv-${it.intervention.id}` : `tr-${it.travail.id}`;
   }
   function onItemClick(it: ActiviteUnifiee) {
-    // Click sur une carte → ouvre le formulaire de saisie pré-rempli
-    // (mode édition). Même UI que la création, valeurs chargées depuis l'API.
+    // Click sur une carte → ouvre la vue détail (lecture). Demande
+    // Fabien 2026-05-06 : "quand je clique sur une saisie je veux
+    // directement arriver sur la vue". L'édition reste accessible
+    // via le bouton "Modifier" sur la vue détail.
     if (it.kind === "CARNET") {
-      router.push(`/interventions/new?edit=${it.intervention.id}` as never);
+      router.push(`/interventions/${it.intervention.id}` as never);
     } else {
-      router.push(`/travaux/new?edit=${it.travail.id}` as never);
+      router.push(`/travaux/${it.travail.id}` as never);
     }
   }
 

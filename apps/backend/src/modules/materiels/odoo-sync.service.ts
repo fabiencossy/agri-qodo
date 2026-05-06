@@ -307,12 +307,14 @@ export class MaterielsOdooSyncService {
     if (materiel.odooProductId) {
       const client = await this.odooClientManager.forTenant(tenantId);
       const uomId = await this.resolveUomId(client, tenantId, materiel.unite);
-      // Push local → Odoo (best-effort).
+      // Push local → Odoo (best-effort). default_code mis à false
+      // pour effacer la référence interne AQ-... visible côté Odoo
+      // (demande Fabien 2026-05-06 : "sur Odoo y a tjs les ref!").
       await client
         .write("product.product", [materiel.odooProductId], {
           name: materiel.libelle,
           list_price: materiel.prixUnitaireCHF ? Number(materiel.prixUnitaireCHF) : 0,
-          default_code: `AQ-${materiel.code}`,
+          default_code: false,
           expense_policy: "no",
           ...(uomId ? { uom_id: uomId } : {}),
         })
@@ -402,9 +404,9 @@ export class MaterielsOdooSyncService {
           name: materiel.libelle,
           type: "service",
           list_price: materiel.prixUnitaireCHF ? Number(materiel.prixUnitaireCHF) : 0,
-          // Code interne traçable côté Odoo — repère que ce service a été
-          // créé par agri-qodo.
-          default_code: defaultCode,
+          // default_code retiré (demande Fabien 2026-05-06) — la
+          // traçabilité Agri Qodo passe par odooProductId stocké en
+          // local, pas par une référence interne visible côté Odoo.
           // Unité de mesure (uom.uom Odoo) — sert à afficher "ha" / "m³" /
           // "t" / "h" sur le sale.order au lieu du défaut "Unité(s)".
           ...(uomId ? { uom_id: uomId } : {}),

@@ -405,20 +405,36 @@ export class OdooPushService {
     try {
       const tenantProject = await this.prisma.exploitation.findUnique({
         where: { id: tenantId },
-        select: { odooProjectIdTravauxTiers: true },
+        select: {
+          odooProjectIdTravauxTiers: true,
+          odooProjectIdCarnetTiers: true,
+        },
       });
-      if (tenantProject?.odooProjectIdTravauxTiers) {
+      // Décision Fabien 2026-05-06 : un Travail issu d'une Intervention
+      // Carnet (cas B parcelle partenaire ou cas C client Odoo)
+      // appartient au projet "Carnet des champs tiers". Un Travail
+      // saisi explicitement via /travaux/new appartient à "Travaux
+      // pour tiers". On se base sur la présence d'une intervention
+      // liée pour distinguer les 2 cas.
+      const isFromCarnet = !!(await this.prisma.intervention.findFirst({
+        where: { linkedTravailId: travailId },
+        select: { id: true },
+      }));
+      const targetProjectId = isFromCarnet
+        ? (tenantProject?.odooProjectIdCarnetTiers ?? tenantProject?.odooProjectIdTravauxTiers)
+        : tenantProject?.odooProjectIdTravauxTiers;
+      if (targetProjectId) {
         // Active allow_billable et allow_timesheets sur le projet (one-time
         // idempotent) — sans ces flags, Odoo masque le smart button
         // "Devis" sur la task même si sale_order_id est posé. Best-effort.
         try {
-          await client.write("project.project", [tenantProject.odooProjectIdTravauxTiers], {
+          await client.write("project.project", [targetProjectId], {
             allow_billable: true,
             allow_timesheets: true,
           });
         } catch (err) {
           this.logger.warn(
-            `Impossible d'activer allow_billable sur projet #${tenantProject.odooProjectIdTravauxTiers} : ${err instanceof Error ? err.message : err}`,
+            `Impossible d'activer allow_billable sur projet #${targetProjectId} : ${err instanceof Error ? err.message : err}`,
           );
         }
 
@@ -429,7 +445,7 @@ export class OdooPushService {
         // custom — on laisse Odoo gérer son UI native.
         projectTaskId = await client.create("project.task", {
           name: travail.titre,
-          project_id: tenantProject.odooProjectIdTravauxTiers,
+          project_id: targetProjectId,
           partner_id: partnerId,
           date_deadline: travail.date.toISOString().slice(0, 10),
           sale_order_id: saleOrderId,
@@ -509,7 +525,7 @@ export class OdooPushService {
           data: { odooTaskId: projectTaskId },
         });
         this.logger.log(
-          `project.task #${projectTaskId} créée pour travail ${travailId} ↔ sale.order #${saleOrderId} (projet #${tenantProject.odooProjectIdTravauxTiers})`,
+          `project.task #${projectTaskId} créée pour travail ${travailId} ↔ sale.order #${saleOrderId} (projet #${targetProjectId})`,
         );
 
         // Push des feuilles de temps : pour chaque LigneTravailHeure,
@@ -531,7 +547,7 @@ export class OdooPushService {
               name: lh.notes ?? travail.titre,
               date: travail.date.toISOString().slice(0, 10),
               unit_amount: heures,
-              project_id: tenantProject.odooProjectIdTravauxTiers,
+              project_id: targetProjectId,
               task_id: projectTaskId,
               ...(employeeId ? { employee_id: employeeId } : {}),
             });

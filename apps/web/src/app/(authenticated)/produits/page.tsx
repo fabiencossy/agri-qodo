@@ -95,35 +95,64 @@ export default function ProduitsPage() {
     syncMaterielsOdoo.mutate(undefined);
   };
 
-  // Liste combinée : un seul tableau d'items, discriminés par `kind`.
-  // Tri : par libellé (les deux types mélangés alphabétiquement).
-  //
-  // Dédup : quand on push un GLOBAL vers Odoo, on duplique en perso
-  // pour pouvoir stocker odooProductId (les globaux sont read-only).
-  // Le global reste en base mais on le cache de la liste si un perso
-  // avec même libellé+catégorie existe — sinon Fabien voit 2 lignes
-  // identiques (l'une avec badge #odooId, l'autre "Pousser").
+  // Liste combinée + dédup full. Stratégie pour chaque type :
+  //   1. Grouper par clé (libellé+catégorie, lowercase).
+  //   2. Garder UN SEUL item par groupe :
+  //      - priorité au perso mappé Odoo (odooProductId posé)
+  //      - sinon perso (modifiable)
+  //      - sinon global (read-only)
+  // Couvre les doublons inter-perso créés par re-runs du script de
+  // sync (image 131 — Abricotier × 2, Algues × 2, Ammonitrate × 4).
   const items = useMemo<CatalogueItem[]>(() => {
-    const persoBienKeys = new Set<string>();
-    const persoPrestationKeys = new Set<string>();
-    for (const p of produits.data ?? []) {
-      if (p.tenantId !== null) persoBienKeys.add(`${p.libelle.toLowerCase()}|${p.categorie}`);
+    function dedupBiens(list: Produit[]): Produit[] {
+      const groups = new Map<string, Produit[]>();
+      for (const p of list) {
+        const key = `${p.libelle.toLowerCase().trim()}|${p.categorie}`;
+        const arr = groups.get(key) ?? [];
+        arr.push(p);
+        groups.set(key, arr);
+      }
+      const result: Produit[] = [];
+      for (const arr of groups.values()) {
+        // Tri : perso mappé Odoo > perso non-mappé > global.
+        arr.sort((a, b) => {
+          const aMappedPerso = a.tenantId !== null && a.odooProductId !== null ? 0 : 1;
+          const bMappedPerso = b.tenantId !== null && b.odooProductId !== null ? 0 : 1;
+          if (aMappedPerso !== bMappedPerso) return aMappedPerso - bMappedPerso;
+          const aPerso = a.tenantId !== null ? 0 : 1;
+          const bPerso = b.tenantId !== null ? 0 : 1;
+          return aPerso - bPerso;
+        });
+        if (arr[0]) result.push(arr[0]);
+      }
+      return result;
     }
-    for (const m of materiels.data ?? []) {
-      if (m.tenantId !== null) persoPrestationKeys.add(`${m.libelle.toLowerCase()}|${m.categorie}`);
+    function dedupPrestations(list: Materiel[]): Materiel[] {
+      const groups = new Map<string, Materiel[]>();
+      for (const m of list) {
+        const key = `${m.libelle.toLowerCase().trim()}|${m.categorie}`;
+        const arr = groups.get(key) ?? [];
+        arr.push(m);
+        groups.set(key, arr);
+      }
+      const result: Materiel[] = [];
+      for (const arr of groups.values()) {
+        arr.sort((a, b) => {
+          const aMappedPerso = a.tenantId !== null && a.odooProductId !== null ? 0 : 1;
+          const bMappedPerso = b.tenantId !== null && b.odooProductId !== null ? 0 : 1;
+          if (aMappedPerso !== bMappedPerso) return aMappedPerso - bMappedPerso;
+          const aPerso = a.tenantId !== null ? 0 : 1;
+          const bPerso = b.tenantId !== null ? 0 : 1;
+          return aPerso - bPerso;
+        });
+        if (arr[0]) result.push(arr[0]);
+      }
+      return result;
     }
-
     const all: CatalogueItem[] = [];
-    for (const p of produits.data ?? []) {
-      const key = `${p.libelle.toLowerCase()}|${p.categorie}`;
-      if (p.tenantId === null && persoBienKeys.has(key)) continue; // global masqué par perso
-      all.push({ kind: "bien", data: p });
-    }
-    for (const m of materiels.data ?? []) {
-      const key = `${m.libelle.toLowerCase()}|${m.categorie}`;
-      if (m.tenantId === null && persoPrestationKeys.has(key)) continue;
+    for (const p of dedupBiens(produits.data ?? [])) all.push({ kind: "bien", data: p });
+    for (const m of dedupPrestations(materiels.data ?? []))
       all.push({ kind: "prestation", data: m });
-    }
     all.sort((a, b) => libelle(a).localeCompare(libelle(b), "fr"));
     return all;
   }, [produits.data, materiels.data]);

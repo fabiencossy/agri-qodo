@@ -250,11 +250,13 @@ export class OdooSyncService {
     if (produit.odooProductId) {
       const client = await this.odooClientManager.forTenant(tenantId);
       const uomId = await this.resolveUomId(client, tenantId, produit.unite);
+      // default_code mis à false pour effacer la référence interne
+      // visible côté Odoo (demande Fabien 2026-05-06).
       await client
         .write("product.product", [produit.odooProductId], {
           name: produit.libelle,
           list_price: produit.prixVenteCHF ? Number(produit.prixVenteCHF) : 0,
-          default_code: `AQ-${produit.code}`,
+          default_code: false,
           ...(uomId ? { uom_id: uomId } : {}),
         })
         .catch((err) =>
@@ -338,7 +340,7 @@ export class OdooSyncService {
           name: produit.libelle,
           type: "consu",
           list_price: produit.prixVenteCHF ? Number(produit.prixVenteCHF) : 0,
-          default_code: defaultCode,
+          // default_code retiré (demande Fabien 2026-05-06).
           ...(uomId ? { uom_id: uomId } : {}),
         });
       } catch (err) {
