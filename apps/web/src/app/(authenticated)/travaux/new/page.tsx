@@ -97,6 +97,9 @@ export default function NewTravailPage() {
     dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam) ? dateParam : todayIso(),
   );
   const [partenaireId, setPartenaireId] = useState("");
+  // Décision Fabien 2026-05-06 : un client Odoo n'est pas un partenaire
+  // Agri Qodo. Le sélecteur peut renvoyer soit l'un soit l'autre.
+  const [odooPartnerId, setOdooPartnerId] = useState<number | null>(null);
   const [parcelleId, setParcelleId] = useState(
     parcelleIdParam && /^[0-9a-f-]{36}$/i.test(parcelleIdParam) ? parcelleIdParam : "",
   );
@@ -161,6 +164,7 @@ export default function NewTravailPage() {
     setTitre(t.titre);
     setDate(t.date.slice(0, 10));
     setPartenaireId(t.partenaireId ?? "");
+    setOdooPartnerId(t.odooPartnerId ?? null);
     setParcelleId(t.parcelleId ?? "");
     setProjetId(t.projetId ?? "");
     setInterne(t.interne);
@@ -227,7 +231,7 @@ export default function NewTravailPage() {
    */
   async function onSubmitPlanning() {
     setError(null);
-    if (!interne && !partenaireId) {
+    if (!interne && !partenaireId && !odooPartnerId) {
       setError("Sélectionne un client (obligatoire pour un travail pour tiers).");
       return;
     }
@@ -240,6 +244,7 @@ export default function NewTravailPage() {
       datePrevue: date,
       interne,
       ...(partenaireId && !interne ? { partenaireId } : {}),
+      ...(odooPartnerId && !interne ? { odooPartnerId } : {}),
       ...(parcelleId ? { parcelleId } : {}),
       ...(projetId ? { projetId } : {}),
       ...(assignedToUserId ? { assignedToUserId } : {}),
@@ -255,7 +260,7 @@ export default function NewTravailPage() {
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    if (!interne && !partenaireId) {
+    if (!interne && !partenaireId && !odooPartnerId) {
       setError("Sélectionne un client (obligatoire pour un travail pour tiers).");
       return;
     }
@@ -301,6 +306,7 @@ export default function NewTravailPage() {
       date,
       interne,
       ...(partenaireId && !interne ? { partenaireId } : {}),
+      ...(odooPartnerId && !interne ? { odooPartnerId } : {}),
       ...(parcelleId ? { parcelleId } : {}),
       ...(projetId ? { projetId } : {}),
       ...(notes ? { notes } : {}),
@@ -400,9 +406,15 @@ export default function NewTravailPage() {
           {!interne && (
             <Field label="Client" required>
               <PartenaireSelect
-                value={partenaireId}
-                onChange={setPartenaireId}
-                placeholder="Choisir un client lié…"
+                value={{
+                  ...(partenaireId ? { partenaireId } : {}),
+                  ...(odooPartnerId ? { odooPartnerId } : {}),
+                }}
+                onChange={(next) => {
+                  setPartenaireId(next.partenaireId ?? "");
+                  setOdooPartnerId(next.odooPartnerId ?? null);
+                }}
+                placeholder="Choisir un client…"
               />
             </Field>
           )}

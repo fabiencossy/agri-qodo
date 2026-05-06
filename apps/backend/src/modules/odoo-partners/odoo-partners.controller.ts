@@ -4,16 +4,10 @@
  */
 import { Body, Controller, Get, Post, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
-import { IsEmail, IsInt, IsOptional, IsString, MaxLength, Min, MinLength } from "class-validator";
+import { IsEmail, IsOptional, IsString, MaxLength, MinLength } from "class-validator";
 import { TenantContextService } from "@/common/tenant/tenant-context.service";
 import { JwtAuthGuard } from "@/modules/auth/guards/jwt-auth.guard";
 import { OdooPartnersService, type OdooPartnerOut } from "./odoo-partners.service";
-
-class LinkOdooPartnerDto {
-  @IsInt()
-  @Min(1)
-  odooPartnerId!: number;
-}
 
 class CreateClientRapideDto {
   @IsString()
@@ -69,21 +63,11 @@ export class OdooPartnersController {
   @Post()
   @ApiOperation({
     summary:
-      "Création rapide d'un client (Sprint 2). Crée une Exploitation shadow + un PartnerLink ACTIVE + best-effort res.partner Odoo. Renvoie l'exploitationId pour utilisation immédiate dans Travail.partenaireId.",
+      "Création rapide d'un res.partner Odoo (sans Exploitation Agri Qodo). Décision Fabien 2026-05-06 : un client Odoo n'est PAS un partenaire — on stocke juste l'ID Odoo dans Travail.odooPartnerId.",
   })
   create(@Body() dto: CreateClientRapideDto) {
     const { tenantId } = this.tenantContext.get();
     return this.service.createQuickClient(tenantId, dto);
-  }
-
-  @Post("link")
-  @ApiOperation({
-    summary:
-      "Lie un res.partner Odoo existant à une Exploitation shadow Agri Qodo (auto-création + PartnerLink ACTIVE). Idempotent : si déjà lié, renvoie l'exploitationId existant. Permet la sélection d'un client Odoo 'seul' depuis le PartenaireSelect sans passer par /partenaires.",
-  })
-  link(@Body() dto: LinkOdooPartnerDto) {
-    const { tenantId } = this.tenantContext.get();
-    return this.service.linkOdooPartner(tenantId, dto.odooPartnerId);
   }
 }
 

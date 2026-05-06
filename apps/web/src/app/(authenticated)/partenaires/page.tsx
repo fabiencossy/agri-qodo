@@ -185,10 +185,15 @@ function PartnerCard({ link, variant }: { link: PartnerLinkView; variant: CardVa
     if (confirm(`Veux-tu ${verb} ?`)) revoke.mutate(link.id);
   };
 
+  // Defensive : les liens créés rapidement (createQuickClient,
+  // linkOdooPartner) initialisent scope = {} sans champ `parcelles`.
+  const scopeParcelles = link.scope?.parcelles;
   const scopeLibelle =
-    link.scope.parcelles === "all"
+    scopeParcelles === "all"
       ? "toutes les parcelles"
-      : `${link.scope.parcelles.length} parcelle(s)`;
+      : Array.isArray(scopeParcelles)
+        ? `${scopeParcelles.length} parcelle(s)`
+        : "—";
 
   return (
     <div className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-border bg-background p-4">

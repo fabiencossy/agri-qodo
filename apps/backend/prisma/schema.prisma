@@ -931,6 +931,13 @@ model Travail {
   // Une fois poussé vers Odoo, on garde la trace du sale.order créé pour
   // pouvoir réconcilier (et bloquer la modification).
   odooSaleOrderId Int?       @map("odoo_sale_order_id")
+  /// Client Odoo "seul" (res.partner) — utilisé quand le travail s'adresse
+  /// à un client qui n'est PAS sur Agri Qodo. Stocke uniquement l'ID Odoo,
+  /// pas d'Exploitation ni de PartnerLink créés. Mutuellement exclusif
+  /// avec partenaireId : soit l'un, soit l'autre. Décision Fabien
+  /// 2026-05-06 : ne plus polluer la liste des Partenaires avec des
+  /// shadows pour les clients Odoo "non-agri-qodo".
+  odooPartnerId   Int?       @map("odoo_partner_id")
   // Pour les travaux interne (interne=true), on ne crée pas de devis
   // mais une project.task avec le détail (heures, employés, parcelle…)
   // dans le chatter Odoo. Sert à tracer côté Odoo sans facturer.

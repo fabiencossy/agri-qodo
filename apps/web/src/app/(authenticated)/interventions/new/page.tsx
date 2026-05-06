@@ -511,11 +511,12 @@ export default function NewInterventionPage() {
             hint="Si renseigné, filtre les parcelles à celles du client. Laisse vide pour tes parcelles."
           >
             <PartenaireSelect
-              value={clientId}
-              onChange={(id) => {
-                setClientId(id);
-                // Reset parcelle si on change de client (sinon l'ID
-                // sélectionné peut ne plus matcher la liste filtrée).
+              value={clientId ? { partenaireId: clientId } : {}}
+              onChange={(next) => {
+                // Carnet : seul un vrai partenaire Agri Qodo permet de
+                // filtrer les parcelles. Les clients Odoo "seuls" ne
+                // sont pas exploitables ici (pas de parcelles côté Agri).
+                setClientId(next.partenaireId ?? "");
                 setValue("parcelleId", "");
               }}
               placeholder="Choisir un client lié…"

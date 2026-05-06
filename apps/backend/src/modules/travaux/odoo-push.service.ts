@@ -153,7 +153,12 @@ export class OdooPushService {
 
     // 1. Résolution / création du res.partner (client) ----------------
     let partnerId: number | undefined;
-    if (travail.partenaireId && travail.partenaire) {
+    // Décision Fabien 2026-05-06 : si Travail.odooPartnerId est posé,
+    // c'est un client Odoo "seul" (pas un partenaire Agri Qodo) — on
+    // l'utilise directement, pas de lookup PartnerLink.
+    if (travail.odooPartnerId) {
+      partnerId = travail.odooPartnerId;
+    } else if (travail.partenaireId && travail.partenaire) {
       const link = await this.prisma.partnerLink.findFirst({
         where: {
           OR: [
