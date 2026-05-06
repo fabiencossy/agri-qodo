@@ -5,7 +5,12 @@ import { useMemo, useState } from "react";
 import { Breadcrumb } from "@/components/app/breadcrumb";
 import { PageHeader } from "@/components/app/page-header";
 import { Button } from "@/components/ui/button";
-import { type FilterOption, type ListColumn, ResourceView } from "@/components/ui/resource-view";
+import {
+  type FilterOption,
+  type GroupByOption,
+  type ListColumn,
+  ResourceView,
+} from "@/components/ui/resource-view";
 import { useCurrentUser } from "@/lib/auth";
 import {
   MATERIEL_CATEGORIE_LABEL,
@@ -231,6 +236,50 @@ export default function ProduitsPage() {
   const filters: FilterOption<CatalogueItem>[] = [
     { key: "biens", label: "Biens", predicate: (i) => i.kind === "bien" },
     { key: "prestations", label: "Prestations", predicate: (i) => i.kind === "prestation" },
+    {
+      key: "with-odoo",
+      label: "Synchronisés Odoo",
+      predicate: (i) => i.data.odooProductId !== null,
+    },
+    {
+      key: "without-odoo",
+      label: "Non synchronisés",
+      predicate: (i) => i.data.odooProductId === null,
+    },
+    { key: "perso", label: "Perso (modifiables)", predicate: (i) => i.data.tenantId !== null },
+    { key: "global", label: "Globaux (lecture seule)", predicate: (i) => i.data.tenantId === null },
+    { key: "with-price", label: "Avec tarif", predicate: (i) => tarif(i) !== null },
+    { key: "without-price", label: "Sans tarif", predicate: (i) => tarif(i) === null },
+  ];
+
+  const groupBys: GroupByOption<CatalogueItem>[] = [
+    {
+      key: "type",
+      label: "Type (Bien / Prestation)",
+      groupKey: (i) => i.kind,
+      groupLabel: (k) => (k === "bien" ? "Biens" : "Prestations"),
+      order: ["bien", "prestation"],
+    },
+    {
+      key: "categorie",
+      label: "Catégorie",
+      groupKey: (i) => `${i.kind}:${categorieLabel(i)}`,
+      groupLabel: (k) => k.split(":").slice(1).join(":"),
+    },
+    {
+      key: "source",
+      label: "Source (perso / global)",
+      groupKey: (i) => (i.data.tenantId === null ? "global" : "perso"),
+      groupLabel: (k) => (k === "global" ? "Globaux (catalogue Agridea)" : "Perso (mes entrées)"),
+      order: ["perso", "global"],
+    },
+    {
+      key: "odoo",
+      label: "Sync Odoo",
+      groupKey: (i) => (i.data.odooProductId ? "synced" : "not-synced"),
+      groupLabel: (k) => (k === "synced" ? "Synchronisés Odoo" : "Non synchronisés"),
+      order: ["synced", "not-synced"],
+    },
   ];
 
   const renderCard = (item: CatalogueItem) => (
@@ -341,6 +390,7 @@ export default function ProduitsPage() {
             return [m.libelle, m.notes ?? "", m.code].join(" ");
           }}
           filters={filters}
+          groupBys={groupBys}
           getKey={(item) => `${item.kind}-${item.data.id}`}
           searchPlaceholder="Rechercher un bien ou une prestation…"
           availableViews={["list", "kanban", "card"]}
