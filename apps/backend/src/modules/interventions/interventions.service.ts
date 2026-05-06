@@ -175,7 +175,7 @@ export class InterventionsService {
     // Parcelle accessible : la mienne OU celle d'un partenaire ACTIVE.
     const parcelle = await this.prisma.parcelle.findFirst({
       where: { id: dto.parcelleId },
-      select: { id: true, tenantId: true, surfaceM2: true },
+      select: { id: true, tenantId: true, surfaceM2: true, odooPartnerId: true },
     });
     if (!parcelle) {
       throw new ForbiddenException("Parcelle introuvable");
@@ -332,12 +332,17 @@ export class InterventionsService {
       // Cas B (intervention sur parcelle d'un partenaire) : on crée
       // automatiquement un Travail facturable chez le prestataire (=
       // tenant courant), avec partenaireId = propriétaire de la parcelle.
+      // Cas C (parcelle créée pour un client Odoo non-partenaire) :
+      // même chose mais avec odooPartnerId à la place de partenaireId.
       let casBTravailId: string | null = null;
-      if (validationStatus === ValidationStatus.PENDING) {
+      const casC = parcelle.odooPartnerId !== null && parcelle.odooPartnerId !== undefined;
+      if (validationStatus === ValidationStatus.PENDING || casC) {
         casBTravailId = await this.createCasBTravail(tx, {
           interventionId: created.id,
           authorTenantId,
-          partenaireId: ownerTenantId,
+          ...(casC
+            ? { odooPartnerId: parcelle.odooPartnerId as number }
+            : { partenaireId: ownerTenantId }),
           parcelleId: dto.parcelleId,
           type: dto.type,
           dateOperation,
@@ -389,7 +394,10 @@ export class InterventionsService {
     args: {
       interventionId: string;
       authorTenantId: string;
-      partenaireId: string;
+      /** Cas B : tenant Agri Qodo propriétaire de la parcelle. */
+      partenaireId?: string;
+      /** Cas C : client Odoo non-partenaire (res.partner). */
+      odooPartnerId?: number;
       parcelleId: string;
       type: InterventionType;
       dateOperation: Date;
@@ -437,7 +445,8 @@ export class InterventionsService {
     const travail = await tx.travail.create({
       data: {
         tenantId: args.authorTenantId,
-        partenaireId: args.partenaireId,
+        ...(args.partenaireId ? { partenaireId: args.partenaireId } : {}),
+        ...(args.odooPartnerId !== undefined ? { odooPartnerId: args.odooPartnerId } : {}),
         parcelleId: args.parcelleId,
         titre,
         date: args.dateOperation,

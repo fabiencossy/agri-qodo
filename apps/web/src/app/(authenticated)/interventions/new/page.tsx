@@ -209,7 +209,21 @@ export default function NewInterventionPage() {
     // Note : on ne touche pas `toutLeChamp` ici — l'effet
     // selectedParcelleId le reset à true. L'utilisateur peut décocher
     // s'il veut modifier la sous-zone partielle.
-  }, [isEditMode, existingIntervention.data, loadedId, reset]);
+    //
+    // Pré-remplir le sélecteur Client à partir de la parcelle de
+    // l'intervention :
+    // - cas A (parcelle perso) → pas de client
+    // - cas B (parcelle d'un partenaire) → clientId = parcelle.tenantId
+    // - cas C (parcelle d'un client Odoo) → clientOdooId = parcelle.odooPartnerId
+    const accessible = accessiblesParcelles.data?.find((p) => p.id === iv.parcelleId);
+    if (accessible) {
+      if (!accessible.isOwn) {
+        setClientId(accessible.tenantId);
+      } else if (accessible.odooPartnerId) {
+        setClientOdooId(accessible.odooPartnerId);
+      }
+    }
+  }, [isEditMode, existingIntervention.data, loadedId, reset, accessiblesParcelles.data]);
 
   const selectedType = useWatch({ control, name: "type" });
   const selectedProduitId = useWatch({ control, name: "produitId" });
