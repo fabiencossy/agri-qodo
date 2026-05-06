@@ -192,9 +192,17 @@ async function syncTenant(tenantId: string, nom: string): Promise<void> {
           name: p.libelle,
           type: "consu",
           list_price: p.prixVenteCHF ? Number(p.prixVenteCHF) : 0,
-          default_code: defaultCode,
-          ...(uomId ? { uom_id: uomId } : {}),
+          ...(uomId ? { uom_id: uomId, uom_po_id: uomId } : {}),
         });
+      } else if (uomId) {
+        // Ré-aligne uom + efface default_code sur les products déjà créés.
+        await client
+          .write("product.product", [odooId], {
+            uom_id: uomId,
+            uom_po_id: uomId,
+            default_code: false,
+          })
+          .catch(() => undefined);
       }
       await prisma.produit.update({
         where: { id: p.id },
@@ -259,10 +267,18 @@ async function syncTenant(tenantId: string, nom: string): Promise<void> {
           name: m.libelle,
           type: "service",
           list_price: m.prixUnitaireCHF ? Number(m.prixUnitaireCHF) : 0,
-          default_code: defaultCode,
           expense_policy: "no",
-          ...(uomId ? { uom_id: uomId } : {}),
+          ...(uomId ? { uom_id: uomId, uom_po_id: uomId } : {}),
         });
+      } else if (uomId) {
+        await client
+          .write("product.product", [odooId], {
+            uom_id: uomId,
+            uom_po_id: uomId,
+            expense_policy: "no",
+            default_code: false,
+          })
+          .catch(() => undefined);
       }
       await prisma.materiel.update({
         where: { id: m.id },

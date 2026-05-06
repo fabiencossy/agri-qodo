@@ -221,10 +221,21 @@ export default function ActivitesPage() {
       date: iv.dateOperation,
       intervention: iv,
     }));
-    const fromTravaux: ActiviteUnifiee[] = (travaux.data ?? []).map((t: Travail) => {
-      const kind = travailKind(t);
-      return { kind, date: t.date, travail: t } as ActiviteUnifiee;
-    });
+    // Set des Travaux "shadow" créés automatiquement par une Intervention
+    // cas B/C (parcelle partenaire ou client Odoo). Ils sont collectés via
+    // Intervention.linkedTravailId pour être masqués de la liste — sinon
+    // chaque saisie chez un client apparaît 2 fois (CARNET + TIERS).
+    // Décision Fabien 2026-05-06 : "je veux uniquement une seule activité
+    // mais qui va dans le projet carnet des champs tiers sur Odoo".
+    const shadowTravailIds = new Set<string>(
+      (interventions.data ?? []).map((iv) => iv.linkedTravailId).filter((id): id is string => !!id),
+    );
+    const fromTravaux: ActiviteUnifiee[] = (travaux.data ?? [])
+      .filter((t: Travail) => !shadowTravailIds.has(t.id))
+      .map((t: Travail) => {
+        const kind = travailKind(t);
+        return { kind, date: t.date, travail: t } as ActiviteUnifiee;
+      });
     return [...fromIv, ...fromTravaux].sort((a, b) => {
       const aPending = a.kind === "CARNET" && a.intervention.validationStatus === "PENDING" ? 1 : 0;
       const bPending = b.kind === "CARNET" && b.intervention.validationStatus === "PENDING" ? 1 : 0;

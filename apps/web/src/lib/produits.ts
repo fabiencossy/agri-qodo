@@ -72,7 +72,7 @@ export function useCreateProduit() {
 export function useUpdateProduit() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, ...input }: CreateProduitInput & { id: string }) =>
+    mutationFn: ({ id, ...input }: Partial<CreateProduitInput> & { id: string }) =>
       api<Produit>(`/api/produits/${id}`, { method: "PATCH", body: input }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: KEY });

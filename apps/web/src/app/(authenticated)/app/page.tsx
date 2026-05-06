@@ -162,7 +162,7 @@ export default function HomePage() {
             color="bg-emerald-50 text-emerald-700"
           />
           <StatCard
-            href="/interventions"
+            href="/activites"
             icon={Sprout}
             label="Interventions 7j"
             value={nbInterventions7j.toString()}
@@ -210,7 +210,7 @@ export default function HomePage() {
           <h2 className="text-xs font-semibold uppercase tracking-wider text-foreground/50">
             Dernières interventions
           </h2>
-          <Link href="/interventions" className="text-xs font-medium text-green hover:underline">
+          <Link href="/activites" className="text-xs font-medium text-green hover:underline">
             Voir tout →
           </Link>
         </div>

@@ -32,6 +32,7 @@ import {
   usePushProduitOdoo,
   useSyncProduitsOdoo,
 } from "@/lib/produits";
+import { type CatalogueItemForEdit, EditCatalogueItemDialog } from "./edit-catalogue-item-dialog";
 import { NewMaterielDialog } from "./new-materiel-dialog";
 import { NewProduitDialog } from "./new-produit-dialog";
 
@@ -74,6 +75,7 @@ export default function ProduitsPage() {
   const [dialogMateriel, setDialogMateriel] = useState(false);
   const [chooseTypeOpen, setChooseTypeOpen] = useState(false);
   const [syncResult, setSyncResult] = useState<SyncOdooProduitsResult | null>(null);
+  const [editing, setEditing] = useState<CatalogueItemForEdit | null>(null);
 
   const produits = useProduits();
   const materiels = useMateriels();
@@ -438,6 +440,7 @@ export default function ProduitsPage() {
           filters={filters}
           groupBys={groupBys}
           getKey={itemKey}
+          onItemClick={(item) => setEditing(item)}
           searchPlaceholder="Rechercher un bien ou une prestation…"
           availableViews={["list", "kanban", "card"]}
           selectable
@@ -509,6 +512,7 @@ export default function ProduitsPage() {
       )}
       <NewProduitDialog open={dialogProduit} onClose={() => setDialogProduit(false)} />
       <NewMaterielDialog open={dialogMateriel} onClose={() => setDialogMateriel(false)} />
+      <EditCatalogueItemDialog item={editing} onClose={() => setEditing(null)} />
     </>
   );
 }
