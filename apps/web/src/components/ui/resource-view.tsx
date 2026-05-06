@@ -732,10 +732,6 @@ interface CalendarViewProps<T> {
   onItemClick?: (item: T) => void;
 }
 
-function startOfMonth(d: Date): Date {
-  return new Date(d.getFullYear(), d.getMonth(), 1);
-}
-
 function isSameDay(a: Date, b: Date): boolean {
   return (
     a.getFullYear() === b.getFullYear() &&
@@ -753,13 +749,14 @@ function CalendarView<T>({
   renderItem,
   onItemClick,
 }: CalendarViewProps<T>) {
-  const [cursor, setCursor] = useState<Date>(() => startOfMonth(new Date()));
-  // Mode jour vs mois. Default = "day" sur mobile (<sm) car la grille
-  // mensuelle est inutilisable sur petit écran (image 119, demande
-  // Fabien 2026-05-06). Sur desktop on garde le mensuel.
-  const [mode, setMode] = useState<"day" | "month">(() => {
-    if (typeof window === "undefined") return "month";
-    return window.matchMedia("(max-width: 639px)").matches ? "day" : "month";
+  // Mode jour vs semaine. Décision Fabien 2026-05-06 : "au pire on a
+  // besoin par semaine mais jamais par mois". Le mode mensuel est
+  // retiré (inutilisable sur mobile, peu pertinent sur desktop pour
+  // une exploitation agricole où on raisonne par semaine de travail).
+  // Default = "day" sur mobile, "week" sur desktop.
+  const [mode, setMode] = useState<"day" | "week">(() => {
+    if (typeof window === "undefined") return "week";
+    return window.matchMedia("(max-width: 639px)").matches ? "day" : "week";
   });
   const [dayCursor, setDayCursor] = useState<Date>(() => new Date());
 
@@ -779,27 +776,20 @@ function CalendarView<T>({
     return map;
   }, [data, dateField]);
 
-  // Construit la grille du mois : 1ère case = lundi de la semaine du 1er
-  // jour du mois (peut être en mois précédent), 6 semaines × 7 jours.
-  const cells = useMemo(() => {
-    const first = startOfMonth(cursor);
-    const dayOfWeek = (first.getDay() + 6) % 7; // 0 = lundi
-    const start = new Date(first);
-    start.setDate(first.getDate() - dayOfWeek);
-    const out: Date[] = [];
-    for (let i = 0; i < 42; i++) {
-      const d = new Date(start);
-      d.setDate(start.getDate() + i);
-      out.push(d);
-    }
-    return out;
-  }, [cursor]);
-
   const today = new Date();
-  const monthLabel = cursor.toLocaleDateString("fr-CH", { month: "long", year: "numeric" });
-  const goPrev = () => setCursor((c) => new Date(c.getFullYear(), c.getMonth() - 1, 1));
-  const goNext = () => setCursor((c) => new Date(c.getFullYear(), c.getMonth() + 1, 1));
-  const goToday = () => setCursor(startOfMonth(new Date()));
+  // Lundi de la semaine du curseur jour.
+  const lundi = (() => {
+    const d = new Date(dayCursor);
+    const dow = (d.getDay() + 6) % 7; // 0 = lundi
+    d.setDate(d.getDate() - dow);
+    d.setHours(0, 0, 0, 0);
+    return d;
+  })();
+  const semaineCells: Date[] = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(lundi);
+    d.setDate(lundi.getDate() + i);
+    return d;
+  });
 
   // ─── Mode JOUR ──────────────────────────────────────────────────────
   if (mode === "day") {
@@ -848,10 +838,10 @@ function CalendarView<T>({
             </button>
             <button
               type="button"
-              onClick={() => setMode("month")}
+              onClick={() => setMode("week")}
               className="rounded-md px-2 py-1 text-xs hover:bg-muted"
             >
-              Mois
+              Semaine
             </button>
           </div>
         </div>
@@ -882,22 +872,45 @@ function CalendarView<T>({
     );
   }
 
+  // ─── Mode SEMAINE ──────────────────────────────────────────────────
+  const dim = new Date(lundi);
+  dim.setDate(lundi.getDate() + 6);
+  const semaineLabel = `${lundi.getDate()} – ${dim.getDate()} ${dim.toLocaleDateString("fr-CH", {
+    month: "long",
+    year: "numeric",
+  })}`;
+  const goPrevSem = () =>
+    setDayCursor((c) => new Date(c.getFullYear(), c.getMonth(), c.getDate() - 7));
+  const goNextSem = () =>
+    setDayCursor((c) => new Date(c.getFullYear(), c.getMonth(), c.getDate() + 7));
+  const goTodaySem = () => setDayCursor(new Date());
+
   return (
     <div className="space-y-2">
-      <div className="flex items-center justify-between gap-2 rounded-xl border border-border bg-background px-3 py-2">
-        <button
-          type="button"
-          onClick={goPrev}
-          className="rounded-md p-1.5 hover:bg-muted"
-          aria-label="Mois précédent"
-        >
-          ←
-        </button>
-        <span className="text-sm font-semibold capitalize">{monthLabel}</span>
+      <div className="flex flex-col gap-2 rounded-xl border border-border bg-background px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center justify-between gap-2 sm:flex-1">
+          <button
+            type="button"
+            onClick={goPrevSem}
+            className="rounded-md px-3 py-1.5 hover:bg-muted"
+            aria-label="Semaine précédente"
+          >
+            ←
+          </button>
+          <span className="text-sm font-semibold capitalize">{semaineLabel}</span>
+          <button
+            type="button"
+            onClick={goNextSem}
+            className="rounded-md px-3 py-1.5 hover:bg-muted"
+            aria-label="Semaine suivante"
+          >
+            →
+          </button>
+        </div>
         <div className="flex gap-1">
           <button
             type="button"
-            onClick={goToday}
+            onClick={goTodaySem}
             className="rounded-md px-2 py-1 text-xs hover:bg-muted"
           >
             Aujourd&apos;hui
@@ -909,53 +922,43 @@ function CalendarView<T>({
           >
             Jour
           </button>
-          <button
-            type="button"
-            onClick={goNext}
-            className="rounded-md p-1.5 hover:bg-muted"
-            aria-label="Mois suivant"
-          >
-            →
-          </button>
         </div>
       </div>
 
       <div className="grid grid-cols-7 gap-px overflow-hidden rounded-xl border border-border bg-border">
-        {JOURS_COURTS.map((j) => (
-          <div
-            key={j}
-            className="bg-muted px-1 py-1 text-center text-[10px] font-semibold uppercase tracking-wide text-foreground/60 sm:text-xs"
-          >
-            {j}
-          </div>
-        ))}
-        {cells.map((d) => {
-          const inMonth = d.getMonth() === cursor.getMonth();
+        {semaineCells.map((d, idx) => {
           const isToday = isSameDay(d, today);
           const k = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
           const items = itemsByDay.get(k) ?? [];
           return (
             <div
               key={k}
-              className={`min-h-[80px] bg-background p-1 sm:min-h-[110px] ${
-                inMonth ? "" : "opacity-40"
-              } ${isToday ? "ring-2 ring-inset ring-green" : ""}`}
+              className={`flex min-h-[120px] flex-col bg-background p-2 ${
+                isToday ? "ring-2 ring-inset ring-green" : ""
+              }`}
             >
-              <div className="mb-1 flex items-baseline justify-between text-[11px]">
-                <span className={`font-medium ${isToday ? "text-green" : "text-foreground/70"}`}>
-                  {d.getDate()}
-                </span>
+              <div className="mb-2 flex items-baseline justify-between">
+                <div className="flex flex-col">
+                  <span className="text-[10px] font-semibold uppercase tracking-wide text-foreground/60">
+                    {JOURS_COURTS[idx]}
+                  </span>
+                  <span
+                    className={`text-base font-bold ${isToday ? "text-green" : "text-foreground/80"}`}
+                  >
+                    {d.getDate()}
+                  </span>
+                </div>
                 {items.length > 0 && (
                   <span className="rounded-full bg-muted px-1.5 text-[10px] text-foreground/60">
                     {items.length}
                   </span>
                 )}
               </div>
-              <ul className="space-y-1">
-                {items.slice(0, 3).map((item) => {
+              <ul className="flex-1 space-y-1 overflow-y-auto">
+                {items.map((item) => {
                   const key = getKey(item);
                   const content = (
-                    <div className="cursor-pointer truncate rounded border border-green/30 bg-green/5 px-1 py-0.5 text-[11px] hover:bg-green/10">
+                    <div className="cursor-pointer truncate rounded border border-green/30 bg-green/5 px-1.5 py-1 text-[11px] hover:bg-green/10">
                       {renderItem(item)}
                     </div>
                   );
@@ -973,9 +976,6 @@ function CalendarView<T>({
                     <li key={key}>{content}</li>
                   );
                 })}
-                {items.length > 3 && (
-                  <li className="text-[10px] text-foreground/50">+ {items.length - 3} autres</li>
-                )}
               </ul>
             </div>
           );
