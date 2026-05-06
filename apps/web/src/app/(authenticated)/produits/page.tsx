@@ -106,24 +106,35 @@ export default function ProduitsPage() {
   // Couvre les doublons inter-perso créés par re-runs du script de
   // sync (image 131 — Abricotier × 2, Algues × 2, Ammonitrate × 4).
   const items = useMemo<CatalogueItem[]>(() => {
+    // Dédup par libellé seul. Les versions sync depuis Odoo arrivent
+    // souvent en catégorie "Autres" (faute de mapping côté Odoo) alors
+    // que la version globale a la vraie catégorie ("Semences", "Engrais
+    // organiques"…). Une dédup par libellé+catégorie laissait passer
+    // ces doublons. Demande Fabien 2026-05-06 : "tjs des doublons" ×3.
     function dedupBiens(list: Produit[]): Produit[] {
       const groups = new Map<string, Produit[]>();
       for (const p of list) {
-        const key = `${p.libelle.toLowerCase().trim()}|${p.categorie}`;
+        const key = p.libelle.toLowerCase().trim();
         const arr = groups.get(key) ?? [];
         arr.push(p);
         groups.set(key, arr);
       }
       const result: Produit[] = [];
       for (const arr of groups.values()) {
-        // Tri : perso mappé Odoo > perso non-mappé > global.
+        // Tri : perso mappé Odoo (avec vraie catégorie si possible) >
+        // global (vraie catégorie) > perso mappé Odoo "Autres" (issue
+        // de sync) > perso non-mappé > autres.
         arr.sort((a, b) => {
-          const aMappedPerso = a.tenantId !== null && a.odooProductId !== null ? 0 : 1;
-          const bMappedPerso = b.tenantId !== null && b.odooProductId !== null ? 0 : 1;
-          if (aMappedPerso !== bMappedPerso) return aMappedPerso - bMappedPerso;
-          const aPerso = a.tenantId !== null ? 0 : 1;
-          const bPerso = b.tenantId !== null ? 0 : 1;
-          return aPerso - bPerso;
+          const score = (p: Produit) => {
+            const isPersoMapped = p.tenantId !== null && p.odooProductId !== null;
+            const isReal = p.categorie !== "AUTRE";
+            if (isPersoMapped && isReal) return 0;
+            if (p.tenantId === null && isReal) return 1;
+            if (isPersoMapped) return 2;
+            if (p.tenantId !== null) return 3;
+            return 4;
+          };
+          return score(a) - score(b);
         });
         if (arr[0]) result.push(arr[0]);
       }
@@ -132,7 +143,7 @@ export default function ProduitsPage() {
     function dedupPrestations(list: Materiel[]): Materiel[] {
       const groups = new Map<string, Materiel[]>();
       for (const m of list) {
-        const key = `${m.libelle.toLowerCase().trim()}|${m.categorie}`;
+        const key = m.libelle.toLowerCase().trim();
         const arr = groups.get(key) ?? [];
         arr.push(m);
         groups.set(key, arr);
@@ -140,12 +151,16 @@ export default function ProduitsPage() {
       const result: Materiel[] = [];
       for (const arr of groups.values()) {
         arr.sort((a, b) => {
-          const aMappedPerso = a.tenantId !== null && a.odooProductId !== null ? 0 : 1;
-          const bMappedPerso = b.tenantId !== null && b.odooProductId !== null ? 0 : 1;
-          if (aMappedPerso !== bMappedPerso) return aMappedPerso - bMappedPerso;
-          const aPerso = a.tenantId !== null ? 0 : 1;
-          const bPerso = b.tenantId !== null ? 0 : 1;
-          return aPerso - bPerso;
+          const score = (m: Materiel) => {
+            const isPersoMapped = m.tenantId !== null && m.odooProductId !== null;
+            const isReal = m.categorie !== "AUTRE";
+            if (isPersoMapped && isReal) return 0;
+            if (m.tenantId === null && isReal) return 1;
+            if (isPersoMapped) return 2;
+            if (m.tenantId !== null) return 3;
+            return 4;
+          };
+          return score(a) - score(b);
         });
         if (arr[0]) result.push(arr[0]);
       }
