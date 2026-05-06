@@ -1,24 +1,23 @@
 "use client";
 
-import {
-  Loader2,
-  type LucideIcon,
-  Package,
-  Plus,
-  RefreshCw,
-  Search,
-  Trash2,
-  Wrench,
-} from "lucide-react";
+import { type LucideIcon, Package, Plus, RefreshCw, Trash2, Wrench } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Breadcrumb } from "@/components/app/breadcrumb";
 import { PageHeader } from "@/components/app/page-header";
 import { Button } from "@/components/ui/button";
+import {
+  type FilterOption,
+  type GroupByOption,
+  type ListColumn,
+  ResourceView,
+} from "@/components/ui/resource-view";
 import { useCurrentUser } from "@/lib/auth";
 import {
   MATERIEL_CATEGORIE_LABEL,
+  MATERIEL_CATEGORIES_ORDER,
   MATERIEL_UNITE_LABEL,
   type Materiel,
+  type MaterielCategorie,
   useDeleteMateriel,
   useMateriels,
   usePushMaterielOdoo,
@@ -27,7 +26,9 @@ import {
 import { useOdooConnected } from "@/lib/odoo-config";
 import {
   CATEGORIE_LABEL,
+  CATEGORIES_ORDER,
   type Produit,
+  type ProduitCategorie,
   type SyncOdooProduitsResult,
   UNITE_LABEL,
   useDeleteProduit,
@@ -46,8 +47,6 @@ function formatCHF(n: number): string {
 
 export default function ProduitsPage() {
   const [onglet, setOnglet] = useState<Onglet>("biens");
-  const [search, setSearch] = useState("");
-  const [selected, setSelected] = useState<Set<string>>(new Set());
   const [dialogProduit, setDialogProduit] = useState(false);
   const [dialogMateriel, setDialogMateriel] = useState(false);
   const [syncResult, setSyncResult] = useState<SyncOdooProduitsResult | null>(null);
@@ -75,112 +74,280 @@ export default function ProduitsPage() {
     }
   };
 
-  const filteredProduits = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return (produits.data ?? []).filter((p) => {
-      if (!q) return true;
-      return [p.libelle, p.marque, p.fournisseur, p.especeCode, p.code]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase()
-        .includes(q);
-    });
-  }, [produits.data, search]);
+  const produitsData = useMemo(() => produits.data ?? [], [produits.data]);
+  const materielsData = useMemo(() => materiels.data ?? [], [materiels.data]);
 
-  const filteredMateriels = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return (materiels.data ?? []).filter((m) => {
-      if (!q) return true;
-      return [m.libelle, m.notes, m.code].filter(Boolean).join(" ").toLowerCase().includes(q);
-    });
-  }, [materiels.data, search]);
+  // ---------- Colonnes Biens ------------------------------------------------
+  const produitColumns: ListColumn<Produit>[] = [
+    {
+      key: "libelle",
+      header: "Libellé",
+      cell: (p) => (
+        <div>
+          <div className="font-medium">{p.libelle}</div>
+          {p.marque && <div className="text-xs text-foreground/60">{p.marque}</div>}
+        </div>
+      ),
+    },
+    {
+      key: "categorie",
+      header: "Catégorie",
+      cell: (p) => CATEGORIE_LABEL[p.categorie],
+      hideBelow: "md",
+    },
+    { key: "unite", header: "Unité", cell: (p) => UNITE_LABEL[p.unite], hideBelow: "sm" },
+    {
+      key: "prix",
+      header: "Tarif",
+      cell: (p) =>
+        p.prixVenteCHF ? (
+          <span className="font-mono tabular-nums">{formatCHF(Number(p.prixVenteCHF))}</span>
+        ) : (
+          <span className="text-foreground/30">—</span>
+        ),
+      className: "text-right",
+    },
+    {
+      key: "odoo",
+      header: "Odoo",
+      cell: (p) =>
+        p.odooProductId ? (
+          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-700">
+            #{p.odooProductId}
+          </span>
+        ) : (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              pushProduit.mutate(p.id);
+            }}
+            disabled={pushProduit.isPending}
+            className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-50"
+          >
+            <RefreshCw className="h-3 w-3" />
+            Pousser
+          </button>
+        ),
+      className: "text-right",
+    },
+    {
+      key: "actions",
+      header: "",
+      cell: (p) =>
+        p.tenantId === null ? (
+          <span className="rounded-full bg-foreground/10 px-2 py-0.5 text-[10px] text-foreground/60">
+            global
+          </span>
+        ) : (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (confirm(`Supprimer "${p.libelle}" ?`)) deleteProduit.mutate(p.id);
+            }}
+            className="text-foreground/50 hover:text-red-600"
+            aria-label="Supprimer"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        ),
+      className: "text-right",
+    },
+  ];
 
-  const currentList: Array<Produit | Materiel> =
-    onglet === "biens" ? filteredProduits : filteredMateriels;
+  const produitFilters: FilterOption<Produit>[] = [
+    { key: "with-odoo", label: "Synchronisés Odoo", predicate: (p) => p.odooProductId !== null },
+    { key: "without-odoo", label: "Non synchronisés", predicate: (p) => p.odooProductId === null },
+    { key: "perso", label: "Perso (modifiables)", predicate: (p) => p.tenantId !== null },
+    { key: "global", label: "Globaux", predicate: (p) => p.tenantId === null },
+  ];
 
-  function toggleSelect(id: string) {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
+  const produitGroupBys: GroupByOption<Produit>[] = [
+    {
+      key: "categorie",
+      label: "Catégorie",
+      groupKey: (p) => p.categorie,
+      groupLabel: (k) => CATEGORIE_LABEL[k as ProduitCategorie] ?? k,
+      order: CATEGORIES_ORDER,
+    },
+    {
+      key: "source",
+      label: "Source (perso/global)",
+      groupKey: (p) => (p.tenantId === null ? "global" : "perso"),
+      groupLabel: (k) => (k === "global" ? "Globaux (catalogue Agridea)" : "Perso (mes produits)"),
+    },
+    {
+      key: "odoo",
+      label: "Sync Odoo",
+      groupKey: (p) => (p.odooProductId ? "synced" : "not-synced"),
+      groupLabel: (k) => (k === "synced" ? "Synchronisés" : "Non synchronisés"),
+    },
+  ];
 
-  function toggleSelectAll() {
-    if (selected.size === currentList.length) {
-      setSelected(new Set());
-    } else {
-      setSelected(new Set(currentList.map((x) => x.id)));
-    }
-  }
+  const renderProduitCard = (p: Produit) => (
+    <div className="space-y-1">
+      <div className="flex items-start justify-between gap-2">
+        <div className="font-medium">{p.libelle}</div>
+        {p.odooProductId && (
+          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] text-amber-700">
+            #{p.odooProductId}
+          </span>
+        )}
+      </div>
+      <div className="text-xs text-foreground/60">
+        {CATEGORIE_LABEL[p.categorie]} · {UNITE_LABEL[p.unite]}
+      </div>
+      {p.prixVenteCHF && (
+        <div className="font-mono text-sm tabular-nums">{formatCHF(Number(p.prixVenteCHF))}</div>
+      )}
+    </div>
+  );
 
-  // Reset sélection au changement d'onglet pour éviter le mélange.
-  function setOngletAndReset(o: Onglet) {
-    setOnglet(o);
-    setSelected(new Set());
-  }
+  // ---------- Colonnes Prestations ------------------------------------------
+  const materielColumns: ListColumn<Materiel>[] = [
+    {
+      key: "libelle",
+      header: "Libellé",
+      cell: (m) => (
+        <div>
+          <div className="font-medium">{m.libelle}</div>
+          {m.notes && <div className="text-xs text-foreground/60">{m.notes}</div>}
+        </div>
+      ),
+    },
+    {
+      key: "categorie",
+      header: "Catégorie",
+      cell: (m) => MATERIEL_CATEGORIE_LABEL[m.categorie],
+      hideBelow: "md",
+    },
+    { key: "unite", header: "Unité", cell: (m) => MATERIEL_UNITE_LABEL[m.unite], hideBelow: "sm" },
+    {
+      key: "prix",
+      header: "Tarif",
+      cell: (m) =>
+        m.prixUnitaireCHF ? (
+          <span className="font-mono tabular-nums">
+            {formatCHF(Number(m.prixUnitaireCHF))}
+            <span className="text-foreground/40">/{MATERIEL_UNITE_LABEL[m.unite]}</span>
+          </span>
+        ) : (
+          <span className="text-foreground/30">—</span>
+        ),
+      className: "text-right",
+    },
+    {
+      key: "odoo",
+      header: "Odoo",
+      cell: (m) =>
+        m.odooProductId ? (
+          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-700">
+            #{m.odooProductId}
+          </span>
+        ) : (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              pushMateriel.mutate(m.id);
+            }}
+            disabled={pushMateriel.isPending}
+            className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-50"
+          >
+            <RefreshCw className="h-3 w-3" />
+            Pousser
+          </button>
+        ),
+      className: "text-right",
+    },
+    {
+      key: "actions",
+      header: "",
+      cell: (m) =>
+        m.tenantId === null ? (
+          <span className="rounded-full bg-foreground/10 px-2 py-0.5 text-[10px] text-foreground/60">
+            global
+          </span>
+        ) : (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (confirm(`Supprimer "${m.libelle}" ?`)) deleteMateriel.mutate(m.id);
+            }}
+            className="text-foreground/50 hover:text-red-600"
+            aria-label="Supprimer"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        ),
+      className: "text-right",
+    },
+  ];
 
-  async function pushSelectedOdoo() {
-    const ids = Array.from(selected);
-    let ok = 0;
-    let ko = 0;
-    for (const id of ids) {
-      try {
-        if (onglet === "biens") {
-          await pushProduit.mutateAsync(id);
-        } else {
-          await pushMateriel.mutateAsync(id);
-        }
-        ok++;
-      } catch {
-        ko++;
-      }
-    }
-    setSelected(new Set());
-    alert(`Push Odoo terminé : ${ok} OK${ko > 0 ? `, ${ko} échecs` : ""}.`);
-  }
+  const materielFilters: FilterOption<Materiel>[] = [
+    { key: "with-odoo", label: "Synchronisés Odoo", predicate: (m) => m.odooProductId !== null },
+    { key: "without-odoo", label: "Non synchronisés", predicate: (m) => m.odooProductId === null },
+    { key: "perso", label: "Perso (modifiables)", predicate: (m) => m.tenantId !== null },
+    { key: "global", label: "Globaux", predicate: (m) => m.tenantId === null },
+  ];
 
-  async function deleteSelected() {
-    const ids = Array.from(selected);
-    if (!confirm(`Supprimer ${ids.length} élément${ids.length > 1 ? "s" : ""} ?`)) return;
-    let ok = 0;
-    let ko = 0;
-    for (const id of ids) {
-      try {
-        if (onglet === "biens") {
-          await deleteProduit.mutateAsync(id);
-        } else {
-          await deleteMateriel.mutateAsync(id);
-        }
-        ok++;
-      } catch {
-        ko++;
-      }
-    }
-    setSelected(new Set());
-    if (ko > 0) alert(`Supprimés : ${ok} OK, ${ko} échecs (probablement globaux).`);
-  }
+  const materielGroupBys: GroupByOption<Materiel>[] = [
+    {
+      key: "categorie",
+      label: "Catégorie",
+      groupKey: (m) => m.categorie,
+      groupLabel: (k) => MATERIEL_CATEGORIE_LABEL[k as MaterielCategorie] ?? k,
+      order: MATERIEL_CATEGORIES_ORDER,
+    },
+    {
+      key: "source",
+      label: "Source (perso/global)",
+      groupKey: (m) => (m.tenantId === null ? "global" : "perso"),
+      groupLabel: (k) =>
+        k === "global" ? "Globaux (catalogue Agridea)" : "Perso (mes prestations)",
+    },
+    {
+      key: "odoo",
+      label: "Sync Odoo",
+      groupKey: (m) => (m.odooProductId ? "synced" : "not-synced"),
+      groupLabel: (k) => (k === "synced" ? "Synchronisés" : "Non synchronisés"),
+    },
+  ];
 
-  const onDeleteProduit = (p: Produit) => {
-    if (p.tenantId === null) return;
-    if (!confirm(`Supprimer "${p.libelle}" ?`)) return;
-    deleteProduit.mutate(p.id);
-  };
-  const onDeleteMateriel = (m: Materiel) => {
-    if (m.tenantId === null) return;
-    if (!confirm(`Supprimer "${m.libelle}" ?`)) return;
-    deleteMateriel.mutate(m.id);
+  const renderMaterielCard = (m: Materiel) => {
+    const unite = MATERIEL_UNITE_LABEL[m.unite];
+    return (
+      <div className="space-y-1">
+        <div className="flex items-start justify-between gap-2">
+          <div className="font-medium">{m.libelle}</div>
+          {m.odooProductId && (
+            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] text-amber-700">
+              #{m.odooProductId}
+            </span>
+          )}
+        </div>
+        <div className="text-xs text-foreground/60">
+          {MATERIEL_CATEGORIE_LABEL[m.categorie]} · {unite}
+        </div>
+        {m.prixUnitaireCHF && (
+          <div className="font-mono text-sm tabular-nums">
+            {formatCHF(Number(m.prixUnitaireCHF))}/{unite}
+          </div>
+        )}
+      </div>
+    );
   };
 
   return (
     <>
       <Breadcrumb items={[{ label: "Accueil", href: "/app" }, { label: "Produits" }]} />
-      <div className="mx-auto max-w-5xl px-2 py-4 sm:px-4 sm:py-8">
+      <div className="mx-auto max-w-6xl px-2 py-4 sm:px-4 sm:py-8">
         <PageHeader
           title="Produits"
           icon={Package}
-          subtitle="Biens (semences, engrais, phytos…) et prestations facturables (labour, semis, ensilage). Synchronisable avec Odoo."
+          subtitle="Biens (semences, engrais, phytos…) et prestations facturables. Synchronisable avec Odoo."
           rightSlot={
             <Button
               onClick={() =>
@@ -201,7 +368,8 @@ export default function ProduitsPage() {
               <p className="font-semibold text-amber-900">Synchronisation Odoo</p>
               <p className="mt-0.5 text-xs text-foreground/70">
                 Importe tous les <code className="font-mono">product.product</code>{" "}
-                {onglet === "prestations" ? "de type service" : ""} depuis ton instance Odoo.
+                {onglet === "prestations" ? "de type service" : "de type bien"} depuis ton instance
+                Odoo.
               </p>
             </div>
             <Button
@@ -211,7 +379,9 @@ export default function ProduitsPage() {
               className="bg-amber-600 hover:bg-amber-700"
             >
               <RefreshCw
-                className={`mr-1 h-4 w-4 ${syncProduitsOdoo.isPending || syncMaterielsOdoo.isPending ? "animate-spin" : ""}`}
+                className={`mr-1 h-4 w-4 ${
+                  syncProduitsOdoo.isPending || syncMaterielsOdoo.isPending ? "animate-spin" : ""
+                }`}
               />
               {syncProduitsOdoo.isPending || syncMaterielsOdoo.isPending
                 ? "Sync…"
@@ -233,137 +403,71 @@ export default function ProduitsPage() {
         <div className="mb-4 flex flex-wrap gap-2">
           <OngletButton
             active={onglet === "biens"}
-            onClick={() => setOngletAndReset("biens")}
+            onClick={() => setOnglet("biens")}
             icon={Package}
             label="Biens"
-            count={(produits.data ?? []).length}
+            count={produitsData.length}
           />
           <OngletButton
             active={onglet === "prestations"}
-            onClick={() => setOngletAndReset("prestations")}
+            onClick={() => setOnglet("prestations")}
             icon={Wrench}
             label="Prestations"
-            count={(materiels.data ?? []).length}
+            count={materielsData.length}
           />
         </div>
 
-        <div className="mb-4 relative">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-foreground/40" />
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder={
-              onglet === "biens"
-                ? "Rechercher (libellé, marque, fournisseur, espèce…)"
-                : "Rechercher une prestation…"
+        {onglet === "biens" ? (
+          <ResourceView<Produit>
+            storageKey="produits-biens"
+            defaultView="list"
+            data={produitsData}
+            columns={produitColumns}
+            renderKanbanCard={renderProduitCard}
+            renderCard={renderProduitCard}
+            searchFields={(p) =>
+              [
+                p.libelle,
+                p.marque ?? "",
+                p.fournisseur ?? "",
+                p.especeCode ?? "",
+                p.code,
+                p.notes ?? "",
+              ].join(" ")
             }
-            className="h-11 w-full rounded-lg border border-border bg-background pl-9 pr-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green"
+            filters={produitFilters}
+            groupBys={produitGroupBys}
+            getKey={(p) => p.id}
+            searchPlaceholder="Rechercher (libellé, marque, fournisseur, espèce…)"
+            availableViews={["list", "kanban", "card"]}
+            emptyState={
+              <div className="rounded-2xl border-2 border-dashed border-border p-10 text-center text-foreground/60">
+                Pas encore de bien. Crée-en un ou synchronise depuis Odoo.
+              </div>
+            }
           />
-        </div>
-
-        {(produits.isLoading || materiels.isLoading) && (
-          <div className="flex items-center gap-2 text-sm text-foreground/60">
-            <Loader2 className="h-4 w-4 animate-spin" /> Chargement…
-          </div>
-        )}
-
-        {currentList.length === 0 && !produits.isLoading && !materiels.isLoading && (
-          <div className="rounded-2xl border-2 border-dashed border-border p-10 text-center text-foreground/60">
-            {search.trim()
-              ? `Rien ne correspond à "${search.trim()}".`
-              : onglet === "biens"
-                ? "Pas encore de produit. Crée-en un ou synchronise depuis Odoo."
-                : "Pas encore de prestation. Crée-en une ou synchronise depuis Odoo."}
-          </div>
-        )}
-
-        {currentList.length > 0 && (
-          <div className="overflow-hidden rounded-xl border border-border bg-background">
-            <table className="w-full text-sm">
-              <thead className="bg-foreground/5 text-left text-xs uppercase tracking-wide text-foreground/60">
-                <tr>
-                  <th className="w-10 px-3 py-2">
-                    <input
-                      type="checkbox"
-                      checked={selected.size > 0 && selected.size === currentList.length}
-                      onChange={toggleSelectAll}
-                      aria-label="Tout sélectionner"
-                    />
-                  </th>
-                  <th className="px-3 py-2">Libellé</th>
-                  <th className="px-3 py-2">Catégorie</th>
-                  <th className="px-3 py-2">Unité</th>
-                  <th className="px-3 py-2 text-right">Tarif</th>
-                  <th className="px-3 py-2 text-right">Odoo</th>
-                  <th className="w-24 px-3 py-2 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {onglet === "biens"
-                  ? filteredProduits.map((p) => (
-                      <ProduitRow
-                        key={p.id}
-                        produit={p}
-                        selected={selected.has(p.id)}
-                        onToggle={() => toggleSelect(p.id)}
-                        onPushOdoo={() => pushProduit.mutate(p.id)}
-                        onDelete={() => onDeleteProduit(p)}
-                        pushPending={pushProduit.isPending}
-                      />
-                    ))
-                  : filteredMateriels.map((m) => (
-                      <MaterielRow
-                        key={m.id}
-                        materiel={m}
-                        selected={selected.has(m.id)}
-                        onToggle={() => toggleSelect(m.id)}
-                        onPushOdoo={() => pushMateriel.mutate(m.id)}
-                        onDelete={() => onDeleteMateriel(m)}
-                        pushPending={pushMateriel.isPending}
-                      />
-                    ))}
-              </tbody>
-            </table>
-          </div>
+        ) : (
+          <ResourceView<Materiel>
+            storageKey="produits-prestations"
+            defaultView="list"
+            data={materielsData}
+            columns={materielColumns}
+            renderKanbanCard={renderMaterielCard}
+            renderCard={renderMaterielCard}
+            searchFields={(m) => [m.libelle, m.notes ?? "", m.code].join(" ")}
+            filters={materielFilters}
+            groupBys={materielGroupBys}
+            getKey={(m) => m.id}
+            searchPlaceholder="Rechercher une prestation…"
+            availableViews={["list", "kanban", "card"]}
+            emptyState={
+              <div className="rounded-2xl border-2 border-dashed border-border p-10 text-center text-foreground/60">
+                Pas encore de prestation. Crée-en une ou synchronise depuis Odoo.
+              </div>
+            }
+          />
         )}
       </div>
-
-      {/* Barre flottante d'actions bulk */}
-      {selected.size > 0 && (
-        <div className="fixed bottom-4 left-1/2 z-40 -translate-x-1/2 rounded-full border border-border bg-background px-4 py-2 shadow-2xl">
-          <div className="flex items-center gap-3">
-            <span className="text-sm font-medium">
-              {selected.size} sélectionné{selected.size > 1 ? "s" : ""}
-            </span>
-            <Button
-              size="sm"
-              onClick={pushSelectedOdoo}
-              disabled={pushProduit.isPending || pushMateriel.isPending}
-              className="bg-amber-600 hover:bg-amber-700"
-            >
-              <RefreshCw className="mr-1 h-3.5 w-3.5" />
-              Pousser vers Odoo
-            </Button>
-            <Button
-              size="sm"
-              onClick={deleteSelected}
-              disabled={deleteProduit.isPending || deleteMateriel.isPending}
-              className="bg-red-600 hover:bg-red-700"
-            >
-              <Trash2 className="mr-1 h-3.5 w-3.5" />
-              Supprimer
-            </Button>
-            <button
-              type="button"
-              onClick={() => setSelected(new Set())}
-              className="text-xs text-foreground/60 hover:text-foreground"
-            >
-              Annuler
-            </button>
-          </div>
-        </div>
-      )}
 
       <NewProduitDialog open={dialogProduit} onClose={() => setDialogProduit(false)} />
       <NewMaterielDialog open={dialogMateriel} onClose={() => setDialogMateriel(false)} />
@@ -404,153 +508,5 @@ function OngletButton({
         {count}
       </span>
     </button>
-  );
-}
-
-function ProduitRow({
-  produit: p,
-  selected,
-  onToggle,
-  onPushOdoo,
-  onDelete,
-  pushPending,
-}: {
-  produit: Produit;
-  selected: boolean;
-  onToggle: () => void;
-  onPushOdoo: () => void;
-  onDelete: () => void;
-  pushPending: boolean;
-}) {
-  const isGlobal = p.tenantId === null;
-  return (
-    <tr className={`border-t border-border align-middle ${selected ? "bg-green/5" : ""}`}>
-      <td className="px-3 py-2">
-        <input type="checkbox" checked={selected} onChange={onToggle} />
-      </td>
-      <td className="px-3 py-2">
-        <div className="font-medium">{p.libelle}</div>
-        {p.marque && <div className="text-xs text-foreground/60">{p.marque}</div>}
-      </td>
-      <td className="px-3 py-2 text-foreground/70">{CATEGORIE_LABEL[p.categorie]}</td>
-      <td className="px-3 py-2 text-foreground/70">{UNITE_LABEL[p.unite]}</td>
-      <td className="px-3 py-2 text-right font-mono text-xs tabular-nums">
-        {p.prixVenteCHF ? (
-          formatCHF(Number(p.prixVenteCHF))
-        ) : (
-          <span className="text-foreground/30">—</span>
-        )}
-      </td>
-      <td className="px-3 py-2 text-right">
-        {p.odooProductId ? (
-          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-700">
-            #{p.odooProductId}
-          </span>
-        ) : (
-          <button
-            type="button"
-            onClick={onPushOdoo}
-            disabled={pushPending}
-            className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-50"
-            title="Pousser vers Odoo"
-          >
-            <RefreshCw className="h-3 w-3" />
-            Pousser
-          </button>
-        )}
-      </td>
-      <td className="px-3 py-2 text-right">
-        {!isGlobal && (
-          <button
-            onClick={onDelete}
-            className="text-foreground/50 hover:text-red-600"
-            aria-label="Supprimer"
-          >
-            <Trash2 className="h-4 w-4" />
-          </button>
-        )}
-        {isGlobal && (
-          <span className="rounded-full bg-foreground/10 px-2 py-0.5 text-[10px] text-foreground/60">
-            global
-          </span>
-        )}
-      </td>
-    </tr>
-  );
-}
-
-function MaterielRow({
-  materiel: m,
-  selected,
-  onToggle,
-  onPushOdoo,
-  onDelete,
-  pushPending,
-}: {
-  materiel: Materiel;
-  selected: boolean;
-  onToggle: () => void;
-  onPushOdoo: () => void;
-  onDelete: () => void;
-  pushPending: boolean;
-}) {
-  const isGlobal = m.tenantId === null;
-  const unite = MATERIEL_UNITE_LABEL[m.unite];
-  return (
-    <tr className={`border-t border-border align-middle ${selected ? "bg-green/5" : ""}`}>
-      <td className="px-3 py-2">
-        <input type="checkbox" checked={selected} onChange={onToggle} />
-      </td>
-      <td className="px-3 py-2">
-        <div className="font-medium">{m.libelle}</div>
-        {m.notes && <div className="text-xs text-foreground/60">{m.notes}</div>}
-      </td>
-      <td className="px-3 py-2 text-foreground/70">{MATERIEL_CATEGORIE_LABEL[m.categorie]}</td>
-      <td className="px-3 py-2 text-foreground/70">{unite}</td>
-      <td className="px-3 py-2 text-right font-mono text-xs tabular-nums">
-        {m.prixUnitaireCHF ? (
-          <>
-            {formatCHF(Number(m.prixUnitaireCHF))}
-            <span className="text-foreground/40">/{unite}</span>
-          </>
-        ) : (
-          <span className="text-foreground/30">—</span>
-        )}
-      </td>
-      <td className="px-3 py-2 text-right">
-        {m.odooProductId ? (
-          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-700">
-            #{m.odooProductId}
-          </span>
-        ) : (
-          <button
-            type="button"
-            onClick={onPushOdoo}
-            disabled={pushPending}
-            className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-50"
-            title="Pousser vers Odoo"
-          >
-            <RefreshCw className="h-3 w-3" />
-            Pousser
-          </button>
-        )}
-      </td>
-      <td className="px-3 py-2 text-right">
-        {!isGlobal && (
-          <button
-            onClick={onDelete}
-            className="text-foreground/50 hover:text-red-600"
-            aria-label="Supprimer"
-          >
-            <Trash2 className="h-4 w-4" />
-          </button>
-        )}
-        {isGlobal && (
-          <span className="rounded-full bg-foreground/10 px-2 py-0.5 text-[10px] text-foreground/60">
-            global
-          </span>
-        )}
-      </td>
-    </tr>
   );
 }
