@@ -1,0 +1,4 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_project_task_agri_qodo,project.task agri_qodo,project.model_project_task,base.group_user,1,1,1,0
+access_product_template_agri_qodo,product.template agri_qodo,product.model_product_template,base.group_user,1,1,1,0
+access_sale_order_line_agri_qodo,sale.order.line agri_qodo,sale.model_sale_order_line,base.group_user,1,1,1,0
