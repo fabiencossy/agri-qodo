@@ -41,7 +41,8 @@ export type ViewMode = "list" | "kanban" | "card" | "calendar" | "map";
 
 export interface ListColumn<T> {
   key: string;
-  header: string;
+  /** Texte ou node (ex : checkbox "tout sélectionner") du header. */
+  header: React.ReactNode;
   cell: (item: T) => React.ReactNode;
   className?: string;
   hideBelow?: "sm" | "md" | "lg";

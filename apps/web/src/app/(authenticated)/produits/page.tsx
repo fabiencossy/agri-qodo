@@ -74,6 +74,8 @@ export default function ProduitsPage() {
   const [dialogMateriel, setDialogMateriel] = useState(false);
   const [chooseTypeOpen, setChooseTypeOpen] = useState(false);
   const [syncResult, setSyncResult] = useState<SyncOdooProduitsResult | null>(null);
+  /** IDs des items sélectionnés (format "kind-uuid" pour disambiguer). */
+  const [selected, setSelected] = useState<Set<string>>(new Set());
 
   const produits = useProduits();
   const materiels = useMateriels();
@@ -117,7 +119,95 @@ export default function ProduitsPage() {
     else deleteMateriel.mutate(item.data.id);
   };
 
+  const itemKey = (item: CatalogueItem) => `${item.kind}-${item.data.id}`;
+
+  const toggleSelect = (item: CatalogueItem) => {
+    const k = itemKey(item);
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(k)) next.delete(k);
+      else next.add(k);
+      return next;
+    });
+  };
+
+  const allChecked = items.length > 0 && selected.size === items.length;
+  const someChecked = selected.size > 0 && selected.size < items.length;
+  const toggleAll = () => {
+    if (allChecked || someChecked) setSelected(new Set());
+    else setSelected(new Set(items.map(itemKey)));
+  };
+
+  async function pushSelectedOdoo() {
+    const ids = Array.from(selected);
+    let ok = 0;
+    let ko = 0;
+    for (const id of ids) {
+      const item = items.find((i) => itemKey(i) === id);
+      if (!item) continue;
+      try {
+        if (item.kind === "bien") await pushProduit.mutateAsync(item.data.id);
+        else await pushMateriel.mutateAsync(item.data.id);
+        ok++;
+      } catch {
+        ko++;
+      }
+    }
+    setSelected(new Set());
+    alert(`Push Odoo terminé : ${ok} OK${ko > 0 ? `, ${ko} échecs` : ""}.`);
+  }
+
+  async function deleteSelected() {
+    const ids = Array.from(selected);
+    if (!confirm(`Supprimer ${ids.length} entrée${ids.length > 1 ? "s" : ""} ?`)) return;
+    let ok = 0;
+    let ko = 0;
+    for (const id of ids) {
+      const item = items.find((i) => itemKey(i) === id);
+      if (!item || item.data.tenantId === null) {
+        ko++;
+        continue;
+      }
+      try {
+        if (item.kind === "bien") await deleteProduit.mutateAsync(item.data.id);
+        else await deleteMateriel.mutateAsync(item.data.id);
+        ok++;
+      } catch {
+        ko++;
+      }
+    }
+    setSelected(new Set());
+    if (ko > 0) alert(`Supprimés : ${ok} OK, ${ko} ignorés (globaux non supprimables).`);
+  }
+
   const columns: ListColumn<CatalogueItem>[] = [
+    {
+      key: "select",
+      header: (
+        <input
+          type="checkbox"
+          aria-label="Tout sélectionner"
+          checked={allChecked}
+          ref={(el) => {
+            if (el) el.indeterminate = someChecked;
+          }}
+          onChange={toggleAll}
+        />
+      ),
+      cell: (item) => (
+        <input
+          type="checkbox"
+          aria-label="Sélectionner"
+          checked={selected.has(itemKey(item))}
+          onChange={(e) => {
+            e.stopPropagation();
+            toggleSelect(item);
+          }}
+          onClick={(e) => e.stopPropagation()}
+        />
+      ),
+      className: "w-10",
+    },
     {
       key: "libelle",
       header: "Libellé",
@@ -401,6 +491,41 @@ export default function ProduitsPage() {
           }
         />
       </div>
+
+      {selected.size > 0 && (
+        <div className="fixed bottom-4 left-1/2 z-40 -translate-x-1/2 rounded-full border border-border bg-background px-4 py-2 shadow-2xl">
+          <div className="flex items-center gap-3">
+            <span className="text-sm font-medium">
+              {selected.size} sélectionné{selected.size > 1 ? "s" : ""}
+            </span>
+            <Button
+              size="sm"
+              onClick={pushSelectedOdoo}
+              disabled={pushProduit.isPending || pushMateriel.isPending}
+              className="bg-amber-600 hover:bg-amber-700"
+            >
+              <RefreshCw className="mr-1 h-3.5 w-3.5" />
+              Pousser vers Odoo
+            </Button>
+            <Button
+              size="sm"
+              onClick={deleteSelected}
+              disabled={deleteProduit.isPending || deleteMateriel.isPending}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              <Trash2 className="mr-1 h-3.5 w-3.5" />
+              Supprimer
+            </Button>
+            <button
+              type="button"
+              onClick={() => setSelected(new Set())}
+              className="text-xs text-foreground/60 hover:text-foreground"
+            >
+              Annuler
+            </button>
+          </div>
+        </div>
+      )}
 
       {chooseTypeOpen && (
         <ChooseTypeDialog
