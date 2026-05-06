@@ -34,6 +34,7 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 // ---------- Types publics ---------------------------------------------------
 
@@ -443,6 +444,16 @@ export function ResourceView<T>(props: ResourceViewProps<T>) {
           getKey={props.getKey}
           {...(props.onItemClick ? { onItemClick: props.onItemClick } : {})}
           {...(groups ? { groups } : {})}
+          allColumns={props.columns}
+          hiddenColumnKeys={hiddenColumnKeys}
+          onToggleColumn={(k: string) => {
+            setHiddenColumnKeys((prev) => {
+              const next = new Set(prev);
+              if (next.has(k)) next.delete(k);
+              else next.add(k);
+              return next;
+            });
+          }}
         />
       ) : view === "card" ? (
         <CardView
@@ -1049,56 +1060,6 @@ function SearchBar<T>(props: {
             />
           )}
         </div>
-
-        {/* Bouton "Colonnes" — visible uniquement en vue liste, où il
-            a un effet. Demande Fabien 2026-05-06 : "il manque le
-            bouton pour ajouter ou masquer des colonnes". */}
-        {props.view === "list" && props.allColumns.length > 0 && (
-          <div className="relative" ref={colsPanelRef}>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                props.onToggleColumnsPanel();
-              }}
-              className="flex h-10 items-center gap-1.5 rounded-lg border border-border bg-background px-3 text-sm font-medium text-foreground/70 hover:bg-muted"
-              aria-label="Colonnes"
-              title="Afficher / masquer les colonnes"
-            >
-              <Columns className="h-4 w-4" />
-              <span className="hidden sm:inline">Colonnes</span>
-              <ChevronDown
-                className={`h-3.5 w-3.5 transition-transform ${props.columnsPanelOpen ? "rotate-180" : ""}`}
-              />
-            </button>
-            {props.columnsPanelOpen && (
-              <div className="absolute right-0 top-full z-[8500] mt-2 w-56 rounded-xl border border-border bg-background p-2 shadow-xl">
-                <div className="mb-1 px-2 py-1 text-[11px] font-bold uppercase tracking-wider text-foreground/60">
-                  Colonnes affichées
-                </div>
-                {props.allColumns.map((c) => {
-                  const headerLabel =
-                    typeof c.header === "string" ? c.header : c.key.replace(/^__/, "");
-                  const visible = !props.hiddenColumnKeys.has(c.key);
-                  return (
-                    <label
-                      key={c.key}
-                      className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={visible}
-                        onChange={() => props.onToggleColumn(c.key)}
-                        className="h-4 w-4 cursor-pointer"
-                      />
-                      <span className="flex-1 truncate">{headerLabel || c.key}</span>
-                    </label>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
       </div>
 
       {props.panelOpen && (
@@ -1305,7 +1266,90 @@ function ListView<T>(props: {
   getKey: (item: T) => string;
   onItemClick?: (item: T) => void;
   groups?: { key: string; label: string; items: T[] }[] | undefined;
+  /** Toutes les colonnes (incl. masquées) pour le menu Colonnes. */
+  allColumns?: ListColumn<T>[];
+  hiddenColumnKeys?: Set<string>;
+  onToggleColumn?: (key: string) => void;
 }) {
+  const [columnsPanelOpen, setColumnsPanelOpen] = useState(false);
+  const [colsAnchor, setColsAnchor] = useState<{ top: number; right: number } | null>(null);
+  const colsBtnRef = useRef<HTMLButtonElement>(null);
+  const colsPanelRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!columnsPanelOpen) return;
+    const handler = (e: PointerEvent) => {
+      if (
+        !colsBtnRef.current?.contains(e.target as Node) &&
+        !colsPanelRef.current?.contains(e.target as Node)
+      ) {
+        setColumnsPanelOpen(false);
+      }
+    };
+    document.addEventListener("pointerdown", handler);
+    return () => document.removeEventListener("pointerdown", handler);
+  }, [columnsPanelOpen]);
+  const openColumnsPanel = () => {
+    if (!columnsPanelOpen && colsBtnRef.current) {
+      const r = colsBtnRef.current.getBoundingClientRect();
+      // Le panel s'ouvre juste sous le bouton, ancré à droite. Position
+      // fixed pour échapper aux conteneurs overflow-hidden/overflow-auto
+      // (la table) qui clippaient le dropdown quand peu de lignes.
+      setColsAnchor({ top: r.bottom + 4, right: window.innerWidth - r.right });
+    }
+    setColumnsPanelOpen((v) => !v);
+  };
+  const ColumnsButton =
+    props.allColumns && props.allColumns.length > 0 && props.onToggleColumn ? (
+      <>
+        <button
+          ref={colsBtnRef}
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            openColumnsPanel();
+          }}
+          className="flex h-7 w-7 items-center justify-center rounded-md text-foreground/40 hover:bg-foreground/10 hover:text-foreground/80"
+          aria-label="Afficher / masquer les colonnes"
+          title="Colonnes"
+        >
+          <Columns className="h-3.5 w-3.5" />
+        </button>
+        {columnsPanelOpen &&
+          colsAnchor &&
+          typeof document !== "undefined" &&
+          createPortal(
+            <div
+              ref={colsPanelRef}
+              style={{ position: "fixed", top: colsAnchor.top, right: colsAnchor.right }}
+              className="z-[9000] w-56 rounded-xl border border-border bg-background p-2 shadow-2xl"
+            >
+              <div className="mb-1 px-2 py-1 text-[11px] font-bold uppercase tracking-wider text-foreground/60">
+                Colonnes
+              </div>
+              {props.allColumns.map((c) => {
+                const headerLabel =
+                  typeof c.header === "string" ? c.header : c.key.replace(/^__/, "");
+                const visible = !props.hiddenColumnKeys?.has(c.key);
+                return (
+                  <label
+                    key={c.key}
+                    className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={visible}
+                      onChange={() => props.onToggleColumn?.(c.key)}
+                      className="h-4 w-4 cursor-pointer"
+                    />
+                    <span className="flex-1 truncate">{headerLabel || c.key}</span>
+                  </label>
+                );
+              })}
+            </div>,
+            document.body,
+          )}
+      </>
+    ) : null;
   // Groupes collapsibles : par défaut fermés (on doit cliquer pour ouvrir,
   // c'est le comportement Odoo-like demandé).
   const [collapsed, setCollapsed] = useState<Set<string>>(() => {
@@ -1370,6 +1414,7 @@ function ListView<T>(props: {
                   {col.header}
                 </th>
               ))}
+              {ColumnsButton && <th className="w-10 px-1 py-1 text-right">{ColumnsButton}</th>}
             </tr>
           </thead>
           <tbody>
@@ -1406,6 +1451,7 @@ function ListView<T>(props: {
                 {col.header}
               </th>
             ))}
+            {ColumnsButton && <th className="w-10 px-1 py-1 text-right">{ColumnsButton}</th>}
           </tr>
         </thead>
         <tbody>
@@ -1425,6 +1471,7 @@ function ListView<T>(props: {
                   {col.cell(item)}
                 </td>
               ))}
+              {ColumnsButton && <td className="w-10 px-1 py-1" aria-hidden />}
             </tr>
           ))}
         </tbody>
