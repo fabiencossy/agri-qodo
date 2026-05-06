@@ -23,6 +23,7 @@
     "db:seed": "tsx prisma/seed.ts",
     "db:seed:materiels": "tsx prisma/seed-materiels.ts",
     "db:seed:produits": "tsx prisma/seed-produits.ts",
+    "db:seed:reset-catalogue": "tsx prisma/seed-reset-catalogue.ts",
     "clean": "rimraf dist .turbo"
   },
   "dependencies": {
