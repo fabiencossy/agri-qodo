@@ -9,7 +9,8 @@
  *
  * Filtre sur nom + identifiant cadastral + zone agricole.
  */
-import { Check, Crosshair, Loader2, MapPin, Plus, Search, X } from "lucide-react";
+import { Check, Loader2, MapPin, MapPinned, Plus, Search, X } from "lucide-react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Input } from "@/components/ui/input";
@@ -18,6 +19,10 @@ import {
   useCreateQuickParcelle,
   useParcellesAccessibles,
 } from "@/lib/parcelles";
+
+const PointPickerMap = dynamic(() => import("@/components/maps/point-picker-map"), {
+  ssr: false,
+});
 
 interface ParcelleSearchSelectProps {
   value: string;
@@ -335,36 +340,16 @@ function QuickCreatePanel({
 }) {
   const create = useCreateQuickParcelle();
   const [open, setOpen] = useState(false);
-  const [draft, setDraft] = useState({
+  const [draft, setDraft] = useState<{
+    nom: string;
+    surfaceHa: string;
+    point: { lat: number; lng: number } | null;
+  }>({
     nom: "",
     surfaceHa: "",
-    lat: "",
-    lng: "",
+    point: null,
   });
-  const [geoLoading, setGeoLoading] = useState(false);
-
-  function locate() {
-    if (!navigator.geolocation) {
-      alert("Géolocalisation indisponible sur ce navigateur.");
-      return;
-    }
-    setGeoLoading(true);
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setDraft((d) => ({
-          ...d,
-          lat: pos.coords.latitude.toFixed(6),
-          lng: pos.coords.longitude.toFixed(6),
-        }));
-        setGeoLoading(false);
-      },
-      () => {
-        setGeoLoading(false);
-        alert("Impossible de récupérer ta position.");
-      },
-      { enableHighAccuracy: true, timeout: 10_000 },
-    );
-  }
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   async function submit() {
     const surfaceHa = Number(draft.surfaceHa);
@@ -376,8 +361,7 @@ function QuickCreatePanel({
       const created = await create.mutateAsync({
         nom: draft.nom.trim(),
         surfaceM2: Math.round(surfaceHa * 10_000),
-        ...(draft.lat ? { centreLat: Number(draft.lat) } : {}),
-        ...(draft.lng ? { centreLng: Number(draft.lng) } : {}),
+        ...(draft.point ? { centreLat: draft.point.lat, centreLng: draft.point.lng } : {}),
         ...(odooPartnerId !== undefined ? { odooPartnerId } : {}),
       });
       // Adapter en AccessibleParcelle (le hook renvoie Parcelle, on
@@ -392,7 +376,7 @@ function QuickCreatePanel({
         isOwn: true,
         tenant: { id: "", nom: "", code: "", canton: "" },
       } as unknown as AccessibleParcelle);
-      setDraft({ nom: "", surfaceHa: "", lat: "", lng: "" });
+      setDraft({ nom: "", surfaceHa: "", point: null });
       setOpen(false);
       onClose();
     } catch (err) {
@@ -450,40 +434,16 @@ function QuickCreatePanel({
           ha
         </span>
       </div>
-      <div className="grid grid-cols-[1fr_1fr_auto] gap-2">
-        <input
-          type="number"
-          step="0.000001"
-          inputMode="decimal"
-          value={draft.lat}
-          onChange={(e) => setDraft({ ...draft, lat: e.target.value })}
-          placeholder="Latitude"
-          className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green"
-        />
-        <input
-          type="number"
-          step="0.000001"
-          inputMode="decimal"
-          value={draft.lng}
-          onChange={(e) => setDraft({ ...draft, lng: e.target.value })}
-          placeholder="Longitude"
-          className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green"
-        />
-        <button
-          type="button"
-          onClick={locate}
-          disabled={geoLoading}
-          aria-label="Utiliser ma position GPS"
-          title="Utiliser ma position GPS actuelle"
-          className="flex h-9 w-9 items-center justify-center rounded-md border border-border bg-background hover:bg-muted disabled:opacity-50"
-        >
-          {geoLoading ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <Crosshair className="h-4 w-4" />
-          )}
-        </button>
-      </div>
+      <button
+        type="button"
+        onClick={() => setPickerOpen(true)}
+        className="flex h-9 w-full items-center justify-center gap-1.5 rounded-md border border-border bg-background px-2 text-sm font-medium text-foreground/80 hover:bg-muted"
+      >
+        <MapPinned className="h-4 w-4 text-green" />
+        {draft.point
+          ? `Point : ${draft.point.lat.toFixed(5)}, ${draft.point.lng.toFixed(5)}`
+          : "Choisir un point sur la carte (optionnel)"}
+      </button>
       <button
         type="button"
         onClick={submit}
@@ -493,6 +453,16 @@ function QuickCreatePanel({
         {create.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
         Créer et sélectionner
       </button>
+      {pickerOpen && (
+        <PointPickerMap
+          initial={draft.point}
+          onCancel={() => setPickerOpen(false)}
+          onConfirm={(p) => {
+            setDraft((d) => ({ ...d, point: p }));
+            setPickerOpen(false);
+          }}
+        />
+      )}
     </div>
   );
 }

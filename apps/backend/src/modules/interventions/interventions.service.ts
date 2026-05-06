@@ -270,17 +270,17 @@ export class InterventionsService {
             "Pour un SEMIS, le produit doit être une semence du catalogue",
           );
         }
-        if (!produit.especeCode) {
-          throw new BadRequestException(
-            "La semence n'a pas de code espèce — impossible de créer la Culture",
-          );
-        }
+        // especeCode est facultatif (les produits importés depuis Odoo
+        // ou créés à la volée n'ont souvent que le libelle). Si absent,
+        // on utilise le libelle comme nom d'espèce — l'agriculteur
+        // pourra l'enrichir plus tard.
+        const especeFallback = (produit.especeCode ?? produit.libelle).trim().slice(0, 80);
         const created = await tx.culture.create({
           data: {
             tenantId: ownerTenantId,
             parcelleId: dto.parcelleId,
-            espece: produit.especeCode,
-            variete: produit.libelle,
+            espece: especeFallback,
+            variete: produit.especeCode ? produit.libelle : null,
             dateSemis: dateOperation,
             campagne: dateOperation.getUTCFullYear(),
           },

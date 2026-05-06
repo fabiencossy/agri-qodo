@@ -15,6 +15,7 @@ import {
   HeuresSimplesInput,
   type HeuresSimplesValue,
 } from "@/components/activites/heures-simples-input";
+import { extractApiErrorMessage } from "@/lib/api-client";
 import { useTenantDetail } from "@/lib/tenants";
 import { useUsers } from "@/lib/users";
 import { Button } from "@/components/ui/button";
@@ -894,8 +895,9 @@ export default function NewInterventionPage() {
 
           {(createMutation.isError || updateMutation.isError) && (
             <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
-              {isEditMode ? "Modification impossible" : "Saisie impossible"}. Vérifie les valeurs et
-              réessaie.
+              <strong>{isEditMode ? "Modification impossible" : "Saisie impossible"} :</strong>{" "}
+              {extractApiErrorMessage(createMutation.error ?? updateMutation.error) ??
+                "Vérifie les valeurs et réessaie."}
             </div>
           )}
 
