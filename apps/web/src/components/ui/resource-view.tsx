@@ -241,6 +241,10 @@ export function ResourceView<T>(props: ResourceViewProps<T>) {
   /** Clés des colonnes masquées par l'utilisateur (Cmd+colonnes). */
   const [hiddenColumnKeys, setHiddenColumnKeys] = useState<Set<string>>(new Set());
   const [columnsPanelOpen, setColumnsPanelOpen] = useState(false);
+  const [pendingAction, setPendingAction] = useState<{
+    action: BulkAction<T>;
+    items: T[];
+  } | null>(null);
 
   // Réhydratation de l'état au mount (et à chaque changement de storageKey).
   useEffect(() => {
@@ -534,17 +538,13 @@ export function ResourceView<T>(props: ResourceViewProps<T>) {
           actions={props.bulkActions ?? []}
           onAction={async (action) => {
             const items = filteredData.filter((it) => selectedKeys.has(props.getKey(it)));
-            console.log("[bulk-action] click", { key: action.key, count: items.length });
             if (action.confirm) {
-              const ok = window.confirm(action.confirm.replace("{n}", String(items.length)));
-              console.log("[bulk-action] confirm result", ok);
-              if (!ok) return;
+              setPendingAction({ action, items });
+              return;
             }
             try {
               await action.handler(items);
-              console.log("[bulk-action] handler done");
             } catch (err) {
-              console.error("[bulk-action] handler threw", err);
               alert(
                 `Erreur lors de l'action "${action.label}" :\n${
                   err instanceof Error ? err.message : String(err)
@@ -555,6 +555,36 @@ export function ResourceView<T>(props: ResourceViewProps<T>) {
           }}
         />
       )}
+
+      {pendingAction &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <ConfirmDialog
+            title={pendingAction.action.label}
+            message={(pendingAction.action.confirm ?? "Confirmer ?").replace(
+              "{n}",
+              String(pendingAction.items.length),
+            )}
+            confirmLabel={pendingAction.action.label}
+            confirmClass={pendingAction.action.className ?? "bg-green hover:bg-green-dark"}
+            onCancel={() => setPendingAction(null)}
+            onConfirm={async () => {
+              const { action, items } = pendingAction;
+              setPendingAction(null);
+              try {
+                await action.handler(items);
+              } catch (err) {
+                alert(
+                  `Erreur lors de l'action "${action.label}" :\n${
+                    err instanceof Error ? err.message : String(err)
+                  }`,
+                );
+              }
+              setSelectedKeys(new Set());
+            }}
+          />,
+          document.body,
+        )}
     </div>
   );
 }
@@ -618,6 +648,60 @@ function buildSelectColumn<T>(
  * Barre flottante d'actions bulk affichée en bas de page quand au
  * moins un item est sélectionné. Pattern Odoo / Notion.
  */
+/**
+ * Dialog de confirmation custom pour les actions bulk avec
+ * action.confirm. Remplace window.confirm() qui était parfois bloqué
+ * par Chrome ou cliqué "Annuler" par erreur (image 124 — confirm
+ * result false sans intention utilisateur).
+ */
+function ConfirmDialog({
+  title,
+  message,
+  confirmLabel,
+  confirmClass,
+  onCancel,
+  onConfirm,
+}: {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  confirmClass: string;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-[9500] flex items-center justify-center bg-black/40 p-4"
+      onClick={onCancel}
+    >
+      <div
+        className="w-full max-w-md rounded-2xl border border-border bg-background p-6 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 className="mb-2 text-lg font-semibold">{title}</h2>
+        <p className="mb-5 text-sm text-foreground/70">{message}</p>
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="rounded-lg border border-border bg-background px-4 py-2 text-sm font-medium hover:bg-muted"
+          >
+            Annuler
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            className={`rounded-lg px-4 py-2 text-sm font-semibold text-white ${confirmClass}`}
+            autoFocus
+          >
+            {confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function BulkActionBar<T>({
   count,
   onClear,
