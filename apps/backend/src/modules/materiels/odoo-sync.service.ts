@@ -308,15 +308,16 @@ export class MaterielsOdooSyncService {
       const client = await this.odooClientManager.forTenant(tenantId);
       const uomId = await this.resolveUomId(client, tenantId, materiel.unite);
       // Push local → Odoo (best-effort). default_code mis à false
-      // pour effacer la référence interne AQ-... visible côté Odoo
-      // (demande Fabien 2026-05-06 : "sur Odoo y a tjs les ref!").
+      // pour effacer la référence interne AQ-... visible côté Odoo.
+      // uom_po_id même valeur que uom_id sinon Odoo refuse parfois
+      // le write d'uom_id seul (incohérence cat. unité achat/vente).
       await client
         .write("product.product", [materiel.odooProductId], {
           name: materiel.libelle,
           list_price: materiel.prixUnitaireCHF ? Number(materiel.prixUnitaireCHF) : 0,
           default_code: false,
           expense_policy: "no",
-          ...(uomId ? { uom_id: uomId } : {}),
+          ...(uomId ? { uom_id: uomId, uom_po_id: uomId } : {}),
         })
         .catch((err) =>
           this.logger.warn(

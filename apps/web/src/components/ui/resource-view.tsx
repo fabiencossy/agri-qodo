@@ -830,16 +830,6 @@ interface CalendarViewProps<T> {
   onItemClick?: (item: T) => void;
 }
 
-function isSameDay(a: Date, b: Date): boolean {
-  return (
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate()
-  );
-}
-
-const JOURS_COURTS = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
-
 function CalendarView<T>({
   data,
   getKey,
@@ -847,15 +837,11 @@ function CalendarView<T>({
   renderItem,
   onItemClick,
 }: CalendarViewProps<T>) {
-  // Mode jour vs semaine. Décision Fabien 2026-05-06 : "au pire on a
-  // besoin par semaine mais jamais par mois". Le mode mensuel est
-  // retiré (inutilisable sur mobile, peu pertinent sur desktop pour
-  // une exploitation agricole où on raisonne par semaine de travail).
-  // Default = "day" sur mobile, "week" sur desktop.
-  const [mode, setMode] = useState<"day" | "week">(() => {
-    if (typeof window === "undefined") return "week";
-    return window.matchMedia("(max-width: 639px)").matches ? "day" : "week";
-  });
+  // Vue jour uniquement. Décision Fabien 2026-05-06 : "enlève la vue
+  // semaine elle sert à rien". Modes mois et semaine retirés. Une
+  // exploitation agricole raisonne au jour le jour pour le carnet
+  // des champs ; pour avoir une vue agrégée, l'utilisateur peut
+  // basculer en vue Liste avec filtre "Cette semaine".
   const [dayCursor, setDayCursor] = useState<Date>(() => new Date());
 
   // Map jour ISO (YYYY-MM-DD) → items pour ce jour. Skip items sans date.
@@ -874,211 +860,72 @@ function CalendarView<T>({
     return map;
   }, [data, dateField]);
 
-  const today = new Date();
-  // Lundi de la semaine du curseur jour.
-  const lundi = (() => {
-    const d = new Date(dayCursor);
-    const dow = (d.getDay() + 6) % 7; // 0 = lundi
-    d.setDate(d.getDate() - dow);
-    d.setHours(0, 0, 0, 0);
-    return d;
-  })();
-  const semaineCells: Date[] = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(lundi);
-    d.setDate(lundi.getDate() + i);
-    return d;
-  });
-
-  // ─── Mode JOUR ──────────────────────────────────────────────────────
-  if (mode === "day") {
-    const dayKey = `${dayCursor.getFullYear()}-${String(dayCursor.getMonth() + 1).padStart(2, "0")}-${String(dayCursor.getDate()).padStart(2, "0")}`;
-    const dayItems = itemsByDay.get(dayKey) ?? [];
-    const dayLabel = dayCursor.toLocaleDateString("fr-CH", {
-      weekday: "long",
-      day: "numeric",
-      month: "long",
-      year: "numeric",
-    });
-    const goPrevDay = () =>
-      setDayCursor((c) => new Date(c.getFullYear(), c.getMonth(), c.getDate() - 1));
-    const goNextDay = () =>
-      setDayCursor((c) => new Date(c.getFullYear(), c.getMonth(), c.getDate() + 1));
-    const goTodayDay = () => setDayCursor(new Date());
-    return (
-      <div className="space-y-2">
-        <div className="flex flex-col gap-2 rounded-xl border border-border bg-background px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center justify-between gap-2 sm:flex-1">
-            <button
-              type="button"
-              onClick={goPrevDay}
-              className="rounded-md px-3 py-1.5 hover:bg-muted"
-              aria-label="Jour précédent"
-            >
-              ←
-            </button>
-            <span className="text-sm font-semibold capitalize">{dayLabel}</span>
-            <button
-              type="button"
-              onClick={goNextDay}
-              className="rounded-md px-3 py-1.5 hover:bg-muted"
-              aria-label="Jour suivant"
-            >
-              →
-            </button>
-          </div>
-          <div className="flex gap-1">
-            <button
-              type="button"
-              onClick={goTodayDay}
-              className="rounded-md px-2 py-1 text-xs hover:bg-muted"
-            >
-              Aujourd&apos;hui
-            </button>
-            <button
-              type="button"
-              onClick={() => setMode("week")}
-              className="rounded-md px-2 py-1 text-xs hover:bg-muted"
-            >
-              Semaine
-            </button>
-          </div>
-        </div>
-        {dayItems.length === 0 ? (
-          <p className="rounded-xl border border-dashed border-border bg-muted/30 p-6 text-center text-sm text-foreground/60">
-            Aucune activité ce jour.
-          </p>
-        ) : (
-          <ul className="divide-y divide-border rounded-xl border border-border bg-background">
-            {dayItems.map((item) => (
-              <li key={getKey(item)}>
-                {onItemClick ? (
-                  <button
-                    type="button"
-                    onClick={() => onItemClick(item)}
-                    className="block w-full px-4 py-3 text-left hover:bg-muted/30"
-                  >
-                    {renderItem(item)}
-                  </button>
-                ) : (
-                  <div className="px-4 py-3">{renderItem(item)}</div>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-    );
-  }
-
-  // ─── Mode SEMAINE ──────────────────────────────────────────────────
-  const dim = new Date(lundi);
-  dim.setDate(lundi.getDate() + 6);
-  const semaineLabel = `${lundi.getDate()} – ${dim.getDate()} ${dim.toLocaleDateString("fr-CH", {
+  const dayKey = `${dayCursor.getFullYear()}-${String(dayCursor.getMonth() + 1).padStart(2, "0")}-${String(dayCursor.getDate()).padStart(2, "0")}`;
+  const dayItems = itemsByDay.get(dayKey) ?? [];
+  const dayLabel = dayCursor.toLocaleDateString("fr-CH", {
+    weekday: "long",
+    day: "numeric",
     month: "long",
     year: "numeric",
-  })}`;
-  const goPrevSem = () =>
-    setDayCursor((c) => new Date(c.getFullYear(), c.getMonth(), c.getDate() - 7));
-  const goNextSem = () =>
-    setDayCursor((c) => new Date(c.getFullYear(), c.getMonth(), c.getDate() + 7));
-  const goTodaySem = () => setDayCursor(new Date());
-
+  });
+  const goPrevDay = () =>
+    setDayCursor((c) => new Date(c.getFullYear(), c.getMonth(), c.getDate() - 1));
+  const goNextDay = () =>
+    setDayCursor((c) => new Date(c.getFullYear(), c.getMonth(), c.getDate() + 1));
+  const goTodayDay = () => setDayCursor(new Date());
   return (
     <div className="space-y-2">
       <div className="flex flex-col gap-2 rounded-xl border border-border bg-background px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center justify-between gap-2 sm:flex-1">
           <button
             type="button"
-            onClick={goPrevSem}
+            onClick={goPrevDay}
             className="rounded-md px-3 py-1.5 hover:bg-muted"
-            aria-label="Semaine précédente"
+            aria-label="Jour précédent"
           >
             ←
           </button>
-          <span className="text-sm font-semibold capitalize">{semaineLabel}</span>
+          <span className="text-sm font-semibold capitalize">{dayLabel}</span>
           <button
             type="button"
-            onClick={goNextSem}
+            onClick={goNextDay}
             className="rounded-md px-3 py-1.5 hover:bg-muted"
-            aria-label="Semaine suivante"
+            aria-label="Jour suivant"
           >
             →
           </button>
         </div>
-        <div className="flex gap-1">
-          <button
-            type="button"
-            onClick={goTodaySem}
-            className="rounded-md px-2 py-1 text-xs hover:bg-muted"
-          >
-            Aujourd&apos;hui
-          </button>
-          <button
-            type="button"
-            onClick={() => setMode("day")}
-            className="rounded-md px-2 py-1 text-xs hover:bg-muted"
-          >
-            Jour
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={goTodayDay}
+          className="rounded-md px-2 py-1 text-xs hover:bg-muted"
+        >
+          Aujourd&apos;hui
+        </button>
       </div>
-
-      <div className="grid grid-cols-7 gap-px overflow-hidden rounded-xl border border-border bg-border">
-        {semaineCells.map((d, idx) => {
-          const isToday = isSameDay(d, today);
-          const k = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-          const items = itemsByDay.get(k) ?? [];
-          return (
-            <div
-              key={k}
-              className={`flex min-h-[120px] flex-col bg-background p-2 ${
-                isToday ? "ring-2 ring-inset ring-green" : ""
-              }`}
-            >
-              <div className="mb-2 flex items-baseline justify-between">
-                <div className="flex flex-col">
-                  <span className="text-[10px] font-semibold uppercase tracking-wide text-foreground/60">
-                    {JOURS_COURTS[idx]}
-                  </span>
-                  <span
-                    className={`text-base font-bold ${isToday ? "text-green" : "text-foreground/80"}`}
-                  >
-                    {d.getDate()}
-                  </span>
-                </div>
-                {items.length > 0 && (
-                  <span className="rounded-full bg-muted px-1.5 text-[10px] text-foreground/60">
-                    {items.length}
-                  </span>
-                )}
-              </div>
-              <ul className="flex-1 space-y-1 overflow-y-auto">
-                {items.map((item) => {
-                  const key = getKey(item);
-                  const content = (
-                    <div className="cursor-pointer truncate rounded border border-green/30 bg-green/5 px-1.5 py-1 text-[11px] hover:bg-green/10">
-                      {renderItem(item)}
-                    </div>
-                  );
-                  return onItemClick ? (
-                    <li key={key}>
-                      <button
-                        type="button"
-                        onClick={() => onItemClick(item)}
-                        className="block w-full text-left"
-                      >
-                        {content}
-                      </button>
-                    </li>
-                  ) : (
-                    <li key={key}>{content}</li>
-                  );
-                })}
-              </ul>
-            </div>
-          );
-        })}
-      </div>
+      {dayItems.length === 0 ? (
+        <p className="rounded-xl border border-dashed border-border bg-muted/30 p-6 text-center text-sm text-foreground/60">
+          Aucune activité ce jour.
+        </p>
+      ) : (
+        <ul className="divide-y divide-border rounded-xl border border-border bg-background">
+          {dayItems.map((item) => (
+            <li key={getKey(item)}>
+              {onItemClick ? (
+                <button
+                  type="button"
+                  onClick={() => onItemClick(item)}
+                  className="block w-full px-4 py-3 text-left hover:bg-muted/30"
+                >
+                  {renderItem(item)}
+                </button>
+              ) : (
+                <div className="px-4 py-3">{renderItem(item)}</div>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
