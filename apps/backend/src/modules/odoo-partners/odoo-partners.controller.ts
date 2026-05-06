@@ -9,6 +9,12 @@ import { TenantContextService } from "@/common/tenant/tenant-context.service";
 import { JwtAuthGuard } from "@/modules/auth/guards/jwt-auth.guard";
 import { OdooPartnersService, type OdooPartnerOut } from "./odoo-partners.service";
 
+class LinkOdooPartnerDto {
+  @IsInt()
+  @Min(1)
+  odooPartnerId!: number;
+}
+
 class CreateClientRapideDto {
   @IsString()
   @MinLength(2)
@@ -79,12 +85,6 @@ export class OdooPartnersController {
     const { tenantId } = this.tenantContext.get();
     return this.service.linkOdooPartner(tenantId, dto.odooPartnerId);
   }
-}
-
-class LinkOdooPartnerDto {
-  @IsInt()
-  @Min(1)
-  odooPartnerId!: number;
 }
 
 @ApiTags("odoo-projects")
