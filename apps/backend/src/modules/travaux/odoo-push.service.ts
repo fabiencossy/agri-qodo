@@ -418,41 +418,38 @@ export class OdooPushService {
           sale_order_id: saleOrderId,
         });
 
-        // sale_line_id : on cible la PREMIÈRE ligne du sale.order, qui
-        // est par construction la ligne placeholder service "Suivi des
-        // heures (non facturable)" ajoutée en tête (cf §2pre). Cette
-        // ligne accepte toujours sale_line_id (service, qty=0, prix=0,
-        // pas de is_expense) → la task est facturablement liée au
-        // devis SANS jamais facturer les heures pointées. Best-effort :
-        // si Odoo refuse pour une raison inattendue, on continue.
+        // Pour faire apparaître le smart button "Commande client" sur
+        // la task (compute sale_order_count Odoo), on pose task_id
+        // côté sale.order.line — c'est l'inverse de sale_line_id sur
+        // task, et plus toléré par Odoo quand le produit est
+        // is_expense=true (la contrainte "dépense refacturée" est
+        // testée seulement quand on assigne sale_line_id à la task,
+        // pas quand on assigne task_id à la ligne).
         try {
-          // Exclure les sections (display_type='line_section') et notes
-          // (display_type='line_note') — sinon on récupère la 1re ligne
-          // qui est la section "Travaux du JJ/MM" et Odoo refuse de la
-          // lier à la task ("Vous ne pouvez pas lier la ligne X car
-          // dépense refacturée" = faux positif Odoo, en réalité c'est
-          // juste qu'une section sans product_id n'est pas liable).
           const lines = await client.searchRead<{ id: number }>(
             "sale.order.line",
             [
               ["order_id", "=", saleOrderId],
               ["display_type", "=", false],
             ],
-            { fields: ["id"], order: "sequence,id", limit: 1 },
+            { fields: ["id"], order: "sequence,id" },
           );
-          const firstLineId = lines[0]?.id;
-          if (firstLineId) {
-            await client.write("project.task", [projectTaskId], {
-              sale_line_id: firstLineId,
-            });
+          for (const ln of lines) {
+            // ligne par ligne best-effort — si une ligne refuse
+            // (rare), on continue avec les autres.
+            await client
+              .write("sale.order.line", [ln.id], { task_id: projectTaskId })
+              .catch(() => undefined);
           }
         } catch (err) {
           this.logger.warn(
-            `sale_line_id non lié sur task #${projectTaskId} (devis ${saleOrderId} créé OK) : ${err instanceof Error ? err.message : err}`,
+            `task_id non posé sur les lignes du devis ${saleOrderId} (task #${projectTaskId} créée OK) : ${err instanceof Error ? err.message : err}`,
           );
         }
 
         // Liaison bidirectionnelle (tasks_ids est Many2many côté sale.order).
+        // Cette write force aussi le recompute de sale_order_count côté
+        // task, ce qui rend visible le smart button "Commande client".
         await client.write("sale.order", [saleOrderId], {
           tasks_ids: [[4, projectTaskId, 0]],
         });
