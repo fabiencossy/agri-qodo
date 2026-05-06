@@ -228,6 +228,29 @@ export class OdooPushService {
     // lignes côté FSM si on en crée une.
     const physicalLines: { productId: number; qty: number; name: string }[] = [];
 
+    // 2pre. Ligne service "ancrage task" en TÊTE du devis.
+    // Décision Fabien 2026-05-06 : on veut que la project.task soit
+    // visiblement liée au sale.order ET que les heures pointées sur
+    // la task soient NON facturables. Or les lignes facturables (ex
+    // "Plantation pommes de terre" 380 CHF/ha avec is_expense=true)
+    // refusent d'être liées via sale_line_id. Solution : on ajoute
+    // toujours une ligne service "Suivi des heures (non facturable)"
+    // en première position (qty=0, prix=0) qu'on utilise comme cible
+    // de sale_line_id sur la task. Effet :
+    //   - smart button "Devis" visible sur la task
+    //   - "Article de la commande client" rempli (= ligne placeholder)
+    //   - les heures pointées s'attachent à cette ligne, qty = somme
+    //     des heures, mais price_unit = 0 → NON facturable
+    //   - les vraies lignes facturables (matériel à l'ha) restent
+    //     intactes en dessous
+    const hourProductId = await this.ensureHourProductId(client, tenantId);
+    orderLines.push({
+      product_id: hourProductId,
+      name: "Suivi des heures (non facturable)",
+      product_uom_qty: 0,
+      price_unit: 0,
+    });
+
     // 2a. Lignes produit
     for (const lp of travail.lignesProduit) {
       let productId: number | undefined = lp.produit?.odooProductId ?? undefined;
@@ -289,40 +312,18 @@ export class OdooPushService {
       }
     }
 
-    // 2b. Lignes heures : produit "Main d'œuvre" générique par tenant
-    if (travail.lignesHeure.length > 0) {
-      let hourProductId = this.hourProductCache.get(tenantId);
-      if (!hourProductId) {
-        const found = await client.searchRead<ProductProductRow>(
-          "product.product",
-          [
-            ["name", "=", "Main d'œuvre (Agri Qodo)"],
-            ["type", "=", "service"],
-          ],
-          { fields: ["id"], limit: 1 },
-        );
-        if (found.length > 0 && found[0]) {
-          hourProductId = found[0].id;
-        } else {
-          hourProductId = await client.create("product.product", {
-            name: "Main d'œuvre (Agri Qodo)",
-            type: "service",
-            list_price: 0,
-          });
-          productsCreated++;
-        }
-        this.hourProductCache.set(tenantId, hourProductId);
-      }
-      for (const lh of travail.lignesHeure) {
-        const heures = Number(lh.dureeMinutes) / 60;
-        const line: OdooSaleOrderLineCreate = {
-          product_id: hourProductId,
-          name: lh.notes ?? `Travail (${heures.toFixed(2)}h)`,
-          product_uom_qty: heures,
-        };
-        if (lh.tauxHoraireCHF) line.price_unit = Number(lh.tauxHoraireCHF);
-        orderLines.push(line);
-      }
+    // 2b. Lignes heures saisies dans Agri Qodo (LigneTravailHeure).
+    // On utilise le même hourProductId que la ligne placeholder en tête
+    // — pas de doublon de produit côté Odoo.
+    for (const lh of travail.lignesHeure) {
+      const heures = Number(lh.dureeMinutes) / 60;
+      const line: OdooSaleOrderLineCreate = {
+        product_id: hourProductId,
+        name: lh.notes ?? `Travail (${heures.toFixed(2)}h)`,
+        product_uom_qty: heures,
+      };
+      if (lh.tauxHoraireCHF) line.price_unit = Number(lh.tauxHoraireCHF);
+      orderLines.push(line);
     }
 
     // 3. Création du sale.order brouillon -------------------------------
@@ -377,25 +378,23 @@ export class OdooPushService {
           sale_order_id: saleOrderId,
         });
 
-        // Best-effort : on tente sale_line_id sur la 1re ligne service
-        // (ou à défaut la 1re ligne tout court). Si Odoo refuse — par
-        // exemple "Vous ne pouvez pas lier la ligne … car il s'agit
-        // d'une dépense refacturée" — on logue et on continue : la
-        // task reste liée au devis, juste pas à une ligne précise.
+        // sale_line_id : on cible la PREMIÈRE ligne du sale.order, qui
+        // est par construction la ligne placeholder service "Suivi des
+        // heures (non facturable)" ajoutée en tête (cf §2pre). Cette
+        // ligne accepte toujours sale_line_id (service, qty=0, prix=0,
+        // pas de is_expense) → la task est facturablement liée au
+        // devis SANS jamais facturer les heures pointées. Best-effort :
+        // si Odoo refuse pour une raison inattendue, on continue.
         try {
-          const lines = await client.searchRead<{
-            id: number;
-            product_type?: string;
-            product_id?: [number, string] | false;
-          }>("sale.order.line", [["order_id", "=", saleOrderId]], {
-            fields: ["id", "product_type", "product_id"],
-            order: "sequence,id",
-          });
-          const serviceLine = lines.find((l) => l.product_type === "service");
-          const billableLineId = serviceLine?.id ?? lines[0]?.id;
-          if (billableLineId) {
+          const lines = await client.searchRead<{ id: number }>(
+            "sale.order.line",
+            [["order_id", "=", saleOrderId]],
+            { fields: ["id"], order: "sequence,id", limit: 1 },
+          );
+          const firstLineId = lines[0]?.id;
+          if (firstLineId) {
             await client.write("project.task", [projectTaskId], {
-              sale_line_id: billableLineId,
+              sale_line_id: firstLineId,
             });
           }
         } catch (err) {
@@ -565,6 +564,39 @@ export class OdooPushService {
       linesCount: travail.lignesHeure.length,
       odooFsmTaskId: null,
     };
+  }
+
+  /**
+   * Trouve ou crée le product.product service "Main d'œuvre (Agri Qodo)"
+   * pour le tenant. Sert à deux usages :
+   *   - lignes d'heures saisies dans Agri Qodo (LigneTravailHeure)
+   *   - ligne placeholder "Suivi des heures" en tête du sale.order
+   *     (ancrage sale_line_id de la project.task)
+   * Cache mémoire pour éviter le lookup répété.
+   */
+  private async ensureHourProductId(client: OdooClient, tenantId: string): Promise<number> {
+    const cached = this.hourProductCache.get(tenantId);
+    if (cached) return cached;
+    const found = await client.searchRead<ProductProductRow>(
+      "product.product",
+      [
+        ["name", "=", "Main d'œuvre (Agri Qodo)"],
+        ["type", "=", "service"],
+      ],
+      { fields: ["id"], limit: 1 },
+    );
+    let productId: number;
+    if (found.length > 0 && found[0]) {
+      productId = found[0].id;
+    } else {
+      productId = await client.create("product.product", {
+        name: "Main d'œuvre (Agri Qodo)",
+        type: "service",
+        list_price: 0,
+      });
+    }
+    this.hourProductCache.set(tenantId, productId);
+    return productId;
   }
 
   /**
