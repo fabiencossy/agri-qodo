@@ -257,7 +257,12 @@ export default function NewInterventionPage() {
   // Client choisi en haut du formulaire — sert à filtrer les parcelles
   // visibles dans le ParcelleSearchSelect (UX "trouver vite la bonne parcelle").
   // Pas persisté côté serveur : le tenantId effectif vient de la parcelle.
+  // Carnet : 2 sélections distinctes possibles dans le sélecteur Client.
+  // - clientId (UUID Exploitation) → filtre les parcelles à celles du client.
+  // - clientOdooId (Int) → simple mémorisation, pas de filtre parcelles
+  //   (un client Odoo "seul" n'a pas de parcelles côté Agri Qodo).
   const [clientId, setClientId] = useState("");
+  const [clientOdooId, setClientOdooId] = useState<number | null>(null);
 
   const [toutLeChamp, setToutLeChamp] = useState(true);
   // Mode de saisie de la sous-zone : numérique (m² entré au clavier) ou
@@ -511,15 +516,20 @@ export default function NewInterventionPage() {
             hint="Si renseigné, filtre les parcelles à celles du client. Laisse vide pour tes parcelles."
           >
             <PartenaireSelect
-              value={clientId ? { partenaireId: clientId } : {}}
-              onChange={(next) => {
-                // Carnet : seul un vrai partenaire Agri Qodo permet de
-                // filtrer les parcelles. Les clients Odoo "seuls" ne
-                // sont pas exploitables ici (pas de parcelles côté Agri).
-                setClientId(next.partenaireId ?? "");
-                setValue("parcelleId", "");
+              value={{
+                ...(clientId ? { partenaireId: clientId } : {}),
+                ...(clientOdooId ? { odooPartnerId: clientOdooId } : {}),
               }}
-              placeholder="Choisir un client lié…"
+              onChange={(next) => {
+                setClientId(next.partenaireId ?? "");
+                setClientOdooId(next.odooPartnerId ?? null);
+                // Reset parcelle uniquement si on change de partenaire Agri Qodo
+                // (les clients Odoo "seuls" n'ont pas de parcelles à filtrer).
+                if (next.partenaireId !== clientId) {
+                  setValue("parcelleId", "");
+                }
+              }}
+              placeholder="Choisir un client…"
             />
           </Field>
 
