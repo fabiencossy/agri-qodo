@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  * Copyright (C) 2026 Qodo SA
  */
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { Canton, PartnerLinkLevel, PartnerLinkStatus } from "@prisma/client";
 import { randomBytes } from "node:crypto";
 import { PrismaService } from "@/common/prisma/prisma.service";
@@ -201,6 +201,88 @@ export class OdooPartnersService {
     });
 
     return { exploitationId: shadow.id, nom: shadow.nom, odooPartnerId };
+  }
+
+  /**
+   * Sprint B prestations — sélection d'un client Odoo existant. Récupère
+   * le res.partner via XML-RPC, crée une Exploitation shadow et le
+   * PartnerLink mémorisant `odooPartnerId`, et renvoie l'`exploitationId`
+   * sélectionnable côté Travail.partenaireId.
+   *
+   * Idempotent : si un PartnerLink avec ce `odooPartnerId` existe déjà
+   * pour le tenant, on renvoie son `partnerTenantId` sans rien créer.
+   */
+  async linkOdooPartner(
+    tenantId: string,
+    odooPartnerId: number,
+  ): Promise<{ exploitationId: string; nom: string }> {
+    // 1. Idempotence : link existant ?
+    const existing = await this.prisma.partnerLink.findFirst({
+      where: { ownerTenantId: tenantId, odooPartnerId, status: "ACTIVE" },
+      include: { partnerTenant: { select: { id: true, nom: true } } },
+    });
+    if (existing) {
+      return {
+        exploitationId: existing.partnerTenant.id,
+        nom: existing.partnerTenant.nom,
+      };
+    }
+
+    // 2. Lire le res.partner depuis Odoo pour récupérer nom + ville/etc.
+    const client = await this.odoo.forTenant(tenantId);
+    const rows = await client.searchRead<{
+      id: number;
+      name: string;
+      city?: string | false;
+      zip?: string | false;
+      street?: string | false;
+      email?: string | false;
+      phone?: string | false;
+    }>("res.partner", [["id", "=", odooPartnerId]], {
+      fields: ["id", "name", "city", "zip", "street", "email", "phone"],
+      limit: 1,
+    });
+    const partner = rows[0];
+    if (!partner) {
+      throw new NotFoundException(`res.partner #${odooPartnerId} introuvable côté Odoo`);
+    }
+
+    // 3. Créer l'Exploitation shadow + PartnerLink (réutilise la logique
+    //    de createQuickClient mais sans recréer le res.partner Odoo).
+    const owner = await this.prisma.exploitation.findUniqueOrThrow({
+      where: { id: tenantId },
+      select: { canton: true },
+    });
+    const token = randomBytes(4).toString("hex").toUpperCase();
+    const code = `AQ-SHADOW-${owner.canton}-${token}`;
+
+    const shadow = await this.prisma.exploitation.create({
+      data: {
+        code,
+        nom: partner.name,
+        canton: owner.canton as Canton,
+        ...(typeof partner.city === "string" ? { localite: partner.city } : {}),
+        ...(typeof partner.zip === "string" ? { npa: partner.zip } : {}),
+        ...(typeof partner.street === "string" ? { adresse: partner.street } : {}),
+        ...(typeof partner.email === "string" ? { emailContact: partner.email } : {}),
+        ...(typeof partner.phone === "string" ? { telephone: partner.phone } : {}),
+      },
+    });
+
+    await this.prisma.partnerLink.create({
+      data: {
+        ownerTenantId: tenantId,
+        partnerTenantId: shadow.id,
+        niveau: PartnerLinkLevel.LECTURE,
+        status: PartnerLinkStatus.ACTIVE,
+        scope: {},
+        grantedAt: new Date(),
+        odooPartnerId,
+      },
+    });
+
+    this.log.log(`linkOdooPartner: odooId=${odooPartnerId} → exploitation shadow=${shadow.id}`);
+    return { exploitationId: shadow.id, nom: shadow.nom };
   }
 
   /**

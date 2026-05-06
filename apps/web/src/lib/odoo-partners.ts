@@ -64,3 +64,23 @@ export function useCreateQuickClient() {
     },
   });
 }
+
+/**
+ * Lie un res.partner Odoo existant à une Exploitation shadow Agri Qodo.
+ * Idempotent — appel multiple sur le même odooPartnerId ne crée pas de
+ * doublon. Renvoie l'exploitationId à utiliser dans Travail.partenaireId.
+ */
+export function useLinkOdooPartner() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (odooPartnerId: number) =>
+      api<{ exploitationId: string; nom: string }>("/api/odoo/partners/link", {
+        method: "POST",
+        body: { odooPartnerId },
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["odoo-partners"] });
+      void qc.invalidateQueries({ queryKey: ["partner-links"] });
+    },
+  });
+}

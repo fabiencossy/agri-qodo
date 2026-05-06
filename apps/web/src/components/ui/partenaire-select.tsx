@@ -1,10 +1,10 @@
 "use client";
 
-import { Check, ChevronDown, ExternalLink, Loader2, Plus, Search, X } from "lucide-react";
+import { Check, ChevronDown, Loader2, Plus, Search, X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/cn";
-import { useCreateQuickClient, useOdooPartners } from "@/lib/odoo-partners";
+import { useCreateQuickClient, useLinkOdooPartner, useOdooPartners } from "@/lib/odoo-partners";
 import { usePartnerLinks } from "@/lib/partner-links";
 
 interface AgriOption {
@@ -54,6 +54,7 @@ export function PartenaireSelect({
   const links = usePartnerLinks();
   const odooPartners = useOdooPartners();
   const createClient = useCreateQuickClient();
+  const linkOdoo = useLinkOdooPartner();
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   // Mode "création rapide" — formulaire inline dans le dropdown.
@@ -119,6 +120,16 @@ export function PartenaireSelect({
     document.addEventListener("mousedown", onClick);
     return () => document.removeEventListener("mousedown", onClick);
   }, [open]);
+
+  async function selectOdooPartner(odooId: number) {
+    try {
+      const linked = await linkOdoo.mutateAsync(odooId);
+      onChange(linked.exploitationId);
+      setOpen(false);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Liaison du client Odoo échouée.");
+    }
+  }
 
   async function submitCreate() {
     if (!draft.nom.trim()) return;
@@ -295,20 +306,25 @@ export function PartenaireSelect({
 
                 {filteredOdoo.length > 0 && <SectionHeader label="Clients Odoo" />}
                 {filteredOdoo.map((o) => {
-                  const selectable = !!o.id;
+                  const isLinking = linkOdoo.isPending && linkOdoo.variables === o.odooId;
                   return (
-                    <div
+                    <button
                       key={`odoo-${o.odooId}`}
+                      type="button"
+                      disabled={isLinking}
+                      onClick={() => {
+                        if (o.id) {
+                          onChange(o.id);
+                          setOpen(false);
+                        } else {
+                          void selectOdooPartner(o.odooId);
+                        }
+                      }}
                       className={cn(
-                        "flex items-center justify-between gap-2 px-3 py-2 text-sm",
-                        selectable ? "cursor-pointer hover:bg-muted" : "cursor-not-allowed",
+                        "flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm transition-colors",
+                        isLinking ? "opacity-60" : "hover:bg-muted",
                         value === o.id && "bg-green/5",
                       )}
-                      onClick={() => {
-                        if (!selectable || !o.id) return;
-                        onChange(o.id);
-                        setOpen(false);
-                      }}
                     >
                       <div className="min-w-0 flex-1">
                         <span className="flex items-center gap-1.5">
@@ -319,25 +335,18 @@ export function PartenaireSelect({
                             </span>
                           ) : (
                             <span className="rounded-full border border-border bg-muted/40 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-foreground/60">
-                              Odoo seul
+                              Odoo
                             </span>
                           )}
                         </span>
                         <span className="block text-xs text-foreground/50">{o.ville ?? "—"}</span>
                       </div>
-                      {selectable ? (
-                        value === o.id && <Check className="h-4 w-4 text-green" />
+                      {isLinking ? (
+                        <Loader2 className="h-4 w-4 shrink-0 animate-spin text-foreground/60" />
                       ) : (
-                        <Link
-                          href="/partenaires"
-                          onClick={(e) => e.stopPropagation()}
-                          className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-green hover:underline"
-                          title="Inviter ce client à rejoindre Agri Qodo"
-                        >
-                          Inviter <ExternalLink className="h-3 w-3" />
-                        </Link>
+                        value === o.id && <Check className="h-4 w-4 shrink-0 text-green" />
                       )}
-                    </div>
+                    </button>
                   );
                 })}
               </>
