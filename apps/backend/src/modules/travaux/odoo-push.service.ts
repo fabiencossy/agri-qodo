@@ -405,32 +405,17 @@ export class OdooPushService {
           );
         }
 
-        // Création de la project.task SANS sale_line_id : on lie juste
-        // sale_order_id (le devis global). Si on essaie de poser
-        // sale_line_id direct dans le create, Odoo rejette toute la
-        // création quand le produit est marqué "dépense refacturée"
-        // (is_expense=true) ou que le service_tracking ne le permet
-        // pas — ce qui ferait perdre la task entière.
-        const tenantOdooUrl = (
-          await this.prisma.exploitation.findUnique({
-            where: { id: tenantId },
-            select: { odooUrl: true },
-          })
-        )?.odooUrl;
-        const devisUrl = tenantOdooUrl
-          ? `${tenantOdooUrl.replace(/\/+$/, "")}/odoo/sales/${saleOrderId}`
-          : null;
-        const description = devisUrl
-          ? `<p>📄 <a href="${devisUrl}" target="_blank">Voir le devis associé</a></p>`
-          : "";
-
+        // Création de la project.task. On pose sale_order_id pour que
+        // le smart button natif Odoo "Commande client" apparaisse en
+        // haut à droite de la fiche task (le projet ayant
+        // allow_billable=True activé juste avant). Pas de description
+        // custom — on laisse Odoo gérer son UI native.
         projectTaskId = await client.create("project.task", {
           name: travail.titre,
           project_id: tenantProject.odooProjectIdTravauxTiers,
           partner_id: partnerId,
           date_deadline: travail.date.toISOString().slice(0, 10),
           sale_order_id: saleOrderId,
-          description,
         });
 
         // sale_line_id : on cible la PREMIÈRE ligne du sale.order, qui
