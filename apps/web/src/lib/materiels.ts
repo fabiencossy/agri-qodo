@@ -96,6 +96,18 @@ export function useSyncMaterielsOdoo() {
   });
 }
 
+/** Push un matériel unique vers Odoo. Idempotent. */
+export function usePushMaterielOdoo() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      api<{ odooProductId: number }>(`/api/materiels/${id}/push-odoo`, { method: "POST" }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: KEY });
+    },
+  });
+}
+
 export const MATERIEL_CATEGORIE_LABEL: Record<MaterielCategorie, string> = {
   TRAVAIL_DU_SOL: "Travail du sol",
   SEMIS: "Semis & plantation",

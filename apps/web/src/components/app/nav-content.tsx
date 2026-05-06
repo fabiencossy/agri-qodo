@@ -20,7 +20,6 @@ import {
   Timer,
   UserCircle,
   Users,
-  Wrench,
 } from "lucide-react";
 import Link from "next/link";
 import type { Route } from "next";
@@ -58,8 +57,7 @@ const PILOTAGE: NavLink[] = [
 const ADMINISTRATION: NavLink[] = [
   { href: "/utilisateurs", label: "Utilisateurs", icon: Users },
   { href: "/partenaires", label: "Partenaires", icon: Handshake },
-  { href: "/produits", label: "Catalogue produits", icon: Package },
-  { href: "/materiels", label: "Catalogue prestations", icon: Wrench },
+  { href: "/produits", label: "Produits", icon: Package },
   { href: "/profil", label: "Mon profil", icon: UserCircle },
   { href: "/parametres", label: "Paramètres", icon: Cog },
 ];

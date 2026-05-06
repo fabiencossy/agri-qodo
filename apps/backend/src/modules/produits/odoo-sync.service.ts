@@ -2,6 +2,7 @@ import {
   ForbiddenException,
   Injectable,
   Logger,
+  NotFoundException,
   ServiceUnavailableException,
 } from "@nestjs/common";
 import { ProduitCategorie, ProduitUnite, type UserRole } from "@prisma/client";
@@ -170,5 +171,71 @@ export class OdooSyncService {
       `Sync Odoo produits terminée pour tenant ${tenantId} : ${result.created} créés, ${result.updated} mis à jour, ${result.skipped} skip`,
     );
     return result;
+  }
+
+  /**
+   * Garantit qu'un produit a un product.product Odoo associé. Crée le
+   * produit côté Odoo si `odooProductId` est null, sinon retourne
+   * l'existant (idempotent). Sert au bouton "Pousser vers Odoo" sur
+   * la fiche produit côté UI.
+   */
+  async ensureOdooProduct(produitId: string): Promise<number> {
+    const { tenantId } = this.tenantContext.get();
+    const produit = await this.prisma.produit.findFirst({
+      where: { id: produitId, OR: [{ tenantId: null }, { tenantId }] },
+    });
+    if (!produit) throw new NotFoundException("Produit introuvable");
+    if (produit.odooProductId) return produit.odooProductId;
+
+    const client = await this.odooClientManager.forTenant(tenantId);
+
+    let odooId: number;
+    try {
+      odooId = await client.create("product.product", {
+        name: produit.libelle,
+        type: "consu",
+        list_price: produit.prixVenteCHF ? Number(produit.prixVenteCHF) : 0,
+        default_code: `AQ-${produit.code}`,
+      });
+    } catch (err) {
+      this.logger.error(
+        `Création product.product échouée pour produit ${produitId} : ${err instanceof Error ? err.message : err}`,
+      );
+      throw new ServiceUnavailableException(
+        "Impossible de créer le produit côté Odoo. Vérifie la config.",
+      );
+    }
+
+    if (produit.tenantId === null) {
+      // Globaux : on duplique en perso pour pouvoir poser l'odooProductId
+      // sans contaminer le catalogue partagé.
+      await this.prisma.produit.create({
+        data: {
+          tenantId,
+          code: `t-${tenantId.slice(0, 8)}-${produit.code}`,
+          libelle: produit.libelle,
+          categorie: produit.categorie,
+          unite: produit.unite,
+          marque: produit.marque,
+          fournisseur: produit.fournisseur,
+          especeCode: produit.especeCode,
+          tauxN: produit.tauxN,
+          tauxP: produit.tauxP,
+          tauxK: produit.tauxK,
+          prixVenteCHF: produit.prixVenteCHF,
+          notes: produit.notes,
+          actif: produit.actif,
+          odooProductId: odooId,
+          odooSyncedAt: new Date(),
+        },
+      });
+    } else {
+      await this.prisma.produit.update({
+        where: { id: produit.id },
+        data: { odooProductId: odooId, odooSyncedAt: new Date() },
+      });
+    }
+
+    return odooId;
   }
 }

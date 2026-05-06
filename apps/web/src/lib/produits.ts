@@ -29,6 +29,10 @@ export interface Produit {
   prixVenteCHF: string | null;
   notes: string | null;
   actif: boolean;
+  /** ID Odoo product.product si déjà poussé/synchronisé. */
+  odooProductId: number | null;
+  /** ISO datetime de la dernière sync Odoo. */
+  odooSyncedAt: string | null;
 }
 
 export interface CreateProduitInput {
@@ -99,6 +103,21 @@ export function useSyncProduitsOdoo() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () => api<SyncOdooProduitsResult>("/api/produits/sync-odoo", { method: "POST" }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: KEY });
+    },
+  });
+}
+
+/**
+ * Push un produit unique vers Odoo (crée product.product type=consu
+ * si pas encore mappé). Idempotent côté backend.
+ */
+export function usePushProduitOdoo() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      api<{ odooProductId: number }>(`/api/produits/${id}/push-odoo`, { method: "POST" }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: KEY });
     },
