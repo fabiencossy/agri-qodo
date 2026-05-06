@@ -543,7 +543,11 @@ export default function NewInterventionPage() {
                   onChange={(id) => onChange(id)}
                   required
                   disabled={noParcelles}
-                  {...(clientId ? { filtreTenantId: clientId } : {})}
+                  {...(clientId
+                    ? { filtreTenantId: clientId }
+                    : clientOdooId
+                      ? { filtreOdooPartnerId: clientOdooId }
+                      : {})}
                 />
               )}
             />

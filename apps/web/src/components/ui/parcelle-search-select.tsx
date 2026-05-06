@@ -26,8 +26,14 @@ interface ParcelleSearchSelectProps {
   required?: boolean;
   /** Si true, désactive le sélecteur (ex: pas de parcelle disponible). */
   disabled?: boolean;
-  /** Filtre les parcelles à celles d'un tenant précis (= un client choisi en amont). */
+  /** Filtre les parcelles à celles d'un tenant précis (= un partenaire Agri Qodo). */
   filtreTenantId?: string;
+  /**
+   * Filtre les parcelles à celles rattachées à un client Odoo non-partenaire
+   * (Parcelle.odooPartnerId). Permet, après sélection d'un client Odoo, de
+   * ne montrer que ses parcelles déjà créées rapidement.
+   */
+  filtreOdooPartnerId?: number;
 }
 
 export function ParcelleSearchSelect({
@@ -37,6 +43,7 @@ export function ParcelleSearchSelect({
   required: _required,
   disabled,
   filtreTenantId,
+  filtreOdooPartnerId,
 }: ParcelleSearchSelectProps) {
   const parcelles = useParcellesAccessibles();
   const [open, setOpen] = useState(false);
@@ -90,6 +97,8 @@ export function ParcelleSearchSelect({
     let list = parcelles.data ?? [];
     if (filtreTenantId) {
       list = list.filter((p) => p.tenantId === filtreTenantId);
+    } else if (filtreOdooPartnerId !== undefined) {
+      list = list.filter((p) => p.odooPartnerId === filtreOdooPartnerId);
     }
     const q = query.trim().toLowerCase();
     if (!q) return list.slice().sort((a, b) => a.nom.localeCompare(b.nom, "fr"));
@@ -98,7 +107,7 @@ export function ParcelleSearchSelect({
         [p.nom, p.identifiantCadastral ?? "", p.zone].join(" ").toLowerCase().includes(q),
       )
       .sort((a, b) => a.nom.localeCompare(b.nom, "fr"));
-  }, [parcelles.data, query, filtreTenantId]);
+  }, [parcelles.data, query, filtreTenantId, filtreOdooPartnerId]);
 
   const handleSelect = (p: AccessibleParcelle) => {
     onChange(p.id, p);
@@ -144,6 +153,9 @@ export function ParcelleSearchSelect({
                 selectedId={value}
                 onSelect={handleSelect}
                 onClose={() => setOpen(false)}
+                {...(filtreOdooPartnerId !== undefined
+                  ? { quickOdooPartnerId: filtreOdooPartnerId }
+                  : {})}
               />
             }
           />
@@ -158,6 +170,9 @@ export function ParcelleSearchSelect({
               selectedId={value}
               onSelect={handleSelect}
               onClose={() => setOpen(false)}
+              {...(filtreOdooPartnerId !== undefined
+                ? { quickOdooPartnerId: filtreOdooPartnerId }
+                : {})}
             />
           </div>
         ))}
@@ -203,6 +218,7 @@ function Panel({
   selectedId,
   onSelect,
   onClose,
+  quickOdooPartnerId,
 }: {
   query: string;
   onQueryChange: (q: string) => void;
@@ -212,6 +228,7 @@ function Panel({
   selectedId: string;
   onSelect: (p: AccessibleParcelle) => void;
   onClose: () => void;
+  quickOdooPartnerId?: number;
 }) {
   const trimmed = query.trim();
   return (
@@ -284,7 +301,11 @@ function Panel({
       </div>
 
       <div className="border-t border-border bg-muted/30 p-3">
-        <QuickCreatePanel onCreated={onSelect} onClose={onClose} />
+        <QuickCreatePanel
+          onCreated={onSelect}
+          onClose={onClose}
+          {...(quickOdooPartnerId !== undefined ? { odooPartnerId: quickOdooPartnerId } : {})}
+        />
         <Link
           href="/parcelles/new"
           onClick={onClose}
@@ -306,9 +327,11 @@ function Panel({
 function QuickCreatePanel({
   onCreated,
   onClose,
+  odooPartnerId,
 }: {
   onCreated: (p: AccessibleParcelle) => void;
   onClose: () => void;
+  odooPartnerId?: number;
 }) {
   const create = useCreateQuickParcelle();
   const [open, setOpen] = useState(false);
@@ -355,6 +378,7 @@ function QuickCreatePanel({
         surfaceM2: Math.round(surfaceHa * 10_000),
         ...(draft.lat ? { centreLat: Number(draft.lat) } : {}),
         ...(draft.lng ? { centreLng: Number(draft.lng) } : {}),
+        ...(odooPartnerId !== undefined ? { odooPartnerId } : {}),
       });
       // Adapter en AccessibleParcelle (le hook renvoie Parcelle, on
       // fabrique la forme attendue côté caller — les champs absents sont

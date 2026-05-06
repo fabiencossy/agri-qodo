@@ -73,6 +73,8 @@ export interface AccessibleParcelle extends Parcelle {
   tenantId: string;
   tenant: { id: string; nom: string; code: string };
   isOwn: boolean;
+  /** ID res.partner Odoo si rattachée à un client Odoo non-partenaire. */
+  odooPartnerId?: number | null;
 }
 
 /**
@@ -123,6 +125,8 @@ export interface QuickParcelleInput {
   surfaceM2: number;
   centreLat?: number;
   centreLng?: number;
+  /** Si rattachée à un client Odoo non-partenaire, son res.partner id. */
+  odooPartnerId?: number;
 }
 
 /**

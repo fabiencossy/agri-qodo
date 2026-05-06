@@ -13,6 +13,7 @@ import {
 } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiPropertyOptional, ApiTags } from "@nestjs/swagger";
 import {
+  IsInt,
   IsLatitude,
   IsLongitude,
   IsNumber,
@@ -47,6 +48,14 @@ class QuickParcelleDto {
   @IsOptional()
   @IsLongitude()
   centreLng?: number;
+
+  @ApiPropertyOptional({
+    description:
+      "ID res.partner Odoo si la parcelle est rattachée à un client Odoo non-partenaire. Sert à refiltrer la liste quand l'utilisateur resélectionne le même client.",
+  })
+  @IsOptional()
+  @IsInt()
+  odooPartnerId?: number;
 }
 
 @ApiTags("parcelles")

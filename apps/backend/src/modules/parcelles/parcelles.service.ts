@@ -93,6 +93,7 @@ export class ParcellesService {
     return rows.map((p) => ({
       ...p,
       isOwn: p.tenantId === current,
+      odooPartnerId: p.odooPartnerId ?? null,
     }));
   }
 
@@ -204,6 +205,7 @@ export class ParcellesService {
     centreLat?: number;
     centreLng?: number;
     zone?: ZoneAgricole;
+    odooPartnerId?: number;
   }) {
     return this.prisma.tenantAware.parcelle.create({
       data: {
@@ -212,6 +214,7 @@ export class ParcellesService {
         zone: input.zone ?? ZoneAgricole.ZA,
         ...(input.centreLat !== undefined ? { centreLat: input.centreLat } : {}),
         ...(input.centreLng !== undefined ? { centreLng: input.centreLng } : {}),
+        ...(input.odooPartnerId !== undefined ? { odooPartnerId: input.odooPartnerId } : {}),
       } as unknown as Prisma.ParcelleUncheckedCreateInput,
     });
   }

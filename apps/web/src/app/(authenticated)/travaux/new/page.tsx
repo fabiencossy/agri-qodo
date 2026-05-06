@@ -424,6 +424,11 @@ export default function NewTravailPage() {
               value={parcelleId}
               onChange={(id) => setParcelleId(id)}
               placeholder="Choisir une parcelle…"
+              {...(partenaireId
+                ? { filtreTenantId: partenaireId }
+                : odooPartnerId
+                  ? { filtreOdooPartnerId: odooPartnerId }
+                  : {})}
             />
           </Field>
 

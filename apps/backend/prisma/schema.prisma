@@ -458,6 +458,12 @@ model Parcelle {
   /// `geom` MultiPolygon. WGS84 (SRID 4326).
   centreLat            Float?                                       @map("centre_lat")
   centreLng            Float?                                       @map("centre_lng")
+  /// Si la parcelle est "chez un client Odoo non-partenaire" (créée
+  /// rapidement depuis le sélecteur), on mémorise l'ID res.partner
+  /// Odoo pour pouvoir refiltrer la liste quand l'utilisateur
+  /// resélectionne le même client. tenantId reste celui du
+  /// prestataire (= moi qui exécute le travail).
+  odooPartnerId        Int?                                         @map("odoo_partner_id")
   zone                 ZoneAgricole
   // Couleur de surbrillance sur les cartes — hex 7-char (#RRGGBB).
   // Permet à l'agriculteur de différencier visuellement ses parcelles.
