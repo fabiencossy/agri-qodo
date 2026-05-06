@@ -5,19 +5,12 @@ import { useMemo, useState } from "react";
 import { Breadcrumb } from "@/components/app/breadcrumb";
 import { PageHeader } from "@/components/app/page-header";
 import { Button } from "@/components/ui/button";
-import {
-  type FilterOption,
-  type GroupByOption,
-  type ListColumn,
-  ResourceView,
-} from "@/components/ui/resource-view";
+import { type ListColumn, ResourceView } from "@/components/ui/resource-view";
 import { useCurrentUser } from "@/lib/auth";
 import {
   MATERIEL_CATEGORIE_LABEL,
-  MATERIEL_CATEGORIES_ORDER,
   MATERIEL_UNITE_LABEL,
   type Materiel,
-  type MaterielCategorie,
   useDeleteMateriel,
   useMateriels,
   usePushMaterielOdoo,
@@ -26,9 +19,7 @@ import {
 import { useOdooConnected } from "@/lib/odoo-config";
 import {
   CATEGORIE_LABEL,
-  CATEGORIES_ORDER,
   type Produit,
-  type ProduitCategorie,
   type SyncOdooProduitsResult,
   UNITE_LABEL,
   useDeleteProduit,
@@ -156,35 +147,6 @@ export default function ProduitsPage() {
     },
   ];
 
-  const produitFilters: FilterOption<Produit>[] = [
-    { key: "with-odoo", label: "Synchronisés Odoo", predicate: (p) => p.odooProductId !== null },
-    { key: "without-odoo", label: "Non synchronisés", predicate: (p) => p.odooProductId === null },
-    { key: "perso", label: "Perso (modifiables)", predicate: (p) => p.tenantId !== null },
-    { key: "global", label: "Globaux", predicate: (p) => p.tenantId === null },
-  ];
-
-  const produitGroupBys: GroupByOption<Produit>[] = [
-    {
-      key: "categorie",
-      label: "Catégorie",
-      groupKey: (p) => p.categorie,
-      groupLabel: (k) => CATEGORIE_LABEL[k as ProduitCategorie] ?? k,
-      order: CATEGORIES_ORDER,
-    },
-    {
-      key: "source",
-      label: "Source (perso/global)",
-      groupKey: (p) => (p.tenantId === null ? "global" : "perso"),
-      groupLabel: (k) => (k === "global" ? "Globaux (catalogue Agridea)" : "Perso (mes produits)"),
-    },
-    {
-      key: "odoo",
-      label: "Sync Odoo",
-      groupKey: (p) => (p.odooProductId ? "synced" : "not-synced"),
-      groupLabel: (k) => (k === "synced" ? "Synchronisés" : "Non synchronisés"),
-    },
-  ];
-
   const renderProduitCard = (p: Produit) => (
     <div className="space-y-1">
       <div className="flex items-start justify-between gap-2">
@@ -283,36 +245,6 @@ export default function ProduitsPage() {
           </button>
         ),
       className: "text-right",
-    },
-  ];
-
-  const materielFilters: FilterOption<Materiel>[] = [
-    { key: "with-odoo", label: "Synchronisés Odoo", predicate: (m) => m.odooProductId !== null },
-    { key: "without-odoo", label: "Non synchronisés", predicate: (m) => m.odooProductId === null },
-    { key: "perso", label: "Perso (modifiables)", predicate: (m) => m.tenantId !== null },
-    { key: "global", label: "Globaux", predicate: (m) => m.tenantId === null },
-  ];
-
-  const materielGroupBys: GroupByOption<Materiel>[] = [
-    {
-      key: "categorie",
-      label: "Catégorie",
-      groupKey: (m) => m.categorie,
-      groupLabel: (k) => MATERIEL_CATEGORIE_LABEL[k as MaterielCategorie] ?? k,
-      order: MATERIEL_CATEGORIES_ORDER,
-    },
-    {
-      key: "source",
-      label: "Source (perso/global)",
-      groupKey: (m) => (m.tenantId === null ? "global" : "perso"),
-      groupLabel: (k) =>
-        k === "global" ? "Globaux (catalogue Agridea)" : "Perso (mes prestations)",
-    },
-    {
-      key: "odoo",
-      label: "Sync Odoo",
-      groupKey: (m) => (m.odooProductId ? "synced" : "not-synced"),
-      groupLabel: (k) => (k === "synced" ? "Synchronisés" : "Non synchronisés"),
     },
   ];
 
@@ -435,8 +367,6 @@ export default function ProduitsPage() {
                 p.notes ?? "",
               ].join(" ")
             }
-            filters={produitFilters}
-            groupBys={produitGroupBys}
             getKey={(p) => p.id}
             searchPlaceholder="Rechercher (libellé, marque, fournisseur, espèce…)"
             availableViews={["list", "kanban", "card"]}
@@ -455,8 +385,6 @@ export default function ProduitsPage() {
             renderKanbanCard={renderMaterielCard}
             renderCard={renderMaterielCard}
             searchFields={(m) => [m.libelle, m.notes ?? "", m.code].join(" ")}
-            filters={materielFilters}
-            groupBys={materielGroupBys}
             getKey={(m) => m.id}
             searchPlaceholder="Rechercher une prestation…"
             availableViews={["list", "kanban", "card"]}
