@@ -62,6 +62,8 @@ interface ResPartnerRow {
 interface ProductProductRow {
   id: number;
   type?: "service" | "consu" | "product";
+  /** True = "Dépense refacturée" — bloque sale_line_id sur project.task. */
+  expense_policy?: string | false;
 }
 
 @Injectable()
@@ -305,9 +307,24 @@ export class OdooPushService {
         const got = await client.searchRead<ProductProductRow>(
           "product.product",
           [["id", "=", productId]],
-          { fields: ["id", "type"], limit: 1 },
+          { fields: ["id", "type", "expense_policy"], limit: 1 },
         );
         productType = got[0]?.type;
+
+        // Désactive expense_policy si "no" attendu — sinon Odoo
+        // empêche la liaison sale_line_id↔project.task ("dépense
+        // refacturée"). Best-effort : si Odoo refuse le write
+        // (ACL), on continue, le smart button manquera mais le
+        // devis sera créé.
+        if (got[0] && got[0].expense_policy && got[0].expense_policy !== "no") {
+          await client
+            .write("product.product", [productId], { expense_policy: "no" })
+            .catch((err) =>
+              this.logger.warn(
+                `Désactivation expense_policy sur product #${productId} échouée : ${err instanceof Error ? err.message : err}`,
+              ),
+            );
+        }
       }
       const line: OdooSaleOrderLineCreate = {
         product_id: productId,
