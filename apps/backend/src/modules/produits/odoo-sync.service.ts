@@ -242,7 +242,53 @@ export class OdooSyncService {
       where: { id: produitId, OR: [{ tenantId: null }, { tenantId }] },
     });
     if (!produit) throw new NotFoundException("Produit introuvable");
-    if (produit.odooProductId) return produit.odooProductId;
+
+    // Sync bidirectionnelle (demande Fabien 2026-05-06) : si déjà
+    // mappé, on push les valeurs locales vers Odoo puis on rapatrie
+    // ce qu'Odoo enregistre finalement (prix, libellé). Agri Qodo
+    // prime au moment du push.
+    if (produit.odooProductId) {
+      const client = await this.odooClientManager.forTenant(tenantId);
+      const uomId = await this.resolveUomId(client, tenantId, produit.unite);
+      await client
+        .write("product.product", [produit.odooProductId], {
+          name: produit.libelle,
+          list_price: produit.prixVenteCHF ? Number(produit.prixVenteCHF) : 0,
+          default_code: `AQ-${produit.code}`,
+          ...(uomId ? { uom_id: uomId, uom_po_id: uomId } : {}),
+        })
+        .catch((err) =>
+          this.logger.warn(
+            `Sync push (prod #${produit.odooProductId}) échoué : ${err instanceof Error ? err.message : err}`,
+          ),
+        );
+      try {
+        const probe = await client.searchRead<{
+          id: number;
+          name?: string;
+          list_price?: number;
+        }>("product.product", [["id", "=", produit.odooProductId]], {
+          fields: ["id", "name", "list_price"],
+          limit: 1,
+        });
+        const o = probe[0];
+        if (o) {
+          await this.prisma.produit.update({
+            where: { id: produit.id },
+            data: {
+              ...(o.name ? { libelle: o.name } : {}),
+              ...(typeof o.list_price === "number"
+                ? { prixVenteCHF: o.list_price > 0 ? o.list_price : null }
+                : {}),
+              odooSyncedAt: new Date(),
+            },
+          });
+        }
+      } catch {
+        // Lecture best-effort.
+      }
+      return produit.odooProductId;
+    }
 
     // Dédup : si on a déjà un produit perso avec même libellé côté
     // tenant, et qu'il a un odooProductId, on renvoie celui-ci.

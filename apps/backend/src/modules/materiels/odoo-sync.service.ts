@@ -296,7 +296,61 @@ export class MaterielsOdooSyncService {
       where: { id: materielId, OR: [{ tenantId: null }, { tenantId }] },
     });
     if (!materiel) throw new NotFoundException("Matériel introuvable");
-    if (materiel.odooProductId) return materiel.odooProductId;
+
+    // Sync bidirectionnelle (demande Fabien 2026-05-06) : si déjà
+    // mappé, on aligne Odoo sur les valeurs locales (libellé, prix,
+    // unité), puis on relit Odoo pour rapatrier d'éventuels écarts
+    // (ex prix modifié côté Odoo entre-temps). Agri Qodo prime au
+    // moment du push, mais Odoo conserve la main sur les autres
+    // champs métier qu'on ne touche pas (catégorie comptable,
+    // taxes, etc.).
+    if (materiel.odooProductId) {
+      const client = await this.odooClientManager.forTenant(tenantId);
+      const uomId = await this.resolveUomId(client, tenantId, materiel.unite);
+      // Push local → Odoo (best-effort).
+      await client
+        .write("product.product", [materiel.odooProductId], {
+          name: materiel.libelle,
+          list_price: materiel.prixUnitaireCHF ? Number(materiel.prixUnitaireCHF) : 0,
+          default_code: `AQ-${materiel.code}`,
+          expense_policy: "no",
+          ...(uomId ? { uom_id: uomId, uom_po_id: uomId } : {}),
+        })
+        .catch((err) =>
+          this.logger.warn(
+            `Sync push (mat #${materiel.odooProductId}) échoué : ${err instanceof Error ? err.message : err}`,
+          ),
+        );
+      // Pull Odoo → local : on relit list_price, name, uom pour
+      // refléter ce qu'Odoo a finalement enregistré (taxes éventuelles
+      // sur le prix HT/TTC, validation Odoo). Best-effort.
+      try {
+        const probe = await client.searchRead<{
+          id: number;
+          name?: string;
+          list_price?: number;
+        }>("product.product", [["id", "=", materiel.odooProductId]], {
+          fields: ["id", "name", "list_price"],
+          limit: 1,
+        });
+        const o = probe[0];
+        if (o) {
+          await this.prisma.materiel.update({
+            where: { id: materiel.id },
+            data: {
+              ...(o.name ? { libelle: o.name } : {}),
+              ...(typeof o.list_price === "number"
+                ? { prixUnitaireCHF: o.list_price > 0 ? o.list_price : null }
+                : {}),
+              odooSyncedAt: new Date(),
+            },
+          });
+        }
+      } catch {
+        // Lecture best-effort.
+      }
+      return materiel.odooProductId;
+    }
 
     // Dédup #1 : si on a déjà un matériel perso pour le même libellé
     // côté tenant avec un odooProductId, on renvoie celui-ci sans rien
