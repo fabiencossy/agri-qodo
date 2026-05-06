@@ -131,7 +131,9 @@ export class TravauxService {
         ...(dto.parcelleId ? { parcelleId: dto.parcelleId } : {}),
         ...(dto.projetId ? { projetId: dto.projetId } : {}),
         ...(dto.notes ? { notes: dto.notes } : {}),
-        ...(dto.datePrevue ? { datePrevue: new Date(dto.datePrevue) } : {}),
+        // datePrevue par défaut = date pour que tous les travaux
+        // apparaissent dans /planning (cf interventions.service).
+        datePrevue: dto.datePrevue ? new Date(dto.datePrevue) : new Date(dto.date),
         ...(dto.assignedToUserId ? { assignedToUserId: dto.assignedToUserId } : {}),
         ...(dto.lignesProduit && dto.lignesProduit.length > 0
           ? { lignesProduit: { create: dto.lignesProduit.map((l) => this.toLigneProduitData(l)) } }

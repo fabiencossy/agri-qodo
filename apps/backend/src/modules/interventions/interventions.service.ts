@@ -313,7 +313,11 @@ export class InterventionsService {
           cultureId,
           validationStatus,
           ...resolveHeures(dto),
-          datePrevue: dto.datePrevue ? new Date(dto.datePrevue) : null,
+          // datePrevue : par défaut = dateOperation pour que toutes les
+          // interventions apparaissent dans /planning. Décision Fabien
+          // 2026-05-06 : "le planning n'est tjs pas juste" — sans
+          // datePrevue, le planning restait vide.
+          datePrevue: dto.datePrevue ? new Date(dto.datePrevue) : dateOperation,
           assignedToUserId: dto.assignedToUserId ?? null,
         },
         include: this.includeRelations,

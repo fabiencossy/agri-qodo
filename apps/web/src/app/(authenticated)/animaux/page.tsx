@@ -344,7 +344,7 @@ export default function CheptelPage() {
 
         <ResourceView<Animal>
           storageKey="animaux"
-          defaultView="kanban"
+          defaultView="list"
           data={animaux}
           columns={columns}
           renderKanbanCard={(a) => (

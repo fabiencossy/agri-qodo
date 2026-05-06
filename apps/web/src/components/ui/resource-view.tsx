@@ -237,6 +237,9 @@ export function ResourceView<T>(props: ResourceViewProps<T>) {
   const [favorites, setFavorites] = useState<SavedFavorite[]>([]);
   const [panelOpen, setPanelOpen] = useState(false);
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
+  /** Clés des colonnes masquées par l'utilisateur (Cmd+colonnes). */
+  const [hiddenColumnKeys, setHiddenColumnKeys] = useState<Set<string>>(new Set());
+  const [columnsPanelOpen, setColumnsPanelOpen] = useState(false);
 
   // Réhydratation de l'état au mount (et à chaque changement de storageKey).
   useEffect(() => {
@@ -246,12 +249,31 @@ export function ResourceView<T>(props: ResourceViewProps<T>) {
     setActiveFilterKeys(persisted.activeFilterKeys);
     setGroupByKey(persisted.groupByKey);
     setFavorites(persisted.favorites);
+    if (typeof window !== "undefined") {
+      try {
+        const raw = window.localStorage.getItem(`resourceView:${props.storageKey}:hiddenCols`);
+        if (raw) setHiddenColumnKeys(new Set(JSON.parse(raw) as string[]));
+      } catch {
+        // ignore
+      }
+    }
   }, [props.storageKey, defaultView]);
 
   // Persistance à chaque changement.
   useEffect(() => {
     saveState(props.storageKey, { view, search, activeFilterKeys, groupByKey, favorites });
   }, [props.storageKey, view, search, activeFilterKeys, groupByKey, favorites]);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem(
+        `resourceView:${props.storageKey}:hiddenCols`,
+        JSON.stringify(Array.from(hiddenColumnKeys)),
+      );
+    } catch {
+      // ignore
+    }
+  }, [props.storageKey, hiddenColumnKeys]);
 
   const activeFilters = useMemo(
     () => (props.filters ?? []).filter((f) => activeFilterKeys.includes(f.key)),
@@ -383,6 +405,19 @@ export function ResourceView<T>(props: ResourceViewProps<T>) {
         onApplyFavorite={applyFavorite}
         onRemoveFavorite={removeFavorite}
         searchPlaceholder={props.searchPlaceholder ?? "Rechercher…"}
+        allColumns={props.columns}
+        hiddenColumnKeys={hiddenColumnKeys}
+        onToggleColumn={(k) => {
+          setHiddenColumnKeys((prev) => {
+            const next = new Set(prev);
+            if (next.has(k)) next.delete(k);
+            else next.add(k);
+            return next;
+          });
+        }}
+        columnsPanelOpen={columnsPanelOpen}
+        onToggleColumnsPanel={() => setColumnsPanelOpen((v) => !v)}
+        onCloseColumnsPanel={() => setColumnsPanelOpen(false)}
         calendarAvailable={!!props.dateField}
         mapAvailable={!!props.renderMapView}
         {...(props.availableViews ? { availableViews: props.availableViews } : {})}
@@ -399,14 +434,12 @@ export function ResourceView<T>(props: ResourceViewProps<T>) {
       ) : view === "list" ? (
         <ListView
           data={filteredData}
-          columns={
-            props.selectable
-              ? [
-                  buildSelectColumn(props, filteredData, selectedKeys, setSelectedKeys),
-                  ...props.columns,
-                ]
-              : props.columns
-          }
+          columns={(() => {
+            const visible = props.columns.filter((c) => !hiddenColumnKeys.has(c.key));
+            return props.selectable
+              ? [buildSelectColumn(props, filteredData, selectedKeys, setSelectedKeys), ...visible]
+              : visible;
+          })()}
           getKey={props.getKey}
           {...(props.onItemClick ? { onItemClick: props.onItemClick } : {})}
           {...(groups ? { groups } : {})}
@@ -873,8 +906,29 @@ function SearchBar<T>(props: {
   calendarAvailable: boolean;
   mapAvailable: boolean;
   availableViews?: ViewMode[];
+  /** Toutes les colonnes définies (pour le menu Colonnes). */
+  allColumns: ListColumn<T>[];
+  /** Clés des colonnes actuellement masquées. */
+  hiddenColumnKeys: Set<string>;
+  /** Toggle visibilité d'une colonne. */
+  onToggleColumn: (key: string) => void;
+  /** État du dropdown Colonnes. */
+  columnsPanelOpen: boolean;
+  onToggleColumnsPanel: () => void;
+  onCloseColumnsPanel: () => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const colsPanelRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!props.columnsPanelOpen) return;
+    const handler = (e: PointerEvent) => {
+      if (!colsPanelRef.current?.contains(e.target as Node)) {
+        props.onCloseColumnsPanel();
+      }
+    };
+    document.addEventListener("pointerdown", handler);
+    return () => document.removeEventListener("pointerdown", handler);
+  }, [props.columnsPanelOpen, props.onCloseColumnsPanel]);
   useEffect(() => {
     if (!props.panelOpen) return;
     // pointerdown couvre tactile (iOS Safari), souris et stylet — plus
@@ -995,6 +1049,56 @@ function SearchBar<T>(props: {
             />
           )}
         </div>
+
+        {/* Bouton "Colonnes" — visible uniquement en vue liste, où il
+            a un effet. Demande Fabien 2026-05-06 : "il manque le
+            bouton pour ajouter ou masquer des colonnes". */}
+        {props.view === "list" && props.allColumns.length > 0 && (
+          <div className="relative" ref={colsPanelRef}>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                props.onToggleColumnsPanel();
+              }}
+              className="flex h-10 items-center gap-1.5 rounded-lg border border-border bg-background px-3 text-sm font-medium text-foreground/70 hover:bg-muted"
+              aria-label="Colonnes"
+              title="Afficher / masquer les colonnes"
+            >
+              <Columns className="h-4 w-4" />
+              <span className="hidden sm:inline">Colonnes</span>
+              <ChevronDown
+                className={`h-3.5 w-3.5 transition-transform ${props.columnsPanelOpen ? "rotate-180" : ""}`}
+              />
+            </button>
+            {props.columnsPanelOpen && (
+              <div className="absolute right-0 top-full z-[8500] mt-2 w-56 rounded-xl border border-border bg-background p-2 shadow-xl">
+                <div className="mb-1 px-2 py-1 text-[11px] font-bold uppercase tracking-wider text-foreground/60">
+                  Colonnes affichées
+                </div>
+                {props.allColumns.map((c) => {
+                  const headerLabel =
+                    typeof c.header === "string" ? c.header : c.key.replace(/^__/, "");
+                  const visible = !props.hiddenColumnKeys.has(c.key);
+                  return (
+                    <label
+                      key={c.key}
+                      className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={visible}
+                        onChange={() => props.onToggleColumn(c.key)}
+                        className="h-4 w-4 cursor-pointer"
+                      />
+                      <span className="flex-1 truncate">{headerLabel || c.key}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {props.panelOpen && (
