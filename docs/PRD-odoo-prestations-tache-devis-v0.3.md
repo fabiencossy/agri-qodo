@@ -251,18 +251,20 @@ Comportement :
 
 ---
 
-## 8. Cas limites à clarifier
+## 8. Cas limites — décisions
 
-| Cas                                                | Question / décision                                                                            |
-| -------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| Projet cible non paramétré                         | Bloquer la saisie + alerter                                                                    |
-| Carnet des champs : client ajouté **a posteriori** | Migrer la tâche du projet interne vers le projet tiers + créer le devis avec lignes existantes |
-| Carnet des champs : client retiré                  | Tâche/devis archivés ou bascule vers projet interne ?                                          |
-| Plusieurs clients (co-traitance)                   | Une tâche par client + un devis par client                                                     |
-| TVA agricole CH                                    | Mapping auto selon catégorie produit                                                           |
-| Confirmation devis                                 | Auto à la clôture de la tâche (cf. §5.2.4)                                                     |
-| Modification du prix à l'hectare après synchro     | Recalcul auto du devis tant que `draft`                                                        |
-| Devis confirmé puis prestation modifiée            | Avenant ou bloquer la modif (à arbitrer)                                                       |
+Décisions figées 2026-05-06 (Fabien) sauf mention "à arbitrer" :
+
+| Cas                                                | Décision                                                                                                       |
+| -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Projet cible non paramétré                         | Bloquer la saisie + alerter                                                                                    |
+| Carnet des champs : client ajouté **a posteriori** | Migrer la tâche du projet interne vers le projet tiers + créer le devis avec lignes existantes                 |
+| Carnet des champs : client **retiré** a posteriori | **Bascule interne** : la tâche repasse dans le projet interne, **le devis lié est supprimé** (pas archivé). ✅ |
+| Plusieurs clients (co-traitance)                   | Une tâche par client + un devis par client                                                                     |
+| TVA agricole CH                                    | Mapping auto selon catégorie produit                                                                           |
+| Confirmation devis                                 | Auto à la clôture de la tâche (cf. §5.2.4)                                                                     |
+| Modification du prix à l'hectare après synchro     | Recalcul auto du devis tant que `draft`                                                                        |
+| Devis confirmé puis prestation modifiée            | Avenant ou bloquer la modif (à arbitrer)                                                                       |
 
 ---
 
