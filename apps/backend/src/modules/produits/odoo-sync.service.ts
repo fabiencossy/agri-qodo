@@ -255,7 +255,7 @@ export class OdooSyncService {
           name: produit.libelle,
           list_price: produit.prixVenteCHF ? Number(produit.prixVenteCHF) : 0,
           default_code: `AQ-${produit.code}`,
-          ...(uomId ? { uom_id: uomId, uom_po_id: uomId } : {}),
+          ...(uomId ? { uom_id: uomId } : {}),
         })
         .catch((err) =>
           this.logger.warn(
@@ -339,7 +339,7 @@ export class OdooSyncService {
           type: "consu",
           list_price: produit.prixVenteCHF ? Number(produit.prixVenteCHF) : 0,
           default_code: defaultCode,
-          ...(uomId ? { uom_id: uomId, uom_po_id: uomId } : {}),
+          ...(uomId ? { uom_id: uomId } : {}),
         });
       } catch (err) {
         this.logger.error(
@@ -353,9 +353,7 @@ export class OdooSyncService {
       // Produit existant côté Odoo : on s'assure que son unité est
       // alignée avec celle d'Agri Qodo (best-effort, ne casse pas si
       // l'admin a verrouillé les unités côté Odoo).
-      await client
-        .write("product.product", [odooId], { uom_id: uomId, uom_po_id: uomId })
-        .catch(() => undefined);
+      await client.write("product.product", [odooId], { uom_id: uomId }).catch(() => undefined);
     }
 
     if (produit.tenantId === null) {

@@ -314,7 +314,7 @@ export class MaterielsOdooSyncService {
           list_price: materiel.prixUnitaireCHF ? Number(materiel.prixUnitaireCHF) : 0,
           default_code: `AQ-${materiel.code}`,
           expense_policy: "no",
-          ...(uomId ? { uom_id: uomId, uom_po_id: uomId } : {}),
+          ...(uomId ? { uom_id: uomId } : {}),
         })
         .catch((err) =>
           this.logger.warn(
@@ -407,7 +407,7 @@ export class MaterielsOdooSyncService {
           default_code: defaultCode,
           // Unité de mesure (uom.uom Odoo) — sert à afficher "ha" / "m³" /
           // "t" / "h" sur le sale.order au lieu du défaut "Unité(s)".
-          ...(uomId ? { uom_id: uomId, uom_po_id: uomId } : {}),
+          ...(uomId ? { uom_id: uomId } : {}),
         });
       } catch (err) {
         this.logger.error(
@@ -420,9 +420,7 @@ export class MaterielsOdooSyncService {
     } else if (uomId) {
       // Produit existant côté Odoo : on aligne son unité sur celle
       // d'Agri Qodo (ha/m³/t/h…) — best-effort.
-      await client
-        .write("product.product", [odooId], { uom_id: uomId, uom_po_id: uomId })
-        .catch(() => undefined);
+      await client.write("product.product", [odooId], { uom_id: uomId }).catch(() => undefined);
     }
 
     // Si le matériel est global (tenantId null), on ne peut pas y stocker
