@@ -100,6 +100,9 @@ export default function NewTravailPage() {
   // Décision Fabien 2026-05-06 : un client Odoo n'est pas un partenaire
   // Agri Qodo. Le sélecteur peut renvoyer soit l'un soit l'autre.
   const [odooPartnerId, setOdooPartnerId] = useState<number | null>(null);
+  // Nom du client Odoo capturé au moment du choix (le picker l'a déjà).
+  // Persisté avec le Travail pour affichage sans round-trip Odoo.
+  const [odooPartnerName, setOdooPartnerName] = useState<string>("");
   const [parcelleId, setParcelleId] = useState(
     parcelleIdParam && /^[0-9a-f-]{36}$/i.test(parcelleIdParam) ? parcelleIdParam : "",
   );
@@ -165,6 +168,7 @@ export default function NewTravailPage() {
     setDate(t.date.slice(0, 10));
     setPartenaireId(t.partenaireId ?? "");
     setOdooPartnerId(t.odooPartnerId ?? null);
+    setOdooPartnerName(t.odooPartnerName ?? "");
     setParcelleId(t.parcelleId ?? "");
     setProjetId(t.projetId ?? "");
     setInterne(t.interne);
@@ -237,7 +241,7 @@ export default function NewTravailPage() {
     }
     const titreFinal =
       titre.trim() ||
-      `Travail ${new Date(date).toLocaleDateString("fr-CH")}${partenaireId ? "" : " — interne"}`;
+      `Travail ${new Date(date).toLocaleDateString("fr-CH")}${interne ? " — interne" : ""}`;
     const payload = {
       titre: titreFinal,
       date,
@@ -245,6 +249,7 @@ export default function NewTravailPage() {
       interne,
       ...(partenaireId && !interne ? { partenaireId } : {}),
       ...(odooPartnerId && !interne ? { odooPartnerId } : {}),
+      ...(odooPartnerName && odooPartnerId && !interne ? { odooPartnerName } : {}),
       ...(parcelleId ? { parcelleId } : {}),
       ...(projetId ? { projetId } : {}),
       ...(assignedToUserId ? { assignedToUserId } : {}),
@@ -267,7 +272,7 @@ export default function NewTravailPage() {
     // Titre auto-généré si vide (Fabien préfère ne pas le saisir).
     const titreFinal =
       titre.trim() ||
-      `Travail ${new Date(date).toLocaleDateString("fr-CH")}${partenaireId ? "" : " — interne"}`;
+      `Travail ${new Date(date).toLocaleDateString("fr-CH")}${interne ? " — interne" : ""}`;
     // Multi-produits : on construit une ligne par produit valide.
     const lignesProduitClean: CreateLigneProduitInput[] = produitsLignes
       .map((l) => {
@@ -307,6 +312,7 @@ export default function NewTravailPage() {
       interne,
       ...(partenaireId && !interne ? { partenaireId } : {}),
       ...(odooPartnerId && !interne ? { odooPartnerId } : {}),
+      ...(odooPartnerName && odooPartnerId && !interne ? { odooPartnerName } : {}),
       ...(parcelleId ? { parcelleId } : {}),
       ...(projetId ? { projetId } : {}),
       ...(notes ? { notes } : {}),
@@ -409,10 +415,12 @@ export default function NewTravailPage() {
                 value={{
                   ...(partenaireId ? { partenaireId } : {}),
                   ...(odooPartnerId ? { odooPartnerId } : {}),
+                  ...(odooPartnerName ? { odooPartnerName } : {}),
                 }}
                 onChange={(next) => {
                   setPartenaireId(next.partenaireId ?? "");
                   setOdooPartnerId(next.odooPartnerId ?? null);
+                  setOdooPartnerName(next.odooPartnerName ?? "");
                 }}
                 placeholder="Choisir un client…"
               />

@@ -1,7 +1,16 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { ProduitCategorie, ProduitUnite } from "@prisma/client";
 import { Type } from "class-transformer";
-import { IsBoolean, IsEnum, IsNumber, IsOptional, IsString, MaxLength, Min } from "class-validator";
+import {
+  IsBoolean,
+  IsEnum,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Max,
+  MaxLength,
+  Min,
+} from "class-validator";
 
 export class CreateProduitDto {
   @ApiProperty({ enum: ProduitCategorie })
@@ -69,6 +78,17 @@ export class CreateProduitDto {
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
   prixVenteCHF?: number;
+
+  @ApiPropertyOptional({
+    description:
+      "Taux TVA CH en % (8.1 normal, 2.6 réduit, 3.8 hébergement, 0 exonéré). Mappé sur account.tax côté Odoo au push.",
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @Max(100)
+  tauxTvaPercent?: number;
 
   @ApiPropertyOptional()
   @IsOptional()

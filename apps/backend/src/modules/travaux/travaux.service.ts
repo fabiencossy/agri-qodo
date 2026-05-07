@@ -128,6 +128,7 @@ export class TravauxService {
         ...(dto.dateFin ? { dateFin: new Date(dto.dateFin) } : {}),
         ...(dto.partenaireId ? { partenaireId: dto.partenaireId } : {}),
         ...(dto.odooPartnerId !== undefined ? { odooPartnerId: dto.odooPartnerId } : {}),
+        ...(dto.odooPartnerName !== undefined ? { odooPartnerName: dto.odooPartnerName } : {}),
         ...(dto.parcelleId ? { parcelleId: dto.parcelleId } : {}),
         ...(dto.projetId ? { projetId: dto.projetId } : {}),
         ...(dto.notes ? { notes: dto.notes } : {}),

@@ -69,6 +69,7 @@ export class MaterielsService {
         categorie: dto.categorie,
         unite: dto.unite ?? "HA",
         prixUnitaireCHF: dto.prixUnitaireCHF ?? null,
+        tauxTvaPercent: dto.tauxTvaPercent ?? null,
         notes: dto.notes ?? null,
         actif: dto.actif ?? true,
       },
@@ -82,11 +83,48 @@ export class MaterielsService {
     }
     const existing = await this.prisma.materiel.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException("Matériel introuvable");
+
+    // Fork-on-edit (demande Fabien 2026-05-07) : modifier un matériel
+    // global crée (ou réutilise) une copie perso au lieu de bloquer.
     if (existing.tenantId === null) {
-      throw new ForbiddenException(
-        "Les matériels globaux ne sont pas modifiables. Crée un matériel perso si tu veux personnaliser.",
-      );
+      const existingPerso = await this.prisma.materiel.findFirst({
+        where: { tenantId, libelle: existing.libelle },
+      });
+      const data = {
+        libelle: dto.libelle ?? existing.libelle,
+        categorie: dto.categorie ?? existing.categorie,
+        unite: dto.unite ?? existing.unite,
+        prixUnitaireCHF:
+          dto.prixUnitaireCHF !== undefined ? dto.prixUnitaireCHF : existing.prixUnitaireCHF,
+        tauxTvaPercent:
+          dto.tauxTvaPercent !== undefined ? dto.tauxTvaPercent : existing.tauxTvaPercent,
+        notes: dto.notes ?? existing.notes,
+        actif: dto.actif ?? existing.actif,
+      };
+      const persisted = existingPerso
+        ? await this.prisma.materiel.update({
+            where: { id: existingPerso.id },
+            data,
+          })
+        : await this.prisma.materiel.create({
+            data: {
+              ...data,
+              tenantId,
+              code: `t-${tenantId.slice(0, 8)}-${randomBytes(3).toString("hex")}`,
+            },
+          });
+      if (persisted.odooProductId) {
+        this.odooSync
+          .ensureOdooProduct(persisted.id)
+          .catch((err) =>
+            this.logger.warn(
+              `Sync Odoo après fork matériel ${persisted.id} échouée : ${err instanceof Error ? err.message : err}`,
+            ),
+          );
+      }
+      return persisted;
     }
+
     if (existing.tenantId !== tenantId) {
       throw new NotFoundException("Matériel introuvable");
     }
@@ -97,6 +135,7 @@ export class MaterielsService {
         ...(dto.categorie !== undefined ? { categorie: dto.categorie } : {}),
         ...(dto.unite !== undefined ? { unite: dto.unite } : {}),
         ...(dto.prixUnitaireCHF !== undefined ? { prixUnitaireCHF: dto.prixUnitaireCHF } : {}),
+        ...(dto.tauxTvaPercent !== undefined ? { tauxTvaPercent: dto.tauxTvaPercent } : {}),
         ...(dto.notes !== undefined ? { notes: dto.notes } : {}),
         ...(dto.actif !== undefined ? { actif: dto.actif } : {}),
       },

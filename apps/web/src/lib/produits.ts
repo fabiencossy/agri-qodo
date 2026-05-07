@@ -27,6 +27,8 @@ export interface Produit {
   unite: ProduitUnite;
   /** Prix de vente catalogue CHF HT par unité — null si pas autorisé à le voir. */
   prixVenteCHF: string | null;
+  /** Taux TVA CH en % (ex 8.10, 2.60). Sérialisé Decimal → string. */
+  tauxTvaPercent: string | null;
   notes: string | null;
   actif: boolean;
   /** ID Odoo product.product si déjà poussé/synchronisé. */
@@ -46,6 +48,7 @@ export interface CreateProduitInput {
   tauxK?: number;
   unite?: ProduitUnite;
   prixVenteCHF?: number;
+  tauxTvaPercent?: number;
   notes?: string;
 }
 

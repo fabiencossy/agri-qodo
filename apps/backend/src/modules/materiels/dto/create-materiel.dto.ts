@@ -1,7 +1,16 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { MaterielCategorie, MaterielUnite } from "@prisma/client";
 import { Type } from "class-transformer";
-import { IsBoolean, IsEnum, IsNumber, IsOptional, IsString, MaxLength, Min } from "class-validator";
+import {
+  IsBoolean,
+  IsEnum,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Max,
+  MaxLength,
+  Min,
+} from "class-validator";
 
 export class CreateMaterielDto {
   @ApiProperty({ description: "Libellé affiché (ex: 'Labour à la charrue')." })
@@ -27,6 +36,17 @@ export class CreateMaterielDto {
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
   prixUnitaireCHF?: number;
+
+  @ApiPropertyOptional({
+    description:
+      "Taux TVA CH en % (8.1 normal, 2.6 réduit, 3.8 hébergement, 0 exonéré). Mappé sur account.tax côté Odoo au push.",
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @Max(100)
+  tauxTvaPercent?: number;
 
   @ApiPropertyOptional()
   @IsOptional()

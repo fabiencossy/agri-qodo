@@ -816,6 +816,9 @@ model Produit {
   // OWNER / COMPTABLE). Les EMPLOYE saisissent le prix sur la ligne de
   // travail si nécessaire, sans voir le prix catalogue ni les marges.
   prixVenteCHF    Decimal?         @map("prix_vente_chf") @db.Decimal(12, 2)
+  // Taux de TVA suisse en % (8.1 normal, 2.6 réduit, 3.8 hébergement, 0
+  // exonéré). Null = pas configuré, on laisse Odoo prendre son défaut.
+  tauxTvaPercent  Decimal?         @map("taux_tva_percent") @db.Decimal(5, 2)
   // Lien Odoo (M6 Phase 2) : product.product.id distant. Renseigné par
   // la sync /api/produits/sync-odoo. Permet le re-sync incrémental
   // (upsert sur (tenantId, odooProductId)).
@@ -858,6 +861,9 @@ model Materiel {
   // Tarif par défaut CHF HT par unité (HA / M3 / T / H / FORFAIT). Modifiable
   // ligne par ligne sur le Travail/Intervention. Null = à saisir au cas par cas.
   prixUnitaireCHF Decimal?          @map("prix_unitaire_chf") @db.Decimal(12, 2)
+  // Taux de TVA suisse en % (8.1 normal, 2.6 réduit, 3.8 hébergement, 0
+  // exonéré). Null = pas configuré, on laisse Odoo prendre son défaut.
+  tauxTvaPercent  Decimal?          @map("taux_tva_percent") @db.Decimal(5, 2)
   // Lien Odoo : product.product de type "service". Renseigné par sync_odoo
   // ou créé automatiquement au 1er push d'une Intervention/Travail
   // utilisant ce matériel.
@@ -955,6 +961,12 @@ model Travail {
   /// 2026-05-06 : ne plus polluer la liste des Partenaires avec des
   /// shadows pour les clients Odoo "non-agri-qodo".
   odooPartnerId   Int?       @map("odoo_partner_id")
+  /// Nom du res.partner Odoo capturé au moment de la sélection (le
+  /// picker l'a déjà à portée). Sert à afficher correctement le client
+  /// dans /travaux/[id] et les listes sans round-trip Odoo. Reste
+  /// indicatif (autorité = Odoo via odooPartnerId), mais évite de
+  /// montrer "Client Odoo" générique à l'utilisateur.
+  odooPartnerName String?    @map("odoo_partner_name")
   // Pour les travaux interne (interne=true), on ne crée pas de devis
   // mais une project.task avec le détail (heures, employés, parcelle…)
   // dans le chatter Odoo. Sert à tracer côté Odoo sans facturer.

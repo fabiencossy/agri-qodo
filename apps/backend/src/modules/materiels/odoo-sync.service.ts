@@ -139,6 +139,10 @@ export class MaterielsOdooSyncService {
   // Évite les lookup uom.uom à chaque création de produit.
   private readonly uomCache = new Map<string, Map<MaterielUnite, number>>();
 
+  // Cache mémoire (par tenant) du mapping tauxTvaPercent → account.tax
+  // Odoo (sale). Clé interne = `taux.toFixed(2)`. 0 = lookup négatif.
+  private readonly saleTaxCache = new Map<string, Map<string, number>>();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly tenantContext: TenantContextService,
@@ -187,6 +191,67 @@ export class MaterielsOdooSyncService {
     }
     cache.set(unite, 0); // 0 = not found, on cache pour ne pas relooker
     return null;
+  }
+
+  /**
+   * Résout l'`account.tax` Odoo (type_tax_use=sale) qui a `amount` égal au
+   * taux fourni. Retourne null si aucune taxe configurée. Cache par tenant.
+   */
+  private async resolveSaleTaxId(
+    client: import("@agri-qodo/odoo-client").OdooClient,
+    tenantId: string,
+    tauxPercent: number,
+  ): Promise<number | null> {
+    let cache = this.saleTaxCache.get(tenantId);
+    if (!cache) {
+      cache = new Map();
+      this.saleTaxCache.set(tenantId, cache);
+    }
+    const key = tauxPercent.toFixed(2);
+    const cached = cache.get(key);
+    if (cached !== undefined) return cached || null;
+    try {
+      const found = await client.searchRead<{ id: number }>(
+        "account.tax",
+        [
+          ["amount", "=", tauxPercent],
+          ["type_tax_use", "=", "sale"],
+          ["active", "=", true],
+        ],
+        { fields: ["id"], limit: 1 },
+      );
+      if (found.length > 0 && found[0]) {
+        cache.set(key, found[0].id);
+        return found[0].id;
+      }
+    } catch {
+      // Best-effort.
+    }
+    cache.set(key, 0);
+    return null;
+  }
+
+  /**
+   * Construit le payload Odoo `taxes_id` à partir du tauxTvaPercent local.
+   * Retourne `undefined` si non défini ou si la taxe n'existe pas côté
+   * Odoo (on laisse alors Odoo conserver ses taxes existantes / par défaut).
+   */
+  private async buildTaxesPayload(
+    client: import("@agri-qodo/odoo-client").OdooClient,
+    tenantId: string,
+    tauxTvaPercent: unknown,
+  ): Promise<{ taxes_id: Array<[number, number, number[]]> } | undefined> {
+    if (tauxTvaPercent === null || tauxTvaPercent === undefined) return undefined;
+    const taux = Number(tauxTvaPercent);
+    if (Number.isNaN(taux)) return undefined;
+    const taxId = await this.resolveSaleTaxId(client, tenantId, taux);
+    if (taxId === null) {
+      this.logger.warn(
+        `account.tax sale ${taux}% introuvable pour tenant ${tenantId} — taxes_id non poussé.`,
+      );
+      return undefined;
+    }
+    return { taxes_id: [[6, 0, [taxId]]] };
   }
 
   private assertAdmin(): void {
@@ -307,6 +372,7 @@ export class MaterielsOdooSyncService {
     if (materiel.odooProductId) {
       const client = await this.odooClientManager.forTenant(tenantId);
       const uomId = await this.resolveUomId(client, tenantId, materiel.unite);
+      const taxesPayload = await this.buildTaxesPayload(client, tenantId, materiel.tauxTvaPercent);
       // Push local → Odoo (best-effort). default_code mis à false
       // pour effacer la référence interne AQ-... visible côté Odoo.
       // uom_po_id même valeur que uom_id sinon Odoo refuse parfois
@@ -318,6 +384,7 @@ export class MaterielsOdooSyncService {
           default_code: false,
           expense_policy: "no",
           ...(uomId ? { uom_id: uomId, uom_po_id: uomId } : {}),
+          ...(taxesPayload ?? {}),
         })
         .catch((err) =>
           this.logger.warn(
@@ -374,6 +441,7 @@ export class MaterielsOdooSyncService {
     // Résout l'unité de mesure Odoo correspondant à matériel.unite.
     // Si introuvable, on laisse Odoo prendre l'unité par défaut.
     const uomId = await this.resolveUomId(client, tenantId, materiel.unite);
+    const taxesPayload = await this.buildTaxesPayload(client, tenantId, materiel.tauxTvaPercent);
 
     // Dédup #2 : avant de créer côté Odoo, on cherche par
     // default_code AQ-{code} ou par name=service. Si trouvé, on
@@ -411,6 +479,7 @@ export class MaterielsOdooSyncService {
           // Unité de mesure (uom.uom Odoo) — sert à afficher "ha" / "m³" /
           // "t" / "h" sur le sale.order au lieu du défaut "Unité(s)".
           ...(uomId ? { uom_id: uomId } : {}),
+          ...(taxesPayload ?? {}),
         });
       } catch (err) {
         this.logger.error(
@@ -420,10 +489,15 @@ export class MaterielsOdooSyncService {
           "Impossible de créer le service côté Odoo. Vérifie la config.",
         );
       }
-    } else if (uomId) {
-      // Produit existant côté Odoo : on aligne son unité sur celle
-      // d'Agri Qodo (ha/m³/t/h…) — best-effort.
-      await client.write("product.product", [odooId], { uom_id: uomId }).catch(() => undefined);
+    } else if (uomId || taxesPayload) {
+      // Produit existant côté Odoo : on aligne son unité (ha/m³/t/h…)
+      // et ses taxes sur celles d'Agri Qodo — best-effort.
+      await client
+        .write("product.product", [odooId], {
+          ...(uomId ? { uom_id: uomId } : {}),
+          ...(taxesPayload ?? {}),
+        })
+        .catch(() => undefined);
     }
 
     // Si le matériel est global (tenantId null), on ne peut pas y stocker
@@ -438,6 +512,7 @@ export class MaterielsOdooSyncService {
           categorie: materiel.categorie,
           unite: materiel.unite,
           prixUnitaireCHF: materiel.prixUnitaireCHF,
+          tauxTvaPercent: materiel.tauxTvaPercent,
           notes: materiel.notes,
           actif: materiel.actif,
           odooProductId: odooId,

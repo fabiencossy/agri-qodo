@@ -26,6 +26,13 @@ export interface PartenaireSelection {
   partenaireId?: string;
   /** ID res.partner Odoo (client Odoo "seul", pas un partenaire Agri Qodo). */
   odooPartnerId?: number;
+  /**
+   * Nom du res.partner Odoo (libellé affiché). Le picker connaît déjà
+   * le nom au moment du choix — on le propage pour que le caller puisse
+   * le persister sur l'entité (Travail.odooPartnerName) et l'afficher
+   * sans round-trip Odoo.
+   */
+  odooPartnerName?: string;
 }
 
 export interface PartenaireSelectProps {
@@ -137,7 +144,7 @@ export function PartenaireSelect({
         ...(draft.email.trim() ? { email: draft.email.trim() } : {}),
         ...(draft.telephone.trim() ? { telephone: draft.telephone.trim() } : {}),
       });
-      onChange({ odooPartnerId: created.odooPartnerId });
+      onChange({ odooPartnerId: created.odooPartnerId, odooPartnerName: draft.nom.trim() });
       setDraft({ nom: "", ville: "", email: "", telephone: "" });
       setCreating(false);
       setOpen(false);
@@ -296,7 +303,7 @@ export function PartenaireSelect({
                     key={`odoo-${o.odooId}`}
                     type="button"
                     onClick={() => {
-                      onChange({ odooPartnerId: o.odooId });
+                      onChange({ odooPartnerId: o.odooId, odooPartnerName: o.nom });
                       setOpen(false);
                     }}
                     className={cn(

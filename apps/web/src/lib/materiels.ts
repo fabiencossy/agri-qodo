@@ -23,6 +23,8 @@ export interface Materiel {
   categorie: MaterielCategorie;
   unite: MaterielUnite;
   prixUnitaireCHF: string | null; // Decimal sérialisé
+  /** Taux TVA CH en % (ex 8.10, 2.60). Sérialisé Decimal → string. */
+  tauxTvaPercent: string | null;
   odooProductId: number | null;
   odooSyncedAt: string | null;
   notes: string | null;
@@ -34,6 +36,7 @@ export interface CreateMaterielInput {
   categorie: MaterielCategorie;
   unite?: MaterielUnite;
   prixUnitaireCHF?: number;
+  tauxTvaPercent?: number;
   notes?: string;
 }
 

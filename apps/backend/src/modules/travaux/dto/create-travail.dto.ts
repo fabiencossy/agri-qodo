@@ -128,6 +128,15 @@ export class CreateTravailDto {
   @Min(1)
   odooPartnerId?: number;
 
+  @ApiPropertyOptional({
+    description:
+      "Nom du res.partner Odoo capturé au moment de la sélection. Sert au seul affichage côté Agri Qodo. Optionnel.",
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  odooPartnerName?: string;
+
   @ApiPropertyOptional({ description: "ID Parcelle concernée (optionnel)." })
   @IsOptional()
   @IsUUID()

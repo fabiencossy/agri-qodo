@@ -140,7 +140,13 @@ export default function TravailDetailPage() {
             icon={ClipboardList}
             label="Client"
             value={
-              t.partenaire ? t.partenaire.nom : <span className="text-foreground/40">Interne</span>
+              t.partenaire ? (
+                t.partenaire.nom
+              ) : t.odooPartnerId ? (
+                <span>{t.odooPartnerName ?? `Client Odoo #${t.odooPartnerId}`}</span>
+              ) : (
+                <span className="text-foreground/40">Interne</span>
+              )
             }
           />
           {t.notes && (

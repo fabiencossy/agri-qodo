@@ -83,6 +83,7 @@ export class ProduitsService {
         tauxK: dto.tauxK ?? null,
         unite: dto.unite ?? "KG",
         prixVenteCHF: dto.prixVenteCHF ?? null,
+        tauxTvaPercent: dto.tauxTvaPercent ?? null,
         notes: dto.notes ?? null,
         actif: dto.actif ?? true,
       },
@@ -94,18 +95,63 @@ export class ProduitsService {
     const { tenantId } = this.tenantContext.get();
     const existing = await this.prisma.produit.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException("Produit introuvable");
-    if (existing.tenantId === null) {
-      throw new ForbiddenException(
-        "Les produits globaux ne sont pas modifiables. Crée un produit perso si tu veux personnaliser.",
-      );
-    }
-    if (existing.tenantId !== tenantId) {
-      throw new NotFoundException("Produit introuvable");
-    }
     if (dto.prixVenteCHF !== undefined && !this.isAdmin()) {
       throw new ForbiddenException(
         "Seul un OWNER ou COMPTABLE peut modifier le prix de vente catalogue.",
       );
+    }
+
+    // Fork-on-edit (demande Fabien 2026-05-07) : modifier un produit
+    // global ne lève plus d'erreur — on crée (ou on réutilise) une
+    // copie perso pour le tenant et on applique les modifs dessus.
+    // Évite à l'utilisateur de devoir cliquer "Pousser vers Odoo" puis
+    // "Modifier" en deux étapes pour personnaliser un item du catalogue.
+    if (existing.tenantId === null) {
+      const existingPerso = await this.prisma.produit.findFirst({
+        where: { tenantId, libelle: existing.libelle },
+      });
+      const data = {
+        categorie: dto.categorie ?? existing.categorie,
+        libelle: dto.libelle ?? existing.libelle,
+        fournisseur: dto.fournisseur ?? existing.fournisseur,
+        marque: dto.marque ?? existing.marque,
+        especeCode: dto.especeCode ?? existing.especeCode,
+        tauxN: dto.tauxN !== undefined ? dto.tauxN : existing.tauxN,
+        tauxP: dto.tauxP !== undefined ? dto.tauxP : existing.tauxP,
+        tauxK: dto.tauxK !== undefined ? dto.tauxK : existing.tauxK,
+        unite: dto.unite ?? existing.unite,
+        prixVenteCHF: dto.prixVenteCHF !== undefined ? dto.prixVenteCHF : existing.prixVenteCHF,
+        tauxTvaPercent:
+          dto.tauxTvaPercent !== undefined ? dto.tauxTvaPercent : existing.tauxTvaPercent,
+        notes: dto.notes ?? existing.notes,
+        actif: dto.actif ?? existing.actif,
+      };
+      const persisted = existingPerso
+        ? await this.prisma.produit.update({
+            where: { id: existingPerso.id },
+            data,
+          })
+        : await this.prisma.produit.create({
+            data: {
+              ...data,
+              tenantId,
+              code: `t-${tenantId.slice(0, 8)}-${randomBytes(3).toString("hex")}`,
+            },
+          });
+      if (persisted.odooProductId) {
+        this.odooSync
+          .ensureOdooProduct(persisted.id)
+          .catch((err) =>
+            this.logger.warn(
+              `Sync Odoo après fork produit ${persisted.id} échouée : ${err instanceof Error ? err.message : err}`,
+            ),
+          );
+      }
+      return this.maskPrice(persisted);
+    }
+
+    if (existing.tenantId !== tenantId) {
+      throw new NotFoundException("Produit introuvable");
     }
     const updated = await this.prisma.produit.update({
       where: { id },
@@ -120,6 +166,7 @@ export class ProduitsService {
         ...(dto.tauxK !== undefined ? { tauxK: dto.tauxK } : {}),
         ...(dto.unite !== undefined ? { unite: dto.unite } : {}),
         ...(dto.prixVenteCHF !== undefined ? { prixVenteCHF: dto.prixVenteCHF } : {}),
+        ...(dto.tauxTvaPercent !== undefined ? { tauxTvaPercent: dto.tauxTvaPercent } : {}),
         ...(dto.notes !== undefined ? { notes: dto.notes } : {}),
         ...(dto.actif !== undefined ? { actif: dto.actif } : {}),
       },

@@ -67,6 +67,14 @@ export class OdooSyncService {
   /** Cache du mapping ProduitUnite → uom.uom Odoo, par tenant. */
   private readonly uomCache = new Map<string, Map<ProduitUnite, number>>();
 
+  /**
+   * Cache du mapping tauxTvaPercent → account.tax Odoo (sale), par tenant.
+   * Clé interne = `taux.toFixed(2)` pour éviter les soucis de virgule
+   * flottante (8.1 != 8.10000001). Valeur 0 = lookup négatif (mémorisé
+   * pour éviter les retries inutiles).
+   */
+  private readonly saleTaxCache = new Map<string, Map<string, number>>();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly tenantContext: TenantContextService,
@@ -115,6 +123,71 @@ export class OdooSyncService {
     }
     cache.set(unite, 0);
     return null;
+  }
+
+  /**
+   * Résout l'`account.tax` Odoo (type_tax_use=sale) qui a `amount` égal au
+   * taux fourni. Retourne null si aucune taxe configurée — l'admin Odoo
+   * doit alors créer la taxe manuellement (cas d'une instance fraîche
+   * sans préset CH). Cache par tenant pour éviter les lookups répétés.
+   */
+  private async resolveSaleTaxId(
+    client: import("@agri-qodo/odoo-client").OdooClient,
+    tenantId: string,
+    tauxPercent: number,
+  ): Promise<number | null> {
+    let cache = this.saleTaxCache.get(tenantId);
+    if (!cache) {
+      cache = new Map();
+      this.saleTaxCache.set(tenantId, cache);
+    }
+    const key = tauxPercent.toFixed(2);
+    const cached = cache.get(key);
+    if (cached !== undefined) return cached || null;
+    try {
+      const found = await client.searchRead<{ id: number }>(
+        "account.tax",
+        [
+          ["amount", "=", tauxPercent],
+          ["type_tax_use", "=", "sale"],
+          ["active", "=", true],
+        ],
+        { fields: ["id"], limit: 1 },
+      );
+      if (found.length > 0 && found[0]) {
+        cache.set(key, found[0].id);
+        return found[0].id;
+      }
+    } catch {
+      // Best-effort : l'absence de droit lecture account.tax sur le rôle
+      // technique d'intégration ne doit pas bloquer la sync produit.
+    }
+    cache.set(key, 0);
+    return null;
+  }
+
+  /**
+   * Construit le payload Odoo `taxes_id` à partir du tauxTvaPercent
+   * local. Retourne `undefined` quand le champ n'est pas défini (on
+   * laisse alors Odoo conserver ses taxes existantes / par défaut).
+   */
+  private async buildTaxesPayload(
+    client: import("@agri-qodo/odoo-client").OdooClient,
+    tenantId: string,
+    tauxTvaPercent: unknown,
+  ): Promise<{ taxes_id: Array<[number, number, number[]]> } | undefined> {
+    if (tauxTvaPercent === null || tauxTvaPercent === undefined) return undefined;
+    const taux = Number(tauxTvaPercent);
+    if (Number.isNaN(taux)) return undefined;
+    const taxId = await this.resolveSaleTaxId(client, tenantId, taux);
+    if (taxId === null) {
+      this.logger.warn(
+        `account.tax sale ${taux}% introuvable pour tenant ${tenantId} — taxes_id non poussé.`,
+      );
+      return undefined;
+    }
+    // Commande Odoo many2many : [[6, 0, [ids]]] remplace toute la liste.
+    return { taxes_id: [[6, 0, [taxId]]] };
   }
 
   private assertAdmin(): void {
@@ -250,6 +323,7 @@ export class OdooSyncService {
     if (produit.odooProductId) {
       const client = await this.odooClientManager.forTenant(tenantId);
       const uomId = await this.resolveUomId(client, tenantId, produit.unite);
+      const taxesPayload = await this.buildTaxesPayload(client, tenantId, produit.tauxTvaPercent);
       // default_code mis à false pour effacer la référence interne
       // visible côté Odoo (demande Fabien 2026-05-06).
       await client
@@ -258,6 +332,7 @@ export class OdooSyncService {
           list_price: produit.prixVenteCHF ? Number(produit.prixVenteCHF) : 0,
           default_code: false,
           ...(uomId ? { uom_id: uomId } : {}),
+          ...(taxesPayload ?? {}),
         })
         .catch((err) =>
           this.logger.warn(
@@ -333,6 +408,7 @@ export class OdooSyncService {
     // m³, dose). Si trouvée on la pose à la création — sinon Odoo
     // prend son défaut "Unité(s)" qui n'est pas adapté.
     const uomId = await this.resolveUomId(client, tenantId, produit.unite);
+    const taxesPayload = await this.buildTaxesPayload(client, tenantId, produit.tauxTvaPercent);
 
     if (!odooId) {
       try {
@@ -342,6 +418,7 @@ export class OdooSyncService {
           list_price: produit.prixVenteCHF ? Number(produit.prixVenteCHF) : 0,
           // default_code retiré (demande Fabien 2026-05-06).
           ...(uomId ? { uom_id: uomId } : {}),
+          ...(taxesPayload ?? {}),
         });
       } catch (err) {
         this.logger.error(
@@ -351,11 +428,16 @@ export class OdooSyncService {
           "Impossible de créer le produit côté Odoo. Vérifie la config.",
         );
       }
-    } else if (uomId) {
-      // Produit existant côté Odoo : on s'assure que son unité est
-      // alignée avec celle d'Agri Qodo (best-effort, ne casse pas si
-      // l'admin a verrouillé les unités côté Odoo).
-      await client.write("product.product", [odooId], { uom_id: uomId }).catch(() => undefined);
+    } else if (uomId || taxesPayload) {
+      // Produit existant côté Odoo : on s'assure que son unité et ses
+      // taxes sont alignées avec Agri Qodo (best-effort, ne casse pas
+      // si l'admin a verrouillé certains champs côté Odoo).
+      await client
+        .write("product.product", [odooId], {
+          ...(uomId ? { uom_id: uomId } : {}),
+          ...(taxesPayload ?? {}),
+        })
+        .catch(() => undefined);
     }
 
     if (produit.tenantId === null) {
@@ -375,6 +457,7 @@ export class OdooSyncService {
           tauxP: produit.tauxP,
           tauxK: produit.tauxK,
           prixVenteCHF: produit.prixVenteCHF,
+          tauxTvaPercent: produit.tauxTvaPercent,
           notes: produit.notes,
           actif: produit.actif,
           odooProductId: odooId,

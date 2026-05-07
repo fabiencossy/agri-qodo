@@ -57,6 +57,8 @@ export interface Travail {
   invoicedAt: string | null;
   /** Client Odoo "seul" (res.partner) — alternatif à partenaireId. */
   odooPartnerId: number | null;
+  /** Nom du client Odoo capturé au save (cache local pour affichage). */
+  odooPartnerName: string | null;
   /** Sprint 2 fusion-interventions — Planning. */
   datePrevue: string | null;
   assignedToUserId: string | null;
@@ -92,6 +94,7 @@ export interface CreateTravailInput {
   dateFin?: string;
   partenaireId?: string;
   odooPartnerId?: number;
+  odooPartnerName?: string;
   parcelleId?: string;
   projetId?: string;
   interne?: boolean;
