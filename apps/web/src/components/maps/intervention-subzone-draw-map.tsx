@@ -53,6 +53,54 @@ const SUISSE_ROMANDE: L.LatLngTuple = [46.6, 6.55];
 const SNAP_PIXEL_DISTANCE = 12;
 
 /**
+ * Localisation FR de leaflet-draw : tooltips des boutons et messages
+ * pendant le tracé. Patché sur `L.drawLocal` au montage de la carte.
+ */
+const DRAW_LOCAL_FR = {
+  draw: {
+    toolbar: {
+      actions: { title: "Annuler le tracé", text: "Annuler" },
+      finish: { title: "Terminer le tracé", text: "Terminer" },
+      undo: { title: "Supprimer le dernier point", text: "Effacer le dernier point" },
+      buttons: { polygon: "Dessiner la zone" },
+    },
+    handlers: {
+      polygon: {
+        tooltip: {
+          start: "Clique pour commencer le tracé",
+          cont: "Clique pour ajouter un sommet",
+          end: "Clique sur le premier point pour fermer la zone",
+        },
+      },
+    },
+  },
+  edit: {
+    toolbar: {
+      actions: {
+        save: { title: "Enregistrer les modifications", text: "Enregistrer" },
+        cancel: { title: "Annuler les modifications", text: "Annuler" },
+        clearAll: { title: "Tout effacer", text: "Tout effacer" },
+      },
+      buttons: {
+        edit: "Modifier la zone tracée",
+        editDisabled: "Aucune zone à modifier",
+        remove: "Supprimer la zone tracée",
+        removeDisabled: "Aucune zone à supprimer",
+      },
+    },
+    handlers: {
+      edit: {
+        tooltip: {
+          text: "Glisse les sommets pour ajuster la zone",
+          subtext: "Clique sur Annuler pour rétablir",
+        },
+      },
+      remove: { tooltip: { text: "Clique sur la zone pour la supprimer" } },
+    },
+  },
+};
+
+/**
  * Découpe le polygone tracé pour qu'il rentre strictement dans la
  * parcelle. Si la parcelle est un MultiPolygon, on intersecte avec
  * chaque morceau et on garde le plus grand résultat (cas où
@@ -136,11 +184,36 @@ function parcelleVertices(parcelle: ParcelleGeom): L.LatLng[] {
 
 export default function InterventionSubzoneDrawMap({
   parcelleGeom,
+  forbiddenZones,
+  maxSurfaceM2,
   initialGeom,
   onPolygonChange,
+  onOverlapChange,
 }: {
   /** Contour de la parcelle parente (Polygon ou MultiPolygon GeoJSON). */
   parcelleGeom: ParcelleGeom | null;
+  /**
+   * Sous-zones SEMIS déjà tracées sur cette parcelle (autres cultures du
+   * plan d'assolement). Affichées en hachures rouges. Le tracé n'est
+   * **plus interdit** dessus (sur-semis autorisé) — le caller doit
+   * afficher une confirmation au submit via `onOverlapChange`.
+   */
+  forbiddenZones?: GeoJsonPolygon[];
+  /**
+   * Callback notifié quand l'aire de chevauchement avec les
+   * forbiddenZones change. 0 = pas de sur-semis. > 0 = sur-semis
+   * détecté, le caller doit avertir l'utilisateur.
+   */
+  onOverlapChange?: (overlapM2: number) => void;
+  /**
+   * Surface déclarée de la parcelle (autorité cadastrale). Quand la
+   * géométrie de la parcelle couvre une surface différente (import
+   * approximatif), on applique un ratio proportionnel à l'aire de la
+   * sous-zone tracée pour respecter la déclaration. Ex : géom 5.98 ha
+   * mais déclaré 2.89 → ratio 0.483, une zone tracée à 50% de la géom
+   * (≈ 3 ha brut) sera affichée à 50% de 2.89 = 1.445 ha.
+   */
+  maxSurfaceM2?: number;
   initialGeom?: GeoJsonPolygon | null;
   onPolygonChange: (geom: GeoJsonPolygon | null, surfaceM2: number) => void;
 }) {
@@ -170,6 +243,26 @@ export default function InterventionSubzoneDrawMap({
       )
       .addTo(map);
 
+    // Aire géométrique réelle de la parcelle (pour calculer le ratio de
+    // correction quand elle diverge de la surface déclarée).
+    const parcelleGeomAreaM2 = parcelleGeom
+      ? area(
+          turfPolygon(
+            parcelleGeom.type === "Polygon"
+              ? parcelleGeom.coordinates
+              : parcelleGeom.coordinates[0]!,
+          ),
+        )
+      : 0;
+    // Ratio à appliquer sur l'aire des sous-zones tracées : ratio = 1
+    // quand géom matche déclaration ; ratio < 1 quand géom est trop
+    // grande ; ratio > 1 quand géom est trop petite (rare). Toujours
+    // respecté pour aligner front & user.
+    const correctionRatio =
+      maxSurfaceM2 !== undefined && maxSurfaceM2 > 0 && parcelleGeomAreaM2 > 0
+        ? maxSurfaceM2 / parcelleGeomAreaM2
+        : 1;
+
     if (parcelleGeom) {
       const parcelleLayer = L.geoJSON(parcelleGeom, {
         style: {
@@ -184,6 +277,26 @@ export default function InterventionSubzoneDrawMap({
       if (bounds.isValid()) map.fitBounds(bounds, { padding: [40, 40] });
     }
 
+    // Sous-zones SEMIS déjà tracées : hachures rouges, tooltip "Déjà semé".
+    if (forbiddenZones && forbiddenZones.length > 0) {
+      for (const g of forbiddenZones) {
+        L.geoJSON(g, {
+          style: {
+            color: "#B91C1C",
+            weight: 2,
+            fillColor: "#B91C1C",
+            fillOpacity: 0.18,
+            dashArray: "4 6",
+          },
+        })
+          .bindTooltip("Zone déjà semée — tracé interdit ici", {
+            sticky: true,
+            direction: "center",
+          })
+          .addTo(map);
+      }
+    }
+
     const drawnItems = new L.FeatureGroup();
     map.addLayer(drawnItems);
 
@@ -191,9 +304,29 @@ export default function InterventionSubzoneDrawMap({
       L.geoJSON(initialGeom, {
         style: { color: "#1565C0", weight: 3, fillColor: "#1565C0", fillOpacity: 0.25 },
       }).eachLayer((layer) => drawnItems.addLayer(layer));
-      const m2 = area({ type: "Feature", geometry: initialGeom, properties: {} });
-      setSurface(m2);
+      const rawM2 = area({ type: "Feature", geometry: initialGeom, properties: {} });
+      setSurface(rawM2 * correctionRatio);
     }
+
+    // Localisation FR des boutons + tooltips leaflet-draw. drawLocal est
+    // un singleton global, on patch avant d'instancier le control. Les
+    // chaînes anglaises par défaut ("Draw a polygon", "Edit layers"...)
+    // n'étaient pas explicites pour des agriculteurs FR (cf 2026-05-08).
+    const drawLocal = (L as unknown as { drawLocal: typeof DRAW_LOCAL_FR }).drawLocal;
+    drawLocal.draw.toolbar.actions.title = DRAW_LOCAL_FR.draw.toolbar.actions.title;
+    drawLocal.draw.toolbar.actions.text = DRAW_LOCAL_FR.draw.toolbar.actions.text;
+    drawLocal.draw.toolbar.finish.title = DRAW_LOCAL_FR.draw.toolbar.finish.title;
+    drawLocal.draw.toolbar.finish.text = DRAW_LOCAL_FR.draw.toolbar.finish.text;
+    drawLocal.draw.toolbar.undo.title = DRAW_LOCAL_FR.draw.toolbar.undo.title;
+    drawLocal.draw.toolbar.undo.text = DRAW_LOCAL_FR.draw.toolbar.undo.text;
+    drawLocal.draw.toolbar.buttons.polygon = DRAW_LOCAL_FR.draw.toolbar.buttons.polygon;
+    drawLocal.draw.handlers.polygon.tooltip = DRAW_LOCAL_FR.draw.handlers.polygon.tooltip;
+    drawLocal.edit.toolbar.actions.save = DRAW_LOCAL_FR.edit.toolbar.actions.save;
+    drawLocal.edit.toolbar.actions.cancel = DRAW_LOCAL_FR.edit.toolbar.actions.cancel;
+    drawLocal.edit.toolbar.actions.clearAll = DRAW_LOCAL_FR.edit.toolbar.actions.clearAll;
+    drawLocal.edit.toolbar.buttons = DRAW_LOCAL_FR.edit.toolbar.buttons;
+    drawLocal.edit.handlers.edit.tooltip = DRAW_LOCAL_FR.edit.handlers.edit.tooltip;
+    drawLocal.edit.handlers.remove.tooltip = DRAW_LOCAL_FR.edit.handlers.remove.tooltip;
 
     const drawControl = new (
       L.Control as unknown as { Draw: new (options: unknown) => L.Control }
@@ -275,7 +408,9 @@ export default function InterventionSubzoneDrawMap({
       let finalGeom: GeoJsonPolygon = drawnFeature.geometry;
       let didClip = false;
 
-      // Clip auto si le polygone déborde de la parcelle.
+      // Clip auto si le polygone déborde de la parcelle. Les zones SEMIS
+      // déjà tracées (forbiddenZones) ne sont PAS soustraites — le
+      // sur-semis est autorisé, juste signalé via onOverlapChange.
       if (parcelleGeom && !isFullyContained(finalGeom, parcelleGeom)) {
         const clip = clipToParcelle(finalGeom, parcelleGeom);
         if (clip) {
@@ -297,10 +432,30 @@ export default function InterventionSubzoneDrawMap({
         }
       }
 
-      const m2 = area({ type: "Feature", geometry: finalGeom, properties: {} });
+      const rawM2 = area({ type: "Feature", geometry: finalGeom, properties: {} });
+      // Aire ramenée à la surface déclarée via ratio proportionnel.
+      // Si la géom couvre 2× la déclaration, on divise l'aire par 2.
+      const m2 = rawM2 * correctionRatio;
       setSurface(m2);
-      setClipped(didClip);
+      setClipped(didClip || correctionRatio < 0.999);
       onPolygonChange(finalGeom, m2);
+
+      // Calcule l'aire de chevauchement avec les zones déjà semées (sur-semis).
+      if (onOverlapChange) {
+        let overlapRawM2 = 0;
+        if (forbiddenZones && forbiddenZones.length > 0) {
+          try {
+            const drawnTurf = turfPolygon(finalGeom.coordinates);
+            for (const fz of forbiddenZones) {
+              const inter = intersect(featureCollection([drawnTurf, turfPolygon(fz.coordinates)]));
+              if (inter?.geometry) overlapRawM2 += area(inter);
+            }
+          } catch {
+            // Best-effort.
+          }
+        }
+        onOverlapChange(overlapRawM2 * correctionRatio);
+      }
     };
 
     map.on("draw:created", (e) => {

@@ -38,6 +38,7 @@ import {
   useCreateIntervention,
   useDeleteIntervention,
   useIntervention,
+  useInterventionsWithGeom,
   useUpdateIntervention,
 } from "@/lib/interventions";
 import { formatSurface, useParcelle, useParcelles, useParcellesAccessibles } from "@/lib/parcelles";
@@ -286,6 +287,11 @@ export default function NewInterventionPage() {
   const [modeSaisieZone, setModeSaisieZone] = useState<"numerique" | "dessin">("numerique");
   const [sousZoneGeom, setSousZoneGeom] = useState<InterventionGeoJsonPolygon | null>(null);
   const [sousZoneSurfaceM2, setSousZoneSurfaceM2] = useState<number | null>(null);
+  // Aire de chevauchement avec un SEMIS déjà tracé (sur-semis). 0 = aucun
+  // chevauchement. > 0 = afficher avertissement + dialog de confirmation
+  // au submit. Décision Fabien 2026-05-08 : sur-semis autorisé mais avec
+  // confirmation explicite.
+  const [sousZoneOverlapM2, setSousZoneOverlapM2] = useState<number>(0);
 
   const selectedParcelle = parcelles.data?.find((p) => p.id === selectedParcelleId);
   // Détection cas A (parcelle perso) vs cas B (parcelle d'un partenaire) —
@@ -297,6 +303,16 @@ export default function NewInterventionPage() {
   // Le getById expose la geom — utile pour afficher le contour parent.
   const parcelleDetail = useParcelle(selectedParcelleId || undefined);
   const surfaceParcelleM2 = selectedParcelle ? Number(selectedParcelle.surfaceM2) : 0;
+  // Pour SEMIS et RECOLTE, on force le choix binaire toute-parcelle vs
+  // dessin (pas de saisie numérique). Décision Fabien 2026-05-08 :
+  // ces types alimentent le plan d'assolement, on veut une géométrie
+  // précise ou rien.
+  const forceDessinMode = selectedType === "SEMIS" || selectedType === "RECOLTE";
+  // Switch auto vers le mode dessin quand on passe sur SEMIS/RECOLTE
+  // (les seuls modes valides étant alors "toute la parcelle" ou dessin).
+  useEffect(() => {
+    if (forceDessinMode) setModeSaisieZone("dessin");
+  }, [forceDessinMode]);
   // La géom de la parcelle peut couvrir une surface différente de
   // surfaceM2 déclaré (import cadastre vs saisie manuelle, etc.). Pour
   // le check "sous-zone trop grande" on doit comparer à l'aire réelle
@@ -311,6 +327,20 @@ export default function NewInterventionPage() {
       return null;
     }
   }, [parcelleDetail.data?.geom]);
+  // Plan d'assolement : sous-zones SEMIS déjà tracées sur cette parcelle
+  // (autres cultures). On les soustrait à la zone tracable pour que
+  // l'utilisateur ne puisse pas semer 2 cultures au même endroit. En mode
+  // édition, on exclut l'intervention en cours pour qu'elle reste
+  // re-traçable.
+  const interventionsGeom = useInterventionsWithGeom(
+    selectedParcelleId ? { parcelleId: selectedParcelleId } : undefined,
+  );
+  const forbiddenZones = useMemo(() => {
+    if (!interventionsGeom.data) return [];
+    return interventionsGeom.data
+      .filter((iv) => iv.type === "SEMIS" && iv.geom && iv.id !== editId)
+      .map((iv) => iv.geom!);
+  }, [interventionsGeom.data, editId]);
   const peutSaisirSurfacePartielle = TYPES_AVEC_SURFACE_PARTIELLE.includes(selectedType);
 
   // Quand on change de parcelle, on revient à "toute la parcelle" et
@@ -376,6 +406,20 @@ export default function NewInterventionPage() {
   }
 
   const onSubmit = (values: FormValues) => {
+    // Confirmation explicite si sur-semis (zone tracée chevauche un
+    // SEMIS déjà en place, ou "toute la parcelle" coché alors qu'un
+    // SEMIS existe sur la parcelle). Décision Fabien 2026-05-08.
+    if (values.type === "SEMIS" && forbiddenZones.length > 0) {
+      const overlapsByDraw = modeSaisieZone === "dessin" && sousZoneOverlapM2 > 1;
+      const overlapsByFullField = toutLeChamp;
+      if (overlapsByDraw || overlapsByFullField) {
+        const detail = overlapsByDraw
+          ? `${formatSurface(sousZoneOverlapM2)} chevauche${sousZoneOverlapM2 >= 1 ? "" : "nt"} une culture déjà en place`
+          : "tu vas semer sur toute la parcelle alors qu'une culture y est déjà en place";
+        const ok = window.confirm(`Sur-semis : ${detail}.\n\nTu confirmes ?`);
+        if (!ok) return;
+      }
+    }
     // Construction de la portion "surface" de la requête, par priorité :
     //   1. toute la parcelle → on n'envoie ni surface ni geom.
     //   2. sous-zone dessinée → on envoie geomGeoJson, le backend
@@ -785,7 +829,7 @@ export default function NewInterventionPage() {
                   />
                   <span>Toute la parcelle ({formatSurface(surfaceParcelleM2)})</span>
                 </label>
-                {!toutLeChamp && (
+                {!toutLeChamp && !forceDessinMode && (
                   <div className="flex flex-wrap gap-2">
                     <button
                       type="button"
@@ -817,7 +861,7 @@ export default function NewInterventionPage() {
                     </button>
                   </div>
                 )}
-                {!toutLeChamp && modeSaisieZone === "numerique" && (
+                {!toutLeChamp && !forceDessinMode && modeSaisieZone === "numerique" && (
                   <>
                     <div className="flex items-center gap-2">
                       <Input
@@ -839,43 +883,66 @@ export default function NewInterventionPage() {
                     </p>
                   </>
                 )}
-                {!toutLeChamp && modeSaisieZone === "dessin" && parcelleDetail.data?.geom && (
-                  <>
-                    <InterventionSubzoneDrawMap
-                      parcelleGeom={parcelleDetail.data.geom}
-                      onPolygonChange={(geom, m2) => {
-                        setSousZoneGeom(geom);
-                        setSousZoneSurfaceM2(m2 > 0 ? m2 : null);
-                      }}
-                    />
-                    {sousZoneSurfaceM2 !== null &&
-                      parcelleGeomAreaM2 !== null &&
-                      sousZoneSurfaceM2 > parcelleGeomAreaM2 * 1.001 && (
+                {!toutLeChamp &&
+                  (forceDessinMode || modeSaisieZone === "dessin") &&
+                  parcelleDetail.data?.geom && (
+                    <>
+                      <InterventionSubzoneDrawMap
+                        parcelleGeom={parcelleDetail.data.geom}
+                        forbiddenZones={forbiddenZones}
+                        {...(surfaceParcelleM2 > 0 ? { maxSurfaceM2: surfaceParcelleM2 } : {})}
+                        onPolygonChange={(geom, m2) => {
+                          setSousZoneGeom(geom);
+                          setSousZoneSurfaceM2(m2 > 0 ? m2 : null);
+                        }}
+                        onOverlapChange={(m2) => setSousZoneOverlapM2(m2)}
+                      />
+                      {sousZoneOverlapM2 > 1 && (
                         <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">
-                          Attention, la zone tracée ({formatSurface(sousZoneSurfaceM2)}) dépasse la
-                          géométrie de la parcelle ({formatSurface(parcelleGeomAreaM2)}). Re-trace à
-                          l&apos;intérieur des limites de la parcelle.
+                          ⚠️ Sur-semis détecté : ta zone chevauche{" "}
+                          <strong>{formatSurface(sousZoneOverlapM2)}</strong> de culture déjà en
+                          place. Une confirmation te sera demandée à l&apos;enregistrement.
                         </p>
                       )}
-                    {sousZoneSurfaceM2 !== null &&
-                      parcelleGeomAreaM2 !== null &&
-                      surfaceParcelleM2 > 0 &&
-                      Math.abs(parcelleGeomAreaM2 - surfaceParcelleM2) / surfaceParcelleM2 >
-                        0.05 && (
-                        <p className="rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-900">
-                          Note : la géométrie de cette parcelle couvre{" "}
-                          {formatSurface(parcelleGeomAreaM2)} alors que sa surface déclarée est{" "}
-                          {formatSurface(surfaceParcelleM2)}. Si l&apos;écart te semble anormal,
-                          vérifie le tracé de la parcelle.
-                        </p>
-                      )}
-                    <p className="text-xs text-foreground/50">
-                      Cette zone alimentera le plan d'assolement. Tu peux saisir plusieurs
-                      interventions SEMIS distinctes (une par culture) avec leur propre polygone
-                      pour découper la parcelle en zones.
-                    </p>
-                  </>
-                )}
+                      {sousZoneSurfaceM2 !== null &&
+                        parcelleGeomAreaM2 !== null &&
+                        sousZoneSurfaceM2 > parcelleGeomAreaM2 * 1.001 && (
+                          <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                            Attention, la zone tracée ({formatSurface(sousZoneSurfaceM2)}) dépasse
+                            la géométrie de la parcelle ({formatSurface(parcelleGeomAreaM2)}).
+                            Re-trace à l&apos;intérieur des limites de la parcelle.
+                          </p>
+                        )}
+                      {sousZoneSurfaceM2 !== null &&
+                        parcelleGeomAreaM2 !== null &&
+                        surfaceParcelleM2 > 0 &&
+                        Math.abs(parcelleGeomAreaM2 - surfaceParcelleM2) / surfaceParcelleM2 >
+                          0.05 && (
+                          <div className="rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-900">
+                            <p>
+                              Note : la géométrie de cette parcelle couvre{" "}
+                              <strong>{formatSurface(parcelleGeomAreaM2)}</strong> alors que sa
+                              surface déclarée est{" "}
+                              <strong>{formatSurface(surfaceParcelleM2)}</strong>. Si l&apos;écart
+                              te semble anormal, re-trace la parcelle.
+                            </p>
+                            {selectedParcelleId && (
+                              <Link
+                                href={`/parcelles/${selectedParcelleId}/edit`}
+                                className="mt-1 inline-block font-medium underline hover:no-underline"
+                              >
+                                Modifier la parcelle →
+                              </Link>
+                            )}
+                          </div>
+                        )}
+                      <p className="text-xs text-foreground/50">
+                        Cette zone alimentera le plan d'assolement. Tu peux saisir plusieurs
+                        interventions SEMIS distinctes (une par culture) avec leur propre polygone
+                        pour découper la parcelle en zones.
+                      </p>
+                    </>
+                  )}
               </div>
             </Field>
           )}
