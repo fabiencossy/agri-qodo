@@ -1,6 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
+import area from "@turf/area";
 import { CalendarDays } from "lucide-react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
@@ -296,6 +297,20 @@ export default function NewInterventionPage() {
   // Le getById expose la geom — utile pour afficher le contour parent.
   const parcelleDetail = useParcelle(selectedParcelleId || undefined);
   const surfaceParcelleM2 = selectedParcelle ? Number(selectedParcelle.surfaceM2) : 0;
+  // La géom de la parcelle peut couvrir une surface différente de
+  // surfaceM2 déclaré (import cadastre vs saisie manuelle, etc.). Pour
+  // le check "sous-zone trop grande" on doit comparer à l'aire réelle
+  // de la géom (le backend valide via ST_Within, pas vs surfaceM2).
+  // Sinon on affiche un faux warning quand la géom > surface déclarée.
+  const parcelleGeomAreaM2 = useMemo(() => {
+    const geom = parcelleDetail.data?.geom;
+    if (!geom) return null;
+    try {
+      return area({ type: "Feature", geometry: geom, properties: {} });
+    } catch {
+      return null;
+    }
+  }, [parcelleDetail.data?.geom]);
   const peutSaisirSurfacePartielle = TYPES_AVEC_SURFACE_PARTIELLE.includes(selectedType);
 
   // Quand on change de parcelle, on revient à "toute la parcelle" et
@@ -834,11 +849,24 @@ export default function NewInterventionPage() {
                       }}
                     />
                     {sousZoneSurfaceM2 !== null &&
-                      sousZoneSurfaceM2 > surfaceParcelleM2 * 1.001 && (
+                      parcelleGeomAreaM2 !== null &&
+                      sousZoneSurfaceM2 > parcelleGeomAreaM2 * 1.001 && (
                         <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">
                           Attention, la zone tracée ({formatSurface(sousZoneSurfaceM2)}) dépasse la
-                          surface de la parcelle ({formatSurface(surfaceParcelleM2)}). Le serveur
-                          rejettera la sauvegarde.
+                          géométrie de la parcelle ({formatSurface(parcelleGeomAreaM2)}). Re-trace à
+                          l&apos;intérieur des limites de la parcelle.
+                        </p>
+                      )}
+                    {sousZoneSurfaceM2 !== null &&
+                      parcelleGeomAreaM2 !== null &&
+                      surfaceParcelleM2 > 0 &&
+                      Math.abs(parcelleGeomAreaM2 - surfaceParcelleM2) / surfaceParcelleM2 >
+                        0.05 && (
+                        <p className="rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-900">
+                          Note : la géométrie de cette parcelle couvre{" "}
+                          {formatSurface(parcelleGeomAreaM2)} alors que sa surface déclarée est{" "}
+                          {formatSurface(surfaceParcelleM2)}. Si l&apos;écart te semble anormal,
+                          vérifie le tracé de la parcelle.
                         </p>
                       )}
                     <p className="text-xs text-foreground/50">
