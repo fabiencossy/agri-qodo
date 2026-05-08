@@ -284,6 +284,13 @@ model Exploitation {
   projetHeuresTravauxTiers     Projet? @relation("ProjetHeuresTravauxTiers", fields: [projetHeuresTravauxTiersId], references: [id], onDelete: SetNull)
   projetHeuresTravauxInterneId String? @map("projet_heures_travaux_interne_id")
   projetHeuresTravauxInterne   Projet? @relation("ProjetHeuresTravauxInterne", fields: [projetHeuresTravauxInterneId], references: [id], onDelete: SetNull)
+  /// Projets Odoo (`project.project`) cibles pour les 3 cas du PRD prestations
+  /// v0.3 §2. IDs Odoo (Int) — pas de FK vers une table locale puisque la
+  /// vérité vit côté Odoo. Configurés dans /parametres/exploitation par un
+  /// sélecteur qui liste GET /api/odoo/projects.
+  odooProjectIdTravauxTiers   Int? @map("odoo_project_id_travaux_tiers")
+  odooProjectIdCarnetTiers    Int? @map("odoo_project_id_carnet_tiers")
+  odooProjectIdCarnetInterne  Int? @map("odoo_project_id_carnet_interne")
 
   @@map("exploitations")
 }
@@ -361,6 +368,11 @@ model User {
   // re-prompt si nouvelle version publiée.
   cguAcceptedAt   DateTime? @map("cgu_accepted_at")
   cguVersion      String?   @map("cgu_version")
+  /// ID hr.employee Odoo associé à cet utilisateur. Utilisé pour
+  /// pousser les heures saisies dans Agri Qodo en account.analytic.line
+  /// (feuilles de temps Odoo) sous l'employé correspondant. Null = pas
+  /// encore mappé, les heures restent sur le tenant générique.
+  odooEmployeeId  Int?      @map("odoo_employee_id")
   createdAt    DateTime  @default(now()) @map("created_at")
   updatedAt    DateTime  @updatedAt @map("updated_at")
 
@@ -445,6 +457,18 @@ model Parcelle {
   nom                  String
   identifiantCadastral String?                                      @map("identifiant_cadastral")
   surfaceM2            Decimal                                      @map("surface_m2") @db.Decimal(12, 2)
+  /// Point GPS du centre de la parcelle (création rapide depuis le
+  /// formulaire d'intervention pour les clients Odoo "seuls" qui n'ont
+  /// pas dessiné leurs parcelles). Optionnel — à terme remplacé par le
+  /// `geom` MultiPolygon. WGS84 (SRID 4326).
+  centreLat            Float?                                       @map("centre_lat")
+  centreLng            Float?                                       @map("centre_lng")
+  /// Si la parcelle est "chez un client Odoo non-partenaire" (créée
+  /// rapidement depuis le sélecteur), on mémorise l'ID res.partner
+  /// Odoo pour pouvoir refiltrer la liste quand l'utilisateur
+  /// resélectionne le même client. tenantId reste celui du
+  /// prestataire (= moi qui exécute le travail).
+  odooPartnerId        Int?                                         @map("odoo_partner_id")
   zone                 ZoneAgricole
   // Couleur de surbrillance sur les cartes — hex 7-char (#RRGGBB).
   // Permet à l'agriculteur de différencier visuellement ses parcelles.
@@ -792,6 +816,9 @@ model Produit {
   // OWNER / COMPTABLE). Les EMPLOYE saisissent le prix sur la ligne de
   // travail si nécessaire, sans voir le prix catalogue ni les marges.
   prixVenteCHF    Decimal?         @map("prix_vente_chf") @db.Decimal(12, 2)
+  // Taux de TVA suisse en % (8.1 normal, 2.6 réduit, 3.8 hébergement, 0
+  // exonéré). Null = pas configuré, on laisse Odoo prendre son défaut.
+  tauxTvaPercent  Decimal?         @map("taux_tva_percent") @db.Decimal(5, 2)
   // Lien Odoo (M6 Phase 2) : product.product.id distant. Renseigné par
   // la sync /api/produits/sync-odoo. Permet le re-sync incrémental
   // (upsert sur (tenantId, odooProductId)).
@@ -834,6 +861,9 @@ model Materiel {
   // Tarif par défaut CHF HT par unité (HA / M3 / T / H / FORFAIT). Modifiable
   // ligne par ligne sur le Travail/Intervention. Null = à saisir au cas par cas.
   prixUnitaireCHF Decimal?          @map("prix_unitaire_chf") @db.Decimal(12, 2)
+  // Taux de TVA suisse en % (8.1 normal, 2.6 réduit, 3.8 hébergement, 0
+  // exonéré). Null = pas configuré, on laisse Odoo prendre son défaut.
+  tauxTvaPercent  Decimal?          @map("taux_tva_percent") @db.Decimal(5, 2)
   // Lien Odoo : product.product de type "service". Renseigné par sync_odoo
   // ou créé automatiquement au 1er push d'une Intervention/Travail
   // utilisant ce matériel.
@@ -924,6 +954,19 @@ model Travail {
   // Une fois poussé vers Odoo, on garde la trace du sale.order créé pour
   // pouvoir réconcilier (et bloquer la modification).
   odooSaleOrderId Int?       @map("odoo_sale_order_id")
+  /// Client Odoo "seul" (res.partner) — utilisé quand le travail s'adresse
+  /// à un client qui n'est PAS sur Agri Qodo. Stocke uniquement l'ID Odoo,
+  /// pas d'Exploitation ni de PartnerLink créés. Mutuellement exclusif
+  /// avec partenaireId : soit l'un, soit l'autre. Décision Fabien
+  /// 2026-05-06 : ne plus polluer la liste des Partenaires avec des
+  /// shadows pour les clients Odoo "non-agri-qodo".
+  odooPartnerId   Int?       @map("odoo_partner_id")
+  /// Nom du res.partner Odoo capturé au moment de la sélection (le
+  /// picker l'a déjà à portée). Sert à afficher correctement le client
+  /// dans /travaux/[id] et les listes sans round-trip Odoo. Reste
+  /// indicatif (autorité = Odoo via odooPartnerId), mais évite de
+  /// montrer "Client Odoo" générique à l'utilisateur.
+  odooPartnerName String?    @map("odoo_partner_name")
   // Pour les travaux interne (interne=true), on ne crée pas de devis
   // mais une project.task avec le détail (heures, employés, parcelle…)
   // dans le chatter Odoo. Sert à tracer côté Odoo sans facturer.

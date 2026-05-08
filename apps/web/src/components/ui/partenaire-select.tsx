@@ -1,7 +1,6 @@
 "use client";
 
-import { Check, ChevronDown, ExternalLink, Loader2, Plus, Search, X } from "lucide-react";
-import Link from "next/link";
+import { Check, ChevronDown, Loader2, Plus, Search, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/cn";
 import { useCreateQuickClient, useOdooPartners } from "@/lib/odoo-partners";
@@ -9,41 +8,51 @@ import { usePartnerLinks } from "@/lib/partner-links";
 
 interface AgriOption {
   kind: "agri";
-  id: string; // Exploitation.id (utilisé comme partenaireId du Travail)
+  id: string; // Exploitation.id
   nom: string;
   code: string;
   canton: string;
 }
 
-interface OdooOnlyOption {
+interface OdooOption {
   kind: "odoo";
-  /** ID Exploitation Agri Qodo si lié via PartnerLink, sinon null. */
-  id: string | null;
-  /** ID Odoo (res.partner). */
   odooId: number;
   nom: string;
   ville: string | null;
-  /** Si lié à une Exploitation Agri Qodo. */
-  linked: boolean;
+}
+
+export interface PartenaireSelection {
+  /** UUID Exploitation Agri Qodo (vrai partenaire avec PartnerLink ACTIVE). */
+  partenaireId?: string;
+  /** ID res.partner Odoo (client Odoo "seul", pas un partenaire Agri Qodo). */
+  odooPartnerId?: number;
+  /**
+   * Nom du res.partner Odoo (libellé affiché). Le picker connaît déjà
+   * le nom au moment du choix — on le propage pour que le caller puisse
+   * le persister sur l'entité (Travail.odooPartnerName) et l'afficher
+   * sans round-trip Odoo.
+   */
+  odooPartnerName?: string;
 }
 
 export interface PartenaireSelectProps {
-  value: string;
-  onChange: (id: string) => void;
+  value: PartenaireSelection;
+  onChange: (next: PartenaireSelection) => void;
   placeholder?: string;
   disabled?: boolean;
 }
 
 /**
- * Sélecteur Client unifié — Sprint 2 fusion-interventions.
+ * Sélecteur Client unifié.
  *
- * Affiche 2 sections :
- *  1. Partenaires Agri Qodo (PartnerLink ACTIVE) — sélectionnables direct.
- *  2. Clients Odoo (res.partner du tenant) — sélectionnables si liés
- *     à une Exploitation, sinon affichés en read-only avec bouton
- *     "Inviter sur Agri Qodo".
+ * Renvoie 2 valeurs distinctes via `onChange` :
+ * - `partenaireId` (UUID Exploitation) si l'utilisateur sélectionne un
+ *   vrai partenaire Agri Qodo (PartnerLink ACTIVE) ;
+ * - `odooPartnerId` (Int) si l'utilisateur sélectionne un client Odoo
+ *   "seul" qui n'a PAS de compte Agri Qodo.
  *
- * Le partenaireId stocké côté Travail reste l'Exploitation Agri Qodo.
+ * Le caller (form Travail / Intervention) stocke les deux dans le
+ * payload : Travail.partenaireId XOR Travail.odooPartnerId.
  */
 export function PartenaireSelect({
   value,
@@ -56,7 +65,6 @@ export function PartenaireSelect({
   const createClient = useCreateQuickClient();
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
-  // Mode "création rapide" — formulaire inline dans le dropdown.
   const [creating, setCreating] = useState(false);
   const [draft, setDraft] = useState({
     nom: "",
@@ -78,30 +86,23 @@ export function PartenaireSelect({
       }));
   }, [links.data]);
 
-  const odooOnlyOptions: OdooOnlyOption[] = useMemo(() => {
-    // On exclut ceux déjà visibles dans la section Agri (linkedExploitationId
-    // = id d'une option Agri).
-    const agriIds = new Set(agriOptions.map((o) => o.id));
+  const odooOptions: OdooOption[] = useMemo(() => {
+    // On exclut les clients Odoo qui ont DÉJÀ un PartnerLink ACTIVE
+    // (= ils apparaissent dans la section Agri Qodo, pas besoin de
+    // doublon dans la section Odoo).
+    const linkedOdooIds = new Set(
+      (odooPartners.data ?? []).filter((p) => p.linkedExploitationId).map((p) => p.odooId),
+    );
     return (odooPartners.data ?? [])
-      .filter((p) => !p.linkedExploitationId || !agriIds.has(p.linkedExploitationId))
+      .filter((p) => !linkedOdooIds.has(p.odooId) || !p.linkedExploitationId)
+      .filter((p) => !p.linkedExploitationId)
       .map((p) => ({
         kind: "odoo" as const,
-        id: p.linkedExploitationId,
         odooId: p.odooId,
         nom: p.name,
         ville: p.ville,
-        linked: !!p.linkedExploitationId,
       }));
-  }, [odooPartners.data, agriOptions]);
-
-  const allSelectableId = useMemo(() => {
-    const map = new Map<string, AgriOption | OdooOnlyOption>();
-    for (const o of agriOptions) map.set(o.id, o);
-    for (const o of odooOnlyOptions) if (o.id) map.set(o.id, o);
-    return map;
-  }, [agriOptions, odooOnlyOptions]);
-
-  const selected = value ? allSelectableId.get(value) : undefined;
+  }, [odooPartners.data]);
 
   const matchSearch = (text: string) => {
     const q = search.trim().toLowerCase();
@@ -109,7 +110,21 @@ export function PartenaireSelect({
     return text.toLowerCase().includes(q);
   };
   const filteredAgri = agriOptions.filter((o) => matchSearch(`${o.nom} ${o.code} ${o.canton}`));
-  const filteredOdoo = odooOnlyOptions.filter((o) => matchSearch(`${o.nom} ${o.ville ?? ""}`));
+  const filteredOdoo = odooOptions.filter((o) => matchSearch(`${o.nom} ${o.ville ?? ""}`));
+
+  // Libellé du sélecteur fermé.
+  const labelText = (() => {
+    if (value.partenaireId) {
+      const o = agriOptions.find((x) => x.id === value.partenaireId);
+      return o ? `${o.nom} (${o.code})` : "Partenaire sélectionné";
+    }
+    if (value.odooPartnerId) {
+      const o = odooOptions.find((x) => x.odooId === value.odooPartnerId);
+      return o ? o.nom : `Client Odoo #${value.odooPartnerId}`;
+    }
+    return placeholder ?? "Choisir un client…";
+  })();
+  const hasSelection = !!(value.partenaireId || value.odooPartnerId);
 
   useEffect(() => {
     if (!open) return;
@@ -129,7 +144,7 @@ export function PartenaireSelect({
         ...(draft.email.trim() ? { email: draft.email.trim() } : {}),
         ...(draft.telephone.trim() ? { telephone: draft.telephone.trim() } : {}),
       });
-      onChange(created.exploitationId);
+      onChange({ odooPartnerId: created.odooPartnerId, odooPartnerName: draft.nom.trim() });
       setDraft({ nom: "", ville: "", email: "", telephone: "" });
       setCreating(false);
       setOpen(false);
@@ -137,12 +152,6 @@ export function PartenaireSelect({
       alert(err instanceof Error ? err.message : "Création échouée.");
     }
   }
-
-  const labelText = selected
-    ? selected.kind === "agri"
-      ? `${selected.nom} (${selected.code})`
-      : selected.nom
-    : (placeholder ?? "Choisir un client…");
 
   const empty =
     !links.isLoading &&
@@ -161,7 +170,7 @@ export function PartenaireSelect({
           disabled && "cursor-not-allowed opacity-60",
         )}
       >
-        <span className={cn("truncate text-left", !selected && "text-foreground/40")}>
+        <span className={cn("truncate text-left", !hasSelection && "text-foreground/40")}>
           {labelText}
         </span>
         <ChevronDown className="h-4 w-4 flex-shrink-0 text-foreground/60" />
@@ -173,7 +182,7 @@ export function PartenaireSelect({
             <div className="space-y-2 border-b border-border bg-muted/30 p-3">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold uppercase tracking-wider text-foreground/60">
-                  Nouveau client
+                  Nouveau client Odoo
                 </span>
                 <button
                   type="button"
@@ -220,7 +229,7 @@ export function PartenaireSelect({
                 className="flex w-full items-center justify-center gap-1.5 rounded-md bg-green py-2 text-sm font-semibold text-white hover:bg-green-dark disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {createClient.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                Créer et sélectionner
+                Créer dans Odoo et sélectionner
               </button>
             </div>
           ) : (
@@ -243,12 +252,13 @@ export function PartenaireSelect({
               </button>
             </div>
           )}
+
           <div className="max-h-80 overflow-y-auto">
-            {value && (
+            {hasSelection && (
               <button
                 type="button"
                 onClick={() => {
-                  onChange("");
+                  onChange({});
                   setOpen(false);
                 }}
                 className="flex w-full items-center gap-2 border-b border-border px-3 py-2 text-left text-sm text-foreground/60 hover:bg-muted"
@@ -258,14 +268,8 @@ export function PartenaireSelect({
             )}
 
             {empty ? (
-              <div className="p-3 text-sm">
-                <p className="mb-2 text-foreground/60">Aucun client trouvé.</p>
-                <Link
-                  href="/partenaires"
-                  className="inline-flex items-center text-sm text-green underline"
-                >
-                  Inviter un partenaire →
-                </Link>
+              <div className="p-3 text-sm text-foreground/60">
+                Aucun client trouvé. Crée-en un avec « + Nouveau ».
               </div>
             ) : (
               <>
@@ -275,12 +279,12 @@ export function PartenaireSelect({
                     key={o.id}
                     type="button"
                     onClick={() => {
-                      onChange(o.id);
+                      onChange({ partenaireId: o.id });
                       setOpen(false);
                     }}
                     className={cn(
                       "flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-muted",
-                      value === o.id && "bg-green/5",
+                      value.partenaireId === o.id && "bg-green/5",
                     )}
                   >
                     <span>
@@ -289,57 +293,33 @@ export function PartenaireSelect({
                         {o.code} · {o.canton}
                       </span>
                     </span>
-                    {value === o.id && <Check className="h-4 w-4 text-green" />}
+                    {value.partenaireId === o.id && <Check className="h-4 w-4 text-green" />}
                   </button>
                 ))}
 
                 {filteredOdoo.length > 0 && <SectionHeader label="Clients Odoo" />}
-                {filteredOdoo.map((o) => {
-                  const selectable = !!o.id;
-                  return (
-                    <div
-                      key={`odoo-${o.odooId}`}
-                      className={cn(
-                        "flex items-center justify-between gap-2 px-3 py-2 text-sm",
-                        selectable ? "cursor-pointer hover:bg-muted" : "cursor-not-allowed",
-                        value === o.id && "bg-green/5",
-                      )}
-                      onClick={() => {
-                        if (!selectable || !o.id) return;
-                        onChange(o.id);
-                        setOpen(false);
-                      }}
-                    >
-                      <div className="min-w-0 flex-1">
-                        <span className="flex items-center gap-1.5">
-                          <span className="truncate font-medium">{o.nom}</span>
-                          {o.linked ? (
-                            <span className="rounded-full border border-green bg-green/5 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-green">
-                              Sur l'app
-                            </span>
-                          ) : (
-                            <span className="rounded-full border border-border bg-muted/40 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-foreground/60">
-                              Odoo seul
-                            </span>
-                          )}
-                        </span>
-                        <span className="block text-xs text-foreground/50">{o.ville ?? "—"}</span>
-                      </div>
-                      {selectable ? (
-                        value === o.id && <Check className="h-4 w-4 text-green" />
-                      ) : (
-                        <Link
-                          href="/partenaires"
-                          onClick={(e) => e.stopPropagation()}
-                          className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-green hover:underline"
-                          title="Inviter ce client à rejoindre Agri Qodo"
-                        >
-                          Inviter <ExternalLink className="h-3 w-3" />
-                        </Link>
-                      )}
+                {filteredOdoo.map((o) => (
+                  <button
+                    key={`odoo-${o.odooId}`}
+                    type="button"
+                    onClick={() => {
+                      onChange({ odooPartnerId: o.odooId, odooPartnerName: o.nom });
+                      setOpen(false);
+                    }}
+                    className={cn(
+                      "flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-muted",
+                      value.odooPartnerId === o.odooId && "bg-green/5",
+                    )}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <span className="block truncate font-medium">{o.nom}</span>
+                      <span className="block text-xs text-foreground/50">{o.ville ?? "—"}</span>
                     </div>
-                  );
-                })}
+                    {value.odooPartnerId === o.odooId && (
+                      <Check className="h-4 w-4 shrink-0 text-green" />
+                    )}
+                  </button>
+                ))}
               </>
             )}
           </div>

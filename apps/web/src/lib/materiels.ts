@@ -23,6 +23,8 @@ export interface Materiel {
   categorie: MaterielCategorie;
   unite: MaterielUnite;
   prixUnitaireCHF: string | null; // Decimal sérialisé
+  /** Taux TVA CH en % (ex 8.10, 2.60). Sérialisé Decimal → string. */
+  tauxTvaPercent: string | null;
   odooProductId: number | null;
   odooSyncedAt: string | null;
   notes: string | null;
@@ -34,6 +36,7 @@ export interface CreateMaterielInput {
   categorie: MaterielCategorie;
   unite?: MaterielUnite;
   prixUnitaireCHF?: number;
+  tauxTvaPercent?: number;
   notes?: string;
 }
 
@@ -90,6 +93,18 @@ export function useSyncMaterielsOdoo() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () => api<SyncOdooMaterielsResult>("/api/materiels/sync-odoo", { method: "POST" }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: KEY });
+    },
+  });
+}
+
+/** Push un matériel unique vers Odoo. Idempotent. */
+export function usePushMaterielOdoo() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      api<{ odooProductId: number }>(`/api/materiels/${id}/push-odoo`, { method: "POST" }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: KEY });
     },

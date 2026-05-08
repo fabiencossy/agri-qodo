@@ -175,7 +175,7 @@ export class InterventionsService {
     // Parcelle accessible : la mienne OU celle d'un partenaire ACTIVE.
     const parcelle = await this.prisma.parcelle.findFirst({
       where: { id: dto.parcelleId },
-      select: { id: true, tenantId: true, surfaceM2: true },
+      select: { id: true, tenantId: true, surfaceM2: true, odooPartnerId: true },
     });
     if (!parcelle) {
       throw new ForbiddenException("Parcelle introuvable");
@@ -270,17 +270,17 @@ export class InterventionsService {
             "Pour un SEMIS, le produit doit être une semence du catalogue",
           );
         }
-        if (!produit.especeCode) {
-          throw new BadRequestException(
-            "La semence n'a pas de code espèce — impossible de créer la Culture",
-          );
-        }
+        // especeCode est facultatif (les produits importés depuis Odoo
+        // ou créés à la volée n'ont souvent que le libelle). Si absent,
+        // on utilise le libelle comme nom d'espèce — l'agriculteur
+        // pourra l'enrichir plus tard.
+        const especeFallback = (produit.especeCode ?? produit.libelle).trim().slice(0, 80);
         const created = await tx.culture.create({
           data: {
             tenantId: ownerTenantId,
             parcelleId: dto.parcelleId,
-            espece: produit.especeCode,
-            variete: produit.libelle,
+            espece: especeFallback,
+            variete: produit.especeCode ? produit.libelle : null,
             dateSemis: dateOperation,
             campagne: dateOperation.getUTCFullYear(),
           },
@@ -313,11 +313,22 @@ export class InterventionsService {
           cultureId,
           validationStatus,
           ...resolveHeures(dto),
-          datePrevue: dto.datePrevue ? new Date(dto.datePrevue) : null,
+          // datePrevue : par défaut = dateOperation pour que toutes les
+          // interventions apparaissent dans /planning. Décision Fabien
+          // 2026-05-06 : "le planning n'est tjs pas juste" — sans
+          // datePrevue, le planning restait vide.
+          datePrevue: dto.datePrevue ? new Date(dto.datePrevue) : dateOperation,
           assignedToUserId: dto.assignedToUserId ?? null,
         },
         include: this.includeRelations,
       });
+
+      // Durée résolue pour propagation au Travail (LigneTravailHeure) :
+      // si l'agriculteur a saisi heureDebut/heureFin OU dureeMinutes,
+      // on remonte la durée pour que le push Odoo crée un timesheet
+      // sur la project.task.
+      const heuresResolved = resolveHeures(dto);
+      const dureeMin = heuresResolved.dureeMinutes;
 
       if (dto.geomGeoJson) {
         await tx.$executeRawUnsafe(
@@ -332,21 +343,24 @@ export class InterventionsService {
       // Cas B (intervention sur parcelle d'un partenaire) : on crée
       // automatiquement un Travail facturable chez le prestataire (=
       // tenant courant), avec partenaireId = propriétaire de la parcelle.
+      // Cas C (parcelle créée pour un client Odoo non-partenaire) :
+      // même chose mais avec odooPartnerId à la place de partenaireId.
       let casBTravailId: string | null = null;
-      if (validationStatus === ValidationStatus.PENDING) {
+      const casC = parcelle.odooPartnerId !== null && parcelle.odooPartnerId !== undefined;
+      if (validationStatus === ValidationStatus.PENDING || casC) {
         casBTravailId = await this.createCasBTravail(tx, {
           interventionId: created.id,
           authorTenantId,
-          partenaireId: ownerTenantId,
+          ...(casC
+            ? { odooPartnerId: parcelle.odooPartnerId as number }
+            : { partenaireId: ownerTenantId }),
           parcelleId: dto.parcelleId,
           type: dto.type,
           dateOperation,
           materielId: dto.materielId,
           surfaceHa: surfaceHaResolu,
-          produit,
-          produitQuantite: dto.quantite,
-          produitUnite: dto.unite,
           notes: dto.notes,
+          dureeMinutes: dureeMin,
         });
 
         return {
@@ -389,16 +403,18 @@ export class InterventionsService {
     args: {
       interventionId: string;
       authorTenantId: string;
-      partenaireId: string;
+      /** Cas B : tenant Agri Qodo propriétaire de la parcelle. */
+      partenaireId?: string;
+      /** Cas C : client Odoo non-partenaire (res.partner). */
+      odooPartnerId?: number;
       parcelleId: string;
       type: InterventionType;
       dateOperation: Date;
       materielId: string | undefined;
       surfaceHa: number;
-      produit: { id: string; libelle: string } | null;
-      produitQuantite: number | undefined;
-      produitUnite: string | undefined;
       notes: string | undefined;
+      /** Durée de l'intervention en minutes — propagée en LigneTravailHeure. */
+      dureeMinutes?: number | null;
     },
   ): Promise<string> {
     const parcelle = await tx.parcelle.findUnique({
@@ -425,25 +441,41 @@ export class InterventionsService {
       }
     }
 
-    if (args.produit && args.produitQuantite !== undefined && args.produitQuantite > 0) {
-      lignesProduit.push({
-        libelle: args.produit.libelle,
-        quantite: args.produitQuantite,
-        unite: args.produitUnite ?? "kg",
-        produit: { connect: { id: args.produit.id } },
-      });
+    // NOTE Fabien 2026-05-06 : on ne facture PAS la semence/le produit
+    // au client. C'est juste de l'info agronomique pour le carnet des
+    // champs (création de la Culture côté SEMIS). Seul le matériel
+    // (prestation à l'hectare) entre dans le devis client.
+
+    // Propage la durée de l'intervention en LigneTravailHeure pour
+    // que le push Odoo crée un account.analytic.line (timesheet) sur
+    // la project.task → "Temps passé" non nul côté Odoo.
+    // userId = author de l'intervention. Tarif horaire : null pour
+    // que la ligne ne fasse pas grimper le total facturé (heures
+    // non-facturables, demande Fabien 2026-05-06).
+    const lignesHeure: Prisma.LigneTravailHeureCreateWithoutTravailInput[] = [];
+    if (args.dureeMinutes && args.dureeMinutes > 0) {
+      const ctx = this.tenantContext.tryGet();
+      if (ctx?.userId) {
+        lignesHeure.push({
+          dureeMinutes: args.dureeMinutes,
+          user: { connect: { id: ctx.userId } },
+          notes: titre,
+        });
+      }
     }
 
     const travail = await tx.travail.create({
       data: {
         tenantId: args.authorTenantId,
-        partenaireId: args.partenaireId,
+        ...(args.partenaireId ? { partenaireId: args.partenaireId } : {}),
+        ...(args.odooPartnerId !== undefined ? { odooPartnerId: args.odooPartnerId } : {}),
         parcelleId: args.parcelleId,
         titre,
         date: args.dateOperation,
         statut: TravailStatut.DRAFT,
         notes: args.notes ?? null,
         ...(lignesProduit.length > 0 ? { lignesProduit: { create: lignesProduit } } : {}),
+        ...(lignesHeure.length > 0 ? { lignesHeure: { create: lignesHeure } } : {}),
       },
       select: { id: true },
     });

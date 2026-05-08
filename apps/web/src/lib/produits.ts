@@ -27,8 +27,14 @@ export interface Produit {
   unite: ProduitUnite;
   /** Prix de vente catalogue CHF HT par unité — null si pas autorisé à le voir. */
   prixVenteCHF: string | null;
+  /** Taux TVA CH en % (ex 8.10, 2.60). Sérialisé Decimal → string. */
+  tauxTvaPercent: string | null;
   notes: string | null;
   actif: boolean;
+  /** ID Odoo product.product si déjà poussé/synchronisé. */
+  odooProductId: number | null;
+  /** ISO datetime de la dernière sync Odoo. */
+  odooSyncedAt: string | null;
 }
 
 export interface CreateProduitInput {
@@ -42,6 +48,7 @@ export interface CreateProduitInput {
   tauxK?: number;
   unite?: ProduitUnite;
   prixVenteCHF?: number;
+  tauxTvaPercent?: number;
   notes?: string;
 }
 
@@ -68,7 +75,7 @@ export function useCreateProduit() {
 export function useUpdateProduit() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, ...input }: CreateProduitInput & { id: string }) =>
+    mutationFn: ({ id, ...input }: Partial<CreateProduitInput> & { id: string }) =>
       api<Produit>(`/api/produits/${id}`, { method: "PATCH", body: input }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: KEY });
@@ -99,6 +106,21 @@ export function useSyncProduitsOdoo() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () => api<SyncOdooProduitsResult>("/api/produits/sync-odoo", { method: "POST" }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: KEY });
+    },
+  });
+}
+
+/**
+ * Push un produit unique vers Odoo (crée product.product type=consu
+ * si pas encore mappé). Idempotent côté backend.
+ */
+export function usePushProduitOdoo() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      api<{ odooProductId: number }>(`/api/produits/${id}/push-odoo`, { method: "POST" }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: KEY });
     },

@@ -63,6 +63,15 @@ export class ProduitsController {
     return this.odooSync.syncProduits();
   }
 
+  @Post(":id/push-odoo")
+  @ApiOperation({
+    summary:
+      "Garantit qu'un produit a un product.product Odoo associé (crée le produit type=consu si manquant). Renvoie l'odooProductId.",
+  })
+  pushOdoo(@Param("id", ParseUUIDPipe) id: string) {
+    return this.odooSync.ensureOdooProduct(id).then((odooProductId) => ({ odooProductId }));
+  }
+
   @Patch(":id")
   @ApiOperation({
     summary: "Met à jour un produit perso. Les produits globaux sont read-only.",

@@ -40,15 +40,14 @@ export interface CreateQuickClientInput {
 }
 
 export interface CreateQuickClientResult {
-  exploitationId: string;
-  nom: string;
-  odooPartnerId: number | null;
+  odooPartnerId: number;
+  name: string;
 }
 
 /**
- * Crée un nouveau client (Exploitation shadow + PartnerLink + best-effort
- * res.partner Odoo). Renvoie l'exploitationId utilisable direct dans
- * Travail.partenaireId.
+ * Crée un res.partner Odoo (sans Exploitation Agri Qodo). Décision
+ * Fabien 2026-05-06 : un client Odoo n'est PAS un partenaire — on
+ * stocke juste l'odooPartnerId côté Travail.
  */
 export function useCreateQuickClient() {
   const qc = useQueryClient();
@@ -60,7 +59,6 @@ export function useCreateQuickClient() {
       }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["odoo-partners"] });
-      void qc.invalidateQueries({ queryKey: ["partner-links"] });
     },
   });
 }

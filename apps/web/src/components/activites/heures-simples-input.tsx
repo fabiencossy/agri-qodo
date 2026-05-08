@@ -142,6 +142,17 @@ export function HeuresSimplesInput({
   );
 }
 
+/**
+ * Champ heure custom (HH:MM). On n'utilise plus type="time" parce
+ * que l'input natif laisse un état partiel "HH:--" si l'utilisateur
+ * tape juste les heures et quitte — ce qui se traduit en value vide
+ * côté JS et fait perdre la saisie.
+ *
+ * Comportement :
+ * - input text avec masque progressif (digits autorisés, ":" auto)
+ * - onBlur auto-fill : "7" → "07:00", "07" → "07:00", "07:5" → "07:05"
+ *   (HH/MM toujours sur 2 chiffres, modulo 24h/60min)
+ */
 function TimeFieldQc({
   label,
   value,
@@ -151,15 +162,67 @@ function TimeFieldQc({
   value: string;
   onChange: (v: string) => void;
 }) {
+  const [draft, setDraft] = useState(value);
+
+  // Synchronise le draft local quand la value parent change (ex: reset).
+  if (value !== draft && document.activeElement?.tagName !== "INPUT") {
+    setDraft(value);
+  }
+
+  function normalize(raw: string): string {
+    const digits = raw.replace(/\D/g, "").slice(0, 4);
+    if (!digits) return "";
+    let hh = digits.slice(0, 2);
+    let mm = digits.slice(2, 4);
+    // Pad heures à 2 chiffres (utilisateur tape "7" → "07").
+    if (hh.length === 1) hh = `0${hh}`;
+    // Borne 0-23 / 0-59. Tout ce qui dépasse → on clip à 23/59.
+    const hNum = Math.min(23, parseInt(hh, 10));
+    hh = String(hNum).padStart(2, "0");
+    if (mm.length === 0) mm = "00";
+    else if (mm.length === 1) mm = `${mm}0`;
+    const mNum = Math.min(59, parseInt(mm, 10));
+    mm = String(mNum).padStart(2, "0");
+    return `${hh}:${mm}`;
+  }
+
+  function handleChange(raw: string) {
+    // Pendant la frappe : on accepte les états intermédiaires (HH, HH:M…)
+    // et on insère le ":" automatiquement après 2 chiffres.
+    const digits = raw.replace(/\D/g, "").slice(0, 4);
+    let next = digits;
+    if (digits.length >= 3) next = `${digits.slice(0, 2)}:${digits.slice(2)}`;
+    else if (digits.length === 2) next = `${digits}:`;
+    setDraft(next);
+    // On ne propage pas tant que c'est incomplet — onBlur s'en charge.
+    if (digits.length === 4) onChange(`${digits.slice(0, 2)}:${digits.slice(2)}`);
+    if (digits.length === 0) onChange("");
+  }
+
+  function handleBlur() {
+    if (!draft) {
+      onChange("");
+      return;
+    }
+    const normalized = normalize(draft);
+    setDraft(normalized);
+    onChange(normalized);
+  }
+
   return (
     <label className="block">
       <span className="mb-1.5 block text-[11px] font-bold uppercase tracking-wider text-foreground/60">
         {label}
       </span>
       <input
-        type="time"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
+        type="text"
+        inputMode="numeric"
+        autoComplete="off"
+        value={draft}
+        onChange={(e) => handleChange(e.target.value)}
+        onBlur={handleBlur}
+        placeholder="--:--"
+        maxLength={5}
         className="h-14 w-full rounded-xl border border-border bg-background px-4 text-center font-mono text-2xl font-semibold tabular-nums text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green"
       />
     </label>

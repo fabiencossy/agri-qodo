@@ -94,7 +94,15 @@ Pour les produits tarifés **à l'hectare** :
 
 ---
 
-## 5. Génération du devis lié — le défi technique
+## 5. Génération du devis lié — approche tout-en-Agri-Qodo
+
+> **Décision Fabien 2026-05-06 : pas de module Odoo custom.** Toute la
+> mécanique est implémentée côté backend Agri Qodo (NestJS), qui parle
+> à Odoo via XML-RPC standard (`OdooClient` déjà en place pour les
+> produits/matériels et le push sale.order existant).
+>
+> Les sections 5.2 et 5.3 ci-dessous décrivent l'historique de la
+> réflexion. **L'implémentation suit la nouvelle section 5.4.**
 
 ### 5.1 Comportement Odoo natif (rappel correct)
 
@@ -102,9 +110,9 @@ Dans Odoo standard, sur une tâche de type **"Service sur site"** (module `indus
 
 - ✅ **Ajout d'un produit de type "Bien" depuis la tâche** → création/mise à jour automatique d'un `sale.order` lié
 - ✅ **Marquer la tâche comme "Terminée"** → confirmation automatique du devis
-- ❌ **Impossible d'ajouter un produit de type "Service" directement depuis la tâche**
-  - Pour facturer un service, il faut créer manuellement un `sale.order` à part, puis le lier au projet/tâche via `sale_order_id`
-  - Cette limitation est bloquante pour Agri Qodo : on veut tout faire depuis la tâche, en mixant Biens et Services
+- ❌ **Impossible d'ajouter un produit de type "Service" directement depuis la tâche** _via l'UI Odoo_
+  - Pour facturer un service depuis l'UI, il faut créer manuellement un `sale.order` à part, puis le lier au projet/tâche via `sale_order_id`
+  - **MAIS** : depuis l'extérieur via XML-RPC/JSON-RPC, on peut créer directement la `sale.order.line` avec un `task_id` rempli — Odoo enregistre la ligne sans broncher. C'est ce que fait Agri Qodo.
 
 ### 5.2 Solution technique recommandée
 
@@ -218,19 +226,79 @@ Créer le `sale.order` **d'abord** côté Agri Qodo avec toutes les lignes, puis
 - Oblige à tout configurer en amont, peu adapté aux ajouts en cours d'intervention
 - Ne fonctionne pas pour le cas Carnet des champs interne (pas de devis du tout)
 
-→ **Recommandation : module custom (option 5.2).**
+### 5.4 Approche retenue — service backend `OdooSyncService` (sans module custom)
+
+**Toute la mécanique vit dans le backend Agri Qodo.** Pas de code Python
+côté Odoo — on n'utilise que les API standard `xmlrpc` / `jsonrpc` via
+`OdooClient` (déjà en place pour Produit/Materiel/sale.order via
+`OdooPushService`).
+
+**Pourquoi ça marche sans module custom** :
+
+- La limitation "pas de Service depuis la tâche" est une limite de l'UI
+  Odoo, pas du modèle. En XML-RPC on peut écrire directement une
+  `sale.order.line` avec `task_id` rempli, peu importe le `type` du
+  `product.template`.
+- Pour empêcher Odoo de créer une nouvelle tâche quand on ajoute une
+  ligne Service (`service_tracking == 'task_in_project'`), Agri Qodo
+  configure tous les `product.template` Service qu'il crée avec
+  **`service_tracking = 'no'`** au moment du lazy create (PRD §3.2).
+  Du coup `_timesheet_create_task` n'est jamais appelé.
+- Pour la confirmation auto du devis à la clôture : Agri Qodo appelle
+  explicitement `sale.order.action_confirm` depuis le backend quand
+  l'utilisateur clique "Marquer terminé" sur l'app (le statut de la
+  tâche Odoo n'est pas la source de vérité, c'est Agri Qodo qui pilote).
+
+**Composants à créer côté Agri Qodo** :
+
+- `OdooSyncService` (extension de `OdooPushService` ou nouveau module
+  dans `apps/backend/src/modules/odoo-sync/`) avec les méthodes :
+  - `ensureProduct(produit)` — lazy create `product.template` avec
+    `service_tracking='no'` si Service ; renvoie `odooProductId` et
+    le mémorise dans `Produit.odooProductId` (déjà en place).
+  - `upsertTask(prestation)` — crée ou met à jour la `project.task`
+    avec les champs traçabilité (utilisation des champs standards Odoo,
+    pas de champ custom). Pour les références Agri Qodo, on utilise
+    `description` ou `tag_ids` plutôt que des `x_agri_qodo_*` (qui
+    nécessiteraient un module custom pour exister côté Odoo).
+  - `ensureSaleOrder(prestation)` — crée le `sale.order` draft + lie
+    bidirectionnel à la tâche (`tasks_ids`), uniquement pour les cas
+    `travaux_tiers` et `carnet_tiers`.
+  - `addLine(prestation, ligne)` — crée la `sale.order.line` avec
+    `task_id` rempli ; supporte Bien et Service indifféremment.
+  - `markCompleted(prestation)` — au "Marquer terminé", appelle
+    `sale_order.action_confirm` côté Odoo.
+- Migration Prisma : ajout des références `odooTaskId` (si pas déjà
+  posée) sur `Travail` et `Intervention`, plus
+  `odooSaleOrderLineId` sur les lignes produits/heures.
+
+**Conséquences** :
+
+- Pas d'installation à faire sur l'instance Odoo Enterprise du client.
+  Le client active juste l'API XML-RPC (déjà standard) + crée un user
+  Odoo dédié à Agri Qodo avec ACL appropriées.
+- Idempotence gérée côté Agri Qodo via les colonnes `odoo*Id` mémorisées
+  par le service.
+- Limites :
+  - Si l'utilisateur édite la tâche depuis l'UI Odoo et essaie d'ajouter
+    un Service, l'UI bloquera (limitation native). Mais comme l'app
+    Agri Qodo est la source de vérité, c'est acceptable.
+  - Pour les cas où Odoo doit déclencher un workflow particulier sur
+    `service_tracking != 'no'` (ex : timesheet auto-link), on perd ça.
+    Acceptable en V1 : Agri Qodo gère son propre timesheet
+    (`LigneTravailHeure`).
 
 ---
 
 ## 6. Comportement différencié Bien / Service / Interne (synthèse)
 
-| Scénario                  | Bien (`product`/`consu`)                    | Service (`service`)                                |
-| ------------------------- | ------------------------------------------- | -------------------------------------------------- |
-| Travaux pour tiers        | Tâche + ligne ajoutée au devis (natif Odoo) | Tâche + ligne ajoutée au devis (**module custom**) |
-| Carnet des champs tiers   | Tâche + ligne ajoutée au devis              | Tâche + ligne ajoutée au devis (**module custom**) |
-| Carnet des champs interne | Tâche dans projet interne, **pas de devis** | Tâche dans projet interne, **pas de devis**        |
-| Tâche marquée terminée    | Devis confirmé automatiquement              | Devis confirmé automatiquement                     |
-| Stock impacté             | Oui (mouvement à la livraison)              | Non                                                |
+| Scénario                  | Bien (`product`/`consu`)                                                  | Service (`service`, `service_tracking='no'`)                              |
+| ------------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| Travaux pour tiers        | Tâche + ligne XML-RPC `sale.order.line` avec `task_id`                    | Tâche + ligne XML-RPC `sale.order.line` avec `task_id`                    |
+| Carnet des champs tiers   | Tâche + ligne XML-RPC `sale.order.line` avec `task_id`                    | Tâche + ligne XML-RPC `sale.order.line` avec `task_id`                    |
+| Carnet des champs interne | Tâche dans projet interne, **pas de devis**                               | Tâche dans projet interne, **pas de devis**                               |
+| Tâche marquée terminée    | `OdooSyncService.markCompleted` → `sale_order.action_confirm` via XML-RPC | `OdooSyncService.markCompleted` → `sale_order.action_confirm` via XML-RPC |
+| Stock impacté             | Oui (mouvement à la livraison)                                            | Non                                                                       |
 
 ---
 
@@ -270,21 +338,27 @@ Décisions figées 2026-05-06 (Fabien) sauf mention "à arbitrer" :
 
 ## 9. Livrables attendus
 
-### 9.1 Module Odoo custom `agri_qodo_sync`
+### 9.1 Backend Agri Qodo — `OdooSyncService`
 
-- Modèles : héritage `project.task`, `sale.order`, `sale.order.line`, `product.template`
-- Méthodes : `action_agri_qodo_add_product`, `_agri_qodo_ensure_sale_order`, override `_timesheet_create_task`
-- Confirmation auto du devis à la clôture de la tâche
-- Champs custom listés en §5.2.1
-- API REST exposée pour Agri Qodo
-- Tests unitaires Odoo
+> Décision §5.4 : pas de module Odoo, tout côté Agri Qodo via XML-RPC.
 
-### 9.2 Côté Agri Qodo
+- Nouveau module `apps/backend/src/modules/odoo-sync/`.
+- Méthodes : `ensureProduct`, `upsertTask`, `ensureSaleOrder`, `addLine`,
+  `removeLine`, `markCompleted`.
+- Configuration auto des `product.template` Service avec
+  `service_tracking='no'` au lazy create (cf. §5.4).
+- Idempotence via les colonnes `Produit.odooProductId`,
+  `Travail.odooTaskId`, `Travail.odooSaleOrderId`,
+  `LigneTravailProduit.odooSaleOrderLineId`.
+- Tests unitaires NestJS avec mocks XML-RPC.
+
+### 9.2 Côté Agri Qodo (UI + intégration)
 
 - UI catalogue produits (modes de tarification : hectare, heure, forfait…)
-- Hook de synchro à la création/modification de prestation
-- Gestion idempotente des appels Odoo
-- Distinction visuelle prestation interne vs tiers dans le Carnet des champs
+- Hook de synchro à la création/modification de prestation (Travail +
+  Intervention) appelant `OdooSyncService`.
+- Gestion idempotente des appels Odoo.
+- Distinction visuelle prestation interne vs tiers dans le Carnet des champs.
 
 ### 9.3 Diagramme de séquence
 
@@ -331,45 +405,65 @@ Décisions figées 2026-05-06 (Fabien) sauf mention "à arbitrer" :
 
 ---
 
-## 11. Découpage proposé en sprints (à valider)
+## 11. Découpage en sprints — approche backend uniquement
 
-> Le PRD lui-même ne définit pas le séquencement — la proposition ci-dessous reste à valider avant de démarrer.
+> Validé Fabien 2026-05-06. **Pas de module Odoo custom** — toute la
+> mécanique est dans le backend Agri Qodo (cf. §5.4). Les sprints
+> suivants ne touchent qu'Agri Qodo + l'API XML-RPC standard d'Odoo.
 
-### Sprint A — Fondations Odoo + lazy create produits
+### Sprint A — Service `OdooSyncService` + lazy create produits
 
-- Module Odoo `agri_qodo_sync` initial : modèles, champs custom, scaffolding
-- API REST exposée pour Agri Qodo (auth, endpoints CRUD task + sale.order)
-- Lazy create `product.template` (mapping `agriqodo_product_id` ↔ `odoo_product_id`)
-- Tests unitaires Odoo de base
+- Nouveau module backend `apps/backend/src/modules/odoo-sync/` avec
+  `OdooSyncService` (utilise `OdooClientManager` déjà en place).
+- Méthode `ensureProduct(produit)` : lazy create `product.template` via
+  XML-RPC, `service_tracking='no'` pour les Services. Mémorise dans
+  `Produit.odooProductId` (colonne déjà présente).
+- Méthode `upsertTask(prestation)` : crée/met à jour `project.task` via
+  XML-RPC dans le projet cible (settings tenant §2). Mémorise
+  `odooTaskId` côté Agri Qodo.
+- Tests unitaires côté backend (mocks XML-RPC).
 
-### Sprint B — Création tâche + devis (Bien uniquement, comportement natif)
+### Sprint B — Création devis + ajout lignes mixtes
 
-- Settings Agri Qodo : 3 sélecteurs `project.project` (cf. §2)
-- Hook côté `Travail` (Tiers + Interne) : crée `project.task` + `sale.order` draft pour Tiers
-- Hook côté `Intervention` Carnet : tâche dans projet interne ou tiers selon présence client
-- Pas encore de gestion Service depuis la tâche → reste sur le natif Odoo
+- Settings Agri Qodo : 3 sélecteurs `project.project` (cf. §2).
+- Méthode `ensureSaleOrder(prestation)` : crée `sale.order` draft Odoo
+  - lie bidirectionnel à la tâche (`tasks_ids`).
+- Méthode `addLine(prestation, ligne)` : crée `sale.order.line` avec
+  `task_id` rempli, supporte Bien et Service (grâce au
+  `service_tracking='no'` posé au lazy create).
+- Hook dans `TravauxService` et `InterventionsService` pour appeler
+  `OdooSyncService` aux bons moments (create/update/delete).
 
-### Sprint C — Module custom : ajout Service depuis tâche
+### Sprint C — Calcul HA + idempotence + confirmation auto
 
-- Implémentation §5.2 (override `project.task.action_agri_qodo_add_product`,
-  `_agri_qodo_ensure_sale_order`, override `_timesheet_create_task`)
-- Configuration produit Service : `service_tracking = 'no'`
-- Tests : Bien seul / Service seul / Mix
+- Calcul automatique quantité depuis surface parcelle (produits à
+  l'hectare, cf. §3.3).
+- Idempotence : modification/annulation côté Agri Qodo répercutée sur
+  `sale.order.line` Odoo (write/unlink) sans doublons.
+- Confirmation auto du devis à la clôture : quand l'utilisateur clique
+  "Marquer terminé" côté app, le backend appelle
+  `sale_order.action_confirm` Odoo.
+- Tests fonctionnels §9.4.
 
-### Sprint D — Calcul HA + idempotence + confirmation auto
+### Sprint D — Cas limites
 
-- Calcul automatique quantité depuis surface parcelle (produits à l'hectare)
-- Logique idempotente sur modification/annulation
-- Confirmation auto du devis à la clôture de la tâche (override `action_fsm_validate`)
-- Tests fonctionnels complets §9.4
+- Client ajouté a posteriori : migration tâche projet interne →
+  projet tiers + création devis avec lignes existantes.
+- Client retiré (décision §8) : bascule tâche vers projet interne +
+  suppression du devis lié côté Odoo.
+- Multi-clients (co-traitance) : 1 tâche + 1 devis par client.
 
-### Sprint E — Cas limites + UX catalogue
+### Sprint E — UX catalogue produits Agri Qodo
 
-- Cas limites §8 (client ajouté a posteriori, retiré, multi-clients…)
-- UI catalogue produits Agri Qodo (modes de tarification, mapping TVA agricole CH)
-- Distinction visuelle prestation interne vs tiers
-- Documentation utilisateur
+- UI catalogue produits étendue : modes de tarification (forfait, prix
+  unitaire, prix à l'hectare, prix à l'heure, prix au kg/litre).
+- Mapping TVA agricole CH (catégorie produit → taux).
+- Distinction visuelle prestation interne vs tiers dans le Carnet des
+  champs.
+- Documentation utilisateur.
 
 ---
 
-_Document de référence v0.3 — 2026-05-06. À compléter avec choix d'implémentation après validation métier et tests sur instance Odoo de dev._
+_Document de référence v0.3 — 2026-05-06. Approche backend uniquement
+validée par Fabien. Implémentation Sprint A en cours sur la branche
+`feat/odoo-prestations-sync`._

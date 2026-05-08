@@ -5,14 +5,16 @@
  * où le dropdown est trop étroit. Click sur le bouton → modal full-screen
  * avec recherche large + chips de filtre catégorie + liste défilante.
  */
-import { Check, ChevronDown, Search, X } from "lucide-react";
+import { Check, ChevronDown, Loader2, RefreshCw, Search, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useOdooConnected } from "@/lib/odoo-config";
 import {
   CATEGORIE_LABEL,
   type Produit,
   type ProduitCategorie,
   UNITE_LABEL,
   useProduits,
+  useSyncProduitsOdoo,
 } from "@/lib/produits";
 
 const CATEGORIES_ORDER: ProduitCategorie[] = [
@@ -27,16 +29,49 @@ export function ProduitFullscreenPicker({
   value,
   onChange,
   placeholder = "Choisir un produit…",
+  defaultCategorie,
 }: {
   value: string;
   onChange: (id: string) => void;
   placeholder?: string;
+  /**
+   * Catégorie pré-cochée à l'ouverture (ex SEMENCE pour la semence
+   * d'un SEMIS). L'utilisateur peut basculer en "Toutes" pour voir
+   * tout le catalogue. Demande Fabien 2026-05-06 : "ouvrir la
+   * semence en pleine page aussi".
+   */
+  defaultCategorie?: ProduitCategorie;
 }) {
   const allProduits = useProduits();
+  const odoo = useOdooConnected();
+  const syncOdoo = useSyncProduitsOdoo();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const [filtreCat, setFiltreCat] = useState<ProduitCategorie | null>(null);
+  const [filtreCat, setFiltreCat] = useState<ProduitCategorie | null>(defaultCategorie ?? null);
+  const [syncMsg, setSyncMsg] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Resync filtreCat quand le parent change defaultCategorie (ex
+  // changement de type d'intervention SEMIS → FUMURE).
+  useEffect(() => {
+    setFiltreCat(defaultCategorie ?? null);
+  }, [defaultCategorie]);
+
+  const handleSyncOdoo = () => {
+    setSyncMsg(null);
+    syncOdoo.mutate(undefined, {
+      onSuccess: (r) => {
+        setSyncMsg(
+          `${r.created} créé${r.created > 1 ? "s" : ""}, ${r.updated} mis à jour${
+            r.skipped > 0 ? `, ${r.skipped} ignoré${r.skipped > 1 ? "s" : ""}` : ""
+          }.`,
+        );
+      },
+      onError: (err) => {
+        setSyncMsg(err instanceof Error ? err.message : "Sync échouée.");
+      },
+    });
+  };
 
   const choisi: Produit | undefined = (allProduits.data ?? []).find((p) => p.id === value);
 
@@ -146,6 +181,34 @@ export function ProduitFullscreenPicker({
           {/* Body scrollable */}
           <div className="flex-1 overflow-y-auto">
             <div className="mx-auto max-w-3xl px-3 py-3 sm:px-4">
+              {/* Bandeau Odoo : visible si connecté à Odoo. Permet de
+                  synchroniser le catalogue product.product depuis le
+                  picker — pas besoin d'aller dans /produits. */}
+              {odoo.connected && (
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                  <span>
+                    Catalogue Odoo connecté.{" "}
+                    {syncMsg ? (
+                      <span className="font-semibold">{syncMsg}</span>
+                    ) : (
+                      "Importer les nouveaux produits ?"
+                    )}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleSyncOdoo}
+                    disabled={syncOdoo.isPending}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-amber-300 bg-background px-2.5 py-1 text-xs font-semibold text-amber-900 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {syncOdoo.isPending ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <RefreshCw className="h-3.5 w-3.5" />
+                    )}
+                    {syncOdoo.isPending ? "Sync…" : "Synchroniser"}
+                  </button>
+                </div>
+              )}
               {allProduits.isLoading ? (
                 <p className="py-8 text-center text-sm text-foreground/60">Chargement…</p>
               ) : filtered.length === 0 ? (
@@ -154,7 +217,9 @@ export function ProduitFullscreenPicker({
                     {query ? `Aucun produit ne correspond à « ${query} ».` : "Catalogue vide."}
                   </p>
                   <p className="mt-1 text-xs text-foreground/50">
-                    Crée des produits dans Paramètres → Catalogue produits.
+                    {odoo.connected
+                      ? "Clique sur « Synchroniser » ci-dessus pour importer ton catalogue Odoo."
+                      : "Crée des produits dans Paramètres → Catalogue produits."}
                   </p>
                 </div>
               ) : (

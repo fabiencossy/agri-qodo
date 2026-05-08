@@ -16,6 +16,7 @@ import { MaterielsModule } from "./modules/materiels/materiels.module";
 import { OdooModule } from "./modules/odoo/odoo.module";
 import { OdooConfigModule } from "./modules/odoo-config/odoo-config.module";
 import { OdooPartnersModule } from "./modules/odoo-partners/odoo-partners.module";
+import { OdooSyncModule } from "./modules/odoo-sync/odoo-sync.module";
 import { ParcellesModule } from "./modules/parcelles/parcelles.module";
 import { PartnerLinksModule } from "./modules/partner-links/partner-links.module";
 import { PerModule } from "./modules/per/per.module";
@@ -83,6 +84,7 @@ import { VeilleModule } from "./modules/veille/veille.module";
     OdooModule,
     OdooConfigModule,
     OdooPartnersModule,
+    OdooSyncModule,
     TravauxModule,
     PresencesModule,
     VeilleModule,

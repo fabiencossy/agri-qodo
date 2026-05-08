@@ -34,6 +34,7 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 // ---------- Types publics ---------------------------------------------------
 
@@ -41,7 +42,8 @@ export type ViewMode = "list" | "kanban" | "card" | "calendar" | "map";
 
 export interface ListColumn<T> {
   key: string;
-  header: string;
+  /** Texte ou node (ex : checkbox "tout sélectionner") du header. */
+  header: React.ReactNode;
   cell: (item: T) => React.ReactNode;
   className?: string;
   hideBelow?: "sm" | "md" | "lg";
@@ -136,6 +138,36 @@ export interface ResourceViewProps<T> {
    * kanban (+ calendar si dateField, + map si renderMapView).
    */
   availableViews?: ViewMode[];
+  /**
+   * Active les checkboxes de sélection multiple + barre flottante
+   * d'actions bulk. Active la 1re colonne checkbox + checkbox "tout
+   * cocher" en tête, et expose les items sélectionnés via les actions.
+   * Demande Fabien 2026-05-06 : pattern bulk edit sur toutes les listes.
+   */
+  selectable?: boolean;
+  /**
+   * Actions disponibles dans la barre flottante quand au moins un item
+   * est sélectionné. Chaque action reçoit la liste des items et gère
+   * son propre feedback (toast/alert).
+   */
+  bulkActions?: BulkAction<T>[];
+}
+
+/**
+ * Action bulk sur la sélection : libellé, icône optionnelle, classe
+ * Tailwind pour la couleur (ex bg-red-600 pour Supprimer), handler.
+ */
+export interface BulkAction<T> {
+  key: string;
+  label: string;
+  icon?: LucideIcon;
+  className?: string;
+  /**
+   * Confirmation message — si fourni, on affiche une confirm() avant
+   * d'appeler handler. Useful for destructive actions.
+   */
+  confirm?: string;
+  handler: (items: T[]) => void | Promise<void>;
 }
 
 // ---------- Implémentation --------------------------------------------------
@@ -205,6 +237,14 @@ export function ResourceView<T>(props: ResourceViewProps<T>) {
   const [groupByKey, setGroupByKey] = useState<string | null>(null);
   const [favorites, setFavorites] = useState<SavedFavorite[]>([]);
   const [panelOpen, setPanelOpen] = useState(false);
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
+  /** Clés des colonnes masquées par l'utilisateur (Cmd+colonnes). */
+  const [hiddenColumnKeys, setHiddenColumnKeys] = useState<Set<string>>(new Set());
+  const [columnsPanelOpen, setColumnsPanelOpen] = useState(false);
+  const [pendingAction, setPendingAction] = useState<{
+    action: BulkAction<T>;
+    items: T[];
+  } | null>(null);
 
   // Réhydratation de l'état au mount (et à chaque changement de storageKey).
   useEffect(() => {
@@ -214,12 +254,31 @@ export function ResourceView<T>(props: ResourceViewProps<T>) {
     setActiveFilterKeys(persisted.activeFilterKeys);
     setGroupByKey(persisted.groupByKey);
     setFavorites(persisted.favorites);
+    if (typeof window !== "undefined") {
+      try {
+        const raw = window.localStorage.getItem(`resourceView:${props.storageKey}:hiddenCols`);
+        if (raw) setHiddenColumnKeys(new Set(JSON.parse(raw) as string[]));
+      } catch {
+        // ignore
+      }
+    }
   }, [props.storageKey, defaultView]);
 
   // Persistance à chaque changement.
   useEffect(() => {
     saveState(props.storageKey, { view, search, activeFilterKeys, groupByKey, favorites });
   }, [props.storageKey, view, search, activeFilterKeys, groupByKey, favorites]);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem(
+        `resourceView:${props.storageKey}:hiddenCols`,
+        JSON.stringify(Array.from(hiddenColumnKeys)),
+      );
+    } catch {
+      // ignore
+    }
+  }, [props.storageKey, hiddenColumnKeys]);
 
   const activeFilters = useMemo(
     () => (props.filters ?? []).filter((f) => activeFilterKeys.includes(f.key)),
@@ -351,6 +410,19 @@ export function ResourceView<T>(props: ResourceViewProps<T>) {
         onApplyFavorite={applyFavorite}
         onRemoveFavorite={removeFavorite}
         searchPlaceholder={props.searchPlaceholder ?? "Rechercher…"}
+        allColumns={props.columns}
+        hiddenColumnKeys={hiddenColumnKeys}
+        onToggleColumn={(k) => {
+          setHiddenColumnKeys((prev) => {
+            const next = new Set(prev);
+            if (next.has(k)) next.delete(k);
+            else next.add(k);
+            return next;
+          });
+        }}
+        columnsPanelOpen={columnsPanelOpen}
+        onToggleColumnsPanel={() => setColumnsPanelOpen((v) => !v)}
+        onCloseColumnsPanel={() => setColumnsPanelOpen(false)}
         calendarAvailable={!!props.dateField}
         mapAvailable={!!props.renderMapView}
         {...(props.availableViews ? { availableViews: props.availableViews } : {})}
@@ -367,10 +439,25 @@ export function ResourceView<T>(props: ResourceViewProps<T>) {
       ) : view === "list" ? (
         <ListView
           data={filteredData}
-          columns={props.columns}
+          columns={(() => {
+            const visible = props.columns.filter((c) => !hiddenColumnKeys.has(c.key));
+            return props.selectable
+              ? [buildSelectColumn(props, filteredData, selectedKeys, setSelectedKeys), ...visible]
+              : visible;
+          })()}
           getKey={props.getKey}
           {...(props.onItemClick ? { onItemClick: props.onItemClick } : {})}
           {...(groups ? { groups } : {})}
+          allColumns={props.columns}
+          hiddenColumnKeys={hiddenColumnKeys}
+          onToggleColumn={(k: string) => {
+            setHiddenColumnKeys((prev) => {
+              const next = new Set(prev);
+              if (next.has(k)) next.delete(k);
+              else next.add(k);
+              return next;
+            });
+          }}
         />
       ) : view === "card" ? (
         <CardView
@@ -378,6 +465,18 @@ export function ResourceView<T>(props: ResourceViewProps<T>) {
           getKey={props.getKey}
           renderCard={props.renderCard ?? props.renderKanbanCard}
           {...(props.onItemClick ? { onItemClick: props.onItemClick } : {})}
+          {...(props.selectable
+            ? {
+                selectable: true,
+                selectedKeys,
+                onToggleSelect: (k: string) => {
+                  const next = new Set(selectedKeys);
+                  if (next.has(k)) next.delete(k);
+                  else next.add(k);
+                  setSelectedKeys(next);
+                },
+              }
+            : {})}
         />
       ) : view === "calendar" ? (
         props.dateField ? (
@@ -417,8 +516,239 @@ export function ResourceView<T>(props: ResourceViewProps<T>) {
           getKey={props.getKey}
           renderKanbanCard={props.renderKanbanCard}
           {...(props.onItemClick ? { onItemClick: props.onItemClick } : {})}
+          {...(props.selectable
+            ? {
+                selectable: true,
+                selectedKeys,
+                onToggleSelect: (k: string) => {
+                  const next = new Set(selectedKeys);
+                  if (next.has(k)) next.delete(k);
+                  else next.add(k);
+                  setSelectedKeys(next);
+                },
+              }
+            : {})}
         />
       )}
+
+      {props.selectable && selectedKeys.size > 0 && (
+        <BulkActionBar
+          count={selectedKeys.size}
+          onClear={() => setSelectedKeys(new Set())}
+          actions={props.bulkActions ?? []}
+          onAction={async (action) => {
+            const items = filteredData.filter((it) => selectedKeys.has(props.getKey(it)));
+            if (action.confirm) {
+              setPendingAction({ action, items });
+              return;
+            }
+            try {
+              await action.handler(items);
+            } catch (err) {
+              alert(
+                `Erreur lors de l'action "${action.label}" :\n${
+                  err instanceof Error ? err.message : String(err)
+                }`,
+              );
+            }
+            setSelectedKeys(new Set());
+          }}
+        />
+      )}
+
+      {pendingAction &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <ConfirmDialog
+            title={pendingAction.action.label}
+            message={(pendingAction.action.confirm ?? "Confirmer ?").replace(
+              "{n}",
+              String(pendingAction.items.length),
+            )}
+            confirmLabel={pendingAction.action.label}
+            confirmClass={pendingAction.action.className ?? "bg-green hover:bg-green-dark"}
+            onCancel={() => setPendingAction(null)}
+            onConfirm={async () => {
+              const { action, items } = pendingAction;
+              setPendingAction(null);
+              try {
+                await action.handler(items);
+              } catch (err) {
+                alert(
+                  `Erreur lors de l'action "${action.label}" :\n${
+                    err instanceof Error ? err.message : String(err)
+                  }`,
+                );
+              }
+              setSelectedKeys(new Set());
+            }}
+          />,
+          document.body,
+        )}
+    </div>
+  );
+}
+
+/**
+ * Construit la colonne checkbox de sélection : checkbox "tout" en
+ * tête (avec indeterminate), checkbox par ligne. La colonne est
+ * insérée en 1re position quand props.selectable=true.
+ */
+function buildSelectColumn<T>(
+  props: ResourceViewProps<T>,
+  filteredData: T[],
+  selectedKeys: Set<string>,
+  setSelectedKeys: (next: Set<string>) => void,
+): ListColumn<T> {
+  const allKeys = filteredData.map(props.getKey);
+  const selectedVisible = allKeys.filter((k) => selectedKeys.has(k));
+  const allChecked = filteredData.length > 0 && selectedVisible.length === filteredData.length;
+  const someChecked = selectedVisible.length > 0 && selectedVisible.length < filteredData.length;
+  return {
+    key: "__select__",
+    className: "w-10",
+    header: (
+      <input
+        type="checkbox"
+        aria-label="Tout sélectionner"
+        checked={allChecked}
+        ref={(el) => {
+          if (el) el.indeterminate = someChecked;
+        }}
+        onChange={() => {
+          if (allChecked || someChecked) setSelectedKeys(new Set());
+          else setSelectedKeys(new Set(allKeys));
+        }}
+        className="h-5 w-5 cursor-pointer"
+      />
+    ),
+    cell: (item) => {
+      const k = props.getKey(item);
+      return (
+        <input
+          type="checkbox"
+          aria-label="Sélectionner"
+          checked={selectedKeys.has(k)}
+          onClick={(e) => e.stopPropagation()}
+          onChange={(e) => {
+            e.stopPropagation();
+            const next = new Set(selectedKeys);
+            if (next.has(k)) next.delete(k);
+            else next.add(k);
+            setSelectedKeys(next);
+          }}
+          className="h-5 w-5 cursor-pointer"
+        />
+      );
+    },
+  };
+}
+
+/**
+ * Barre flottante d'actions bulk affichée en bas de page quand au
+ * moins un item est sélectionné. Pattern Odoo / Notion.
+ */
+/**
+ * Dialog de confirmation custom pour les actions bulk avec
+ * action.confirm. Remplace window.confirm() qui était parfois bloqué
+ * par Chrome ou cliqué "Annuler" par erreur (image 124 — confirm
+ * result false sans intention utilisateur).
+ */
+function ConfirmDialog({
+  title,
+  message,
+  confirmLabel,
+  confirmClass,
+  onCancel,
+  onConfirm,
+}: {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  confirmClass: string;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-[9500] flex items-center justify-center bg-black/40 p-4"
+      onClick={onCancel}
+    >
+      <div
+        className="w-full max-w-md rounded-2xl border border-border bg-background p-6 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 className="mb-2 text-lg font-semibold">{title}</h2>
+        <p className="mb-5 text-sm text-foreground/70">{message}</p>
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="rounded-lg border border-border bg-background px-4 py-2 text-sm font-medium hover:bg-muted"
+          >
+            Annuler
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            className={`rounded-lg px-4 py-2 text-sm font-semibold text-white ${confirmClass}`}
+            autoFocus
+          >
+            {confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BulkActionBar<T>({
+  count,
+  onClear,
+  actions,
+  onAction,
+}: {
+  count: number;
+  onClear: () => void;
+  actions: BulkAction<T>[];
+  onAction: (action: BulkAction<T>) => void | Promise<void>;
+}) {
+  return (
+    <div
+      className="
+        fixed bottom-0 left-0 right-0 z-40
+        border-t border-border bg-background px-3 py-2 shadow-2xl
+        sm:bottom-4 sm:left-1/2 sm:right-auto sm:rounded-full sm:border sm:px-4 sm:-translate-x-1/2
+      "
+    >
+      <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3">
+        <span className="text-sm font-medium">
+          {count} sélectionné{count > 1 ? "s" : ""}
+        </span>
+        {actions.map((a) => {
+          const Icon = a.icon;
+          return (
+            <button
+              key={a.key}
+              type="button"
+              onClick={() => void onAction(a)}
+              className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold text-white transition-colors hover:opacity-90 active:opacity-80 sm:py-1.5 ${
+                a.className ?? "bg-green hover:bg-green-dark"
+              }`}
+            >
+              {Icon && <Icon className="h-4 w-4" />}
+              {a.label}
+            </button>
+          );
+        })}
+        <button
+          type="button"
+          onClick={onClear}
+          className="rounded-lg px-3 py-2 text-xs text-foreground/60 hover:bg-muted hover:text-foreground sm:py-1"
+        >
+          Annuler
+        </button>
+      </div>
     </div>
   );
 }
@@ -430,16 +760,45 @@ interface CardViewProps<T> {
   getKey: (item: T) => string;
   renderCard: (item: T) => React.ReactNode;
   onItemClick?: (item: T) => void;
+  selectable?: boolean;
+  selectedKeys?: Set<string>;
+  onToggleSelect?: (key: string) => void;
 }
 
-function CardView<T>({ data, getKey, renderCard, onItemClick }: CardViewProps<T>) {
+function CardView<T>({
+  data,
+  getKey,
+  renderCard,
+  onItemClick,
+  selectable,
+  selectedKeys,
+  onToggleSelect,
+}: CardViewProps<T>) {
   return (
     <div className="grid auto-rows-fr grid-cols-1 items-stretch gap-3 sm:grid-cols-2 lg:grid-cols-3">
       {data.map((item) => {
         const key = getKey(item);
+        const isSelected = selectedKeys?.has(key) ?? false;
         const content = (
-          <div className="h-full rounded-xl border border-border bg-background p-3 transition-colors hover:bg-muted/30">
-            {renderCard(item)}
+          <div
+            className={`relative h-full rounded-xl border bg-background p-3 transition-colors hover:bg-muted/30 ${
+              isSelected ? "border-green ring-2 ring-green/20" : "border-border"
+            }`}
+          >
+            {selectable && (
+              <input
+                type="checkbox"
+                aria-label="Sélectionner"
+                checked={isSelected}
+                onClick={(e) => e.stopPropagation()}
+                onChange={(e) => {
+                  e.stopPropagation();
+                  onToggleSelect?.(key);
+                }}
+                className="absolute left-2 top-2 z-10 h-5 w-5 cursor-pointer"
+              />
+            )}
+            <div className={selectable ? "pl-6" : undefined}>{renderCard(item)}</div>
           </div>
         );
         return onItemClick ? (
@@ -471,20 +830,6 @@ interface CalendarViewProps<T> {
   onItemClick?: (item: T) => void;
 }
 
-function startOfMonth(d: Date): Date {
-  return new Date(d.getFullYear(), d.getMonth(), 1);
-}
-
-function isSameDay(a: Date, b: Date): boolean {
-  return (
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate()
-  );
-}
-
-const JOURS_COURTS = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
-
 function CalendarView<T>({
   data,
   getKey,
@@ -492,7 +837,12 @@ function CalendarView<T>({
   renderItem,
   onItemClick,
 }: CalendarViewProps<T>) {
-  const [cursor, setCursor] = useState<Date>(() => startOfMonth(new Date()));
+  // Vue jour uniquement. Décision Fabien 2026-05-06 : "enlève la vue
+  // semaine elle sert à rien". Modes mois et semaine retirés. Une
+  // exploitation agricole raisonne au jour le jour pour le carnet
+  // des champs ; pour avoir une vue agrégée, l'utilisateur peut
+  // basculer en vue Liste avec filtre "Cette semaine".
+  const [dayCursor, setDayCursor] = useState<Date>(() => new Date());
 
   // Map jour ISO (YYYY-MM-DD) → items pour ce jour. Skip items sans date.
   const itemsByDay = useMemo(() => {
@@ -510,120 +860,72 @@ function CalendarView<T>({
     return map;
   }, [data, dateField]);
 
-  // Construit la grille du mois : 1ère case = lundi de la semaine du 1er
-  // jour du mois (peut être en mois précédent), 6 semaines × 7 jours.
-  const cells = useMemo(() => {
-    const first = startOfMonth(cursor);
-    const dayOfWeek = (first.getDay() + 6) % 7; // 0 = lundi
-    const start = new Date(first);
-    start.setDate(first.getDate() - dayOfWeek);
-    const out: Date[] = [];
-    for (let i = 0; i < 42; i++) {
-      const d = new Date(start);
-      d.setDate(start.getDate() + i);
-      out.push(d);
-    }
-    return out;
-  }, [cursor]);
-
-  const today = new Date();
-  const monthLabel = cursor.toLocaleDateString("fr-CH", { month: "long", year: "numeric" });
-  const goPrev = () => setCursor((c) => new Date(c.getFullYear(), c.getMonth() - 1, 1));
-  const goNext = () => setCursor((c) => new Date(c.getFullYear(), c.getMonth() + 1, 1));
-  const goToday = () => setCursor(startOfMonth(new Date()));
-
+  const dayKey = `${dayCursor.getFullYear()}-${String(dayCursor.getMonth() + 1).padStart(2, "0")}-${String(dayCursor.getDate()).padStart(2, "0")}`;
+  const dayItems = itemsByDay.get(dayKey) ?? [];
+  const dayLabel = dayCursor.toLocaleDateString("fr-CH", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+  const goPrevDay = () =>
+    setDayCursor((c) => new Date(c.getFullYear(), c.getMonth(), c.getDate() - 1));
+  const goNextDay = () =>
+    setDayCursor((c) => new Date(c.getFullYear(), c.getMonth(), c.getDate() + 1));
+  const goTodayDay = () => setDayCursor(new Date());
   return (
     <div className="space-y-2">
-      <div className="flex items-center justify-between gap-2 rounded-xl border border-border bg-background px-3 py-2">
-        <button
-          type="button"
-          onClick={goPrev}
-          className="rounded-md p-1.5 hover:bg-muted"
-          aria-label="Mois précédent"
-        >
-          ←
-        </button>
-        <span className="text-sm font-semibold capitalize">{monthLabel}</span>
-        <div className="flex gap-1">
+      <div className="flex flex-col gap-2 rounded-xl border border-border bg-background px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center justify-between gap-2 sm:flex-1">
           <button
             type="button"
-            onClick={goToday}
-            className="rounded-md px-2 py-1 text-xs hover:bg-muted"
+            onClick={goPrevDay}
+            className="rounded-md px-3 py-1.5 hover:bg-muted"
+            aria-label="Jour précédent"
           >
-            Aujourd&apos;hui
+            ←
           </button>
+          <span className="text-sm font-semibold capitalize">{dayLabel}</span>
           <button
             type="button"
-            onClick={goNext}
-            className="rounded-md p-1.5 hover:bg-muted"
-            aria-label="Mois suivant"
+            onClick={goNextDay}
+            className="rounded-md px-3 py-1.5 hover:bg-muted"
+            aria-label="Jour suivant"
           >
             →
           </button>
         </div>
+        <button
+          type="button"
+          onClick={goTodayDay}
+          className="rounded-md px-2 py-1 text-xs hover:bg-muted"
+        >
+          Aujourd&apos;hui
+        </button>
       </div>
-
-      <div className="grid grid-cols-7 gap-px overflow-hidden rounded-xl border border-border bg-border">
-        {JOURS_COURTS.map((j) => (
-          <div
-            key={j}
-            className="bg-muted px-1 py-1 text-center text-[10px] font-semibold uppercase tracking-wide text-foreground/60 sm:text-xs"
-          >
-            {j}
-          </div>
-        ))}
-        {cells.map((d) => {
-          const inMonth = d.getMonth() === cursor.getMonth();
-          const isToday = isSameDay(d, today);
-          const k = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-          const items = itemsByDay.get(k) ?? [];
-          return (
-            <div
-              key={k}
-              className={`min-h-[80px] bg-background p-1 sm:min-h-[110px] ${
-                inMonth ? "" : "opacity-40"
-              } ${isToday ? "ring-2 ring-inset ring-green" : ""}`}
-            >
-              <div className="mb-1 flex items-baseline justify-between text-[11px]">
-                <span className={`font-medium ${isToday ? "text-green" : "text-foreground/70"}`}>
-                  {d.getDate()}
-                </span>
-                {items.length > 0 && (
-                  <span className="rounded-full bg-muted px-1.5 text-[10px] text-foreground/60">
-                    {items.length}
-                  </span>
-                )}
-              </div>
-              <ul className="space-y-1">
-                {items.slice(0, 3).map((item) => {
-                  const key = getKey(item);
-                  const content = (
-                    <div className="cursor-pointer truncate rounded border border-green/30 bg-green/5 px-1 py-0.5 text-[11px] hover:bg-green/10">
-                      {renderItem(item)}
-                    </div>
-                  );
-                  return onItemClick ? (
-                    <li key={key}>
-                      <button
-                        type="button"
-                        onClick={() => onItemClick(item)}
-                        className="block w-full text-left"
-                      >
-                        {content}
-                      </button>
-                    </li>
-                  ) : (
-                    <li key={key}>{content}</li>
-                  );
-                })}
-                {items.length > 3 && (
-                  <li className="text-[10px] text-foreground/50">+ {items.length - 3} autres</li>
-                )}
-              </ul>
-            </div>
-          );
-        })}
-      </div>
+      {dayItems.length === 0 ? (
+        <p className="rounded-xl border border-dashed border-border bg-muted/30 p-6 text-center text-sm text-foreground/60">
+          Aucune activité ce jour.
+        </p>
+      ) : (
+        <ul className="divide-y divide-border rounded-xl border border-border bg-background">
+          {dayItems.map((item) => (
+            <li key={getKey(item)}>
+              {onItemClick ? (
+                <button
+                  type="button"
+                  onClick={() => onItemClick(item)}
+                  className="block w-full px-4 py-3 text-left hover:bg-muted/30"
+                >
+                  {renderItem(item)}
+                </button>
+              ) : (
+                <div className="px-4 py-3">{renderItem(item)}</div>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
@@ -656,8 +958,29 @@ function SearchBar<T>(props: {
   calendarAvailable: boolean;
   mapAvailable: boolean;
   availableViews?: ViewMode[];
+  /** Toutes les colonnes définies (pour le menu Colonnes). */
+  allColumns: ListColumn<T>[];
+  /** Clés des colonnes actuellement masquées. */
+  hiddenColumnKeys: Set<string>;
+  /** Toggle visibilité d'une colonne. */
+  onToggleColumn: (key: string) => void;
+  /** État du dropdown Colonnes. */
+  columnsPanelOpen: boolean;
+  onToggleColumnsPanel: () => void;
+  onCloseColumnsPanel: () => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const colsPanelRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!props.columnsPanelOpen) return;
+    const handler = (e: PointerEvent) => {
+      if (!colsPanelRef.current?.contains(e.target as Node)) {
+        props.onCloseColumnsPanel();
+      }
+    };
+    document.addEventListener("pointerdown", handler);
+    return () => document.removeEventListener("pointerdown", handler);
+  }, [props.columnsPanelOpen, props.onCloseColumnsPanel]);
   useEffect(() => {
     if (!props.panelOpen) return;
     // pointerdown couvre tactile (iOS Safari), souris et stylet — plus
@@ -785,12 +1108,22 @@ function SearchBar<T>(props: {
         // filtres doit passer au-dessus de la top-bar (sinon il se masque
         // quand on scroll le carnet sur mobile) mais rester sous le drawer
         // ouvert. 8500 satisfait les deux contraintes.
-        <div className="absolute left-0 right-0 top-full z-[8500] mt-2 grid max-h-[70vh] grid-cols-1 gap-0 overflow-y-auto rounded-xl border border-border bg-background shadow-xl md:grid-cols-3">
-          <PanelColumn title="Filtres" icon={FilterIcon} accent="text-purple-700">
-            {props.filters.length === 0 ? (
-              <p className="text-xs text-foreground/40">Pas de filtre prédéfini.</p>
-            ) : (
-              props.filters.map((f) => (
+        <div
+          className={`absolute left-0 right-0 top-full z-[8500] mt-2 grid max-h-[70vh] grid-cols-1 gap-0 overflow-y-auto rounded-xl border border-border bg-background shadow-xl ${
+            // Adapter le nombre de colonnes selon ce qui est dispo —
+            // évite les colonnes vides "Filtres / Regrouper par" sur
+            // les pages qui ne passent rien (demande Fabien
+            // 2026-05-06 : pas de filtres préconçus).
+            props.filters.length > 0 && props.groupBys.length > 0
+              ? "md:grid-cols-3"
+              : props.filters.length > 0 || props.groupBys.length > 0
+                ? "md:grid-cols-2"
+                : "md:grid-cols-1"
+          }`}
+        >
+          {props.filters.length > 0 && (
+            <PanelColumn title="Filtres" icon={FilterIcon} accent="text-purple-700">
+              {props.filters.map((f) => (
                 <PanelItem
                   key={f.key}
                   active={props.activeFilterKeys.includes(f.key)}
@@ -798,23 +1131,28 @@ function SearchBar<T>(props: {
                 >
                   {f.label}
                 </PanelItem>
-              ))
-            )}
-          </PanelColumn>
-          <PanelColumn title="Regrouper par" icon={LayersIcon} accent="text-blue-700">
-            <PanelItem active={props.groupByKey === null} onClick={() => props.onSetGroupBy(null)}>
-              Aucun regroupement
-            </PanelItem>
-            {props.groupBys.map((g) => (
+              ))}
+            </PanelColumn>
+          )}
+          {props.groupBys.length > 0 && (
+            <PanelColumn title="Regrouper par" icon={LayersIcon} accent="text-blue-700">
               <PanelItem
-                key={g.key}
-                active={props.groupByKey === g.key}
-                onClick={() => props.onSetGroupBy(g.key)}
+                active={props.groupByKey === null}
+                onClick={() => props.onSetGroupBy(null)}
               >
-                {g.label}
+                Aucun regroupement
               </PanelItem>
-            ))}
-          </PanelColumn>
+              {props.groupBys.map((g) => (
+                <PanelItem
+                  key={g.key}
+                  active={props.groupByKey === g.key}
+                  onClick={() => props.onSetGroupBy(g.key)}
+                >
+                  {g.label}
+                </PanelItem>
+              ))}
+            </PanelColumn>
+          )}
           <PanelColumn title="Favoris" icon={Star} accent="text-amber-700">
             {props.favorites.length === 0 ? (
               <p className="text-xs text-foreground/40">Aucun favori.</p>
@@ -969,7 +1307,90 @@ function ListView<T>(props: {
   getKey: (item: T) => string;
   onItemClick?: (item: T) => void;
   groups?: { key: string; label: string; items: T[] }[] | undefined;
+  /** Toutes les colonnes (incl. masquées) pour le menu Colonnes. */
+  allColumns?: ListColumn<T>[];
+  hiddenColumnKeys?: Set<string>;
+  onToggleColumn?: (key: string) => void;
 }) {
+  const [columnsPanelOpen, setColumnsPanelOpen] = useState(false);
+  const [colsAnchor, setColsAnchor] = useState<{ top: number; right: number } | null>(null);
+  const colsBtnRef = useRef<HTMLButtonElement>(null);
+  const colsPanelRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!columnsPanelOpen) return;
+    const handler = (e: PointerEvent) => {
+      if (
+        !colsBtnRef.current?.contains(e.target as Node) &&
+        !colsPanelRef.current?.contains(e.target as Node)
+      ) {
+        setColumnsPanelOpen(false);
+      }
+    };
+    document.addEventListener("pointerdown", handler);
+    return () => document.removeEventListener("pointerdown", handler);
+  }, [columnsPanelOpen]);
+  const openColumnsPanel = () => {
+    if (!columnsPanelOpen && colsBtnRef.current) {
+      const r = colsBtnRef.current.getBoundingClientRect();
+      // Le panel s'ouvre juste sous le bouton, ancré à droite. Position
+      // fixed pour échapper aux conteneurs overflow-hidden/overflow-auto
+      // (la table) qui clippaient le dropdown quand peu de lignes.
+      setColsAnchor({ top: r.bottom + 4, right: window.innerWidth - r.right });
+    }
+    setColumnsPanelOpen((v) => !v);
+  };
+  const ColumnsButton =
+    props.allColumns && props.allColumns.length > 0 && props.onToggleColumn ? (
+      <>
+        <button
+          ref={colsBtnRef}
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            openColumnsPanel();
+          }}
+          className="flex h-7 w-7 items-center justify-center rounded-md text-foreground/40 hover:bg-foreground/10 hover:text-foreground/80"
+          aria-label="Afficher / masquer les colonnes"
+          title="Colonnes"
+        >
+          <Columns className="h-3.5 w-3.5" />
+        </button>
+        {columnsPanelOpen &&
+          colsAnchor &&
+          typeof document !== "undefined" &&
+          createPortal(
+            <div
+              ref={colsPanelRef}
+              style={{ position: "fixed", top: colsAnchor.top, right: colsAnchor.right }}
+              className="z-[9000] w-56 rounded-xl border border-border bg-background p-2 shadow-2xl"
+            >
+              <div className="mb-1 px-2 py-1 text-[11px] font-bold uppercase tracking-wider text-foreground/60">
+                Colonnes
+              </div>
+              {props.allColumns.map((c) => {
+                const headerLabel =
+                  typeof c.header === "string" ? c.header : c.key.replace(/^__/, "");
+                const visible = !props.hiddenColumnKeys?.has(c.key);
+                return (
+                  <label
+                    key={c.key}
+                    className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={visible}
+                      onChange={() => props.onToggleColumn?.(c.key)}
+                      className="h-4 w-4 cursor-pointer"
+                    />
+                    <span className="flex-1 truncate">{headerLabel || c.key}</span>
+                  </label>
+                );
+              })}
+            </div>,
+            document.body,
+          )}
+      </>
+    ) : null;
   // Groupes collapsibles : par défaut fermés (on doit cliquer pour ouvrir,
   // c'est le comportement Odoo-like demandé).
   const [collapsed, setCollapsed] = useState<Set<string>>(() => {
@@ -1034,6 +1455,7 @@ function ListView<T>(props: {
                   {col.header}
                 </th>
               ))}
+              {ColumnsButton && <th className="w-10 px-1 py-1 text-right">{ColumnsButton}</th>}
             </tr>
           </thead>
           <tbody>
@@ -1070,6 +1492,7 @@ function ListView<T>(props: {
                 {col.header}
               </th>
             ))}
+            {ColumnsButton && <th className="w-10 px-1 py-1 text-right">{ColumnsButton}</th>}
           </tr>
         </thead>
         <tbody>
@@ -1089,6 +1512,7 @@ function ListView<T>(props: {
                   {col.cell(item)}
                 </td>
               ))}
+              {ColumnsButton && <td className="w-10 px-1 py-1" aria-hidden />}
             </tr>
           ))}
         </tbody>
@@ -1163,6 +1587,9 @@ function KanbanView<T>(props: {
   getKey: (item: T) => string;
   renderKanbanCard: (item: T) => React.ReactNode;
   onItemClick?: (item: T) => void;
+  selectable?: boolean;
+  selectedKeys?: Set<string>;
+  onToggleSelect?: (key: string) => void;
 }) {
   return (
     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
@@ -1192,17 +1619,38 @@ function KanbanView<T>(props: {
                   Aucun
                 </p>
               ) : (
-                group.items.map((item) => (
-                  <div
-                    key={props.getKey(item)}
-                    {...(props.onItemClick ? { onClick: () => props.onItemClick?.(item) } : {})}
-                    className={`rounded-lg border border-border bg-background p-3 ${
-                      props.onItemClick ? "cursor-pointer hover:border-green hover:bg-green/5" : ""
-                    }`}
-                  >
-                    {props.renderKanbanCard(item)}
-                  </div>
-                ))
+                group.items.map((item) => {
+                  const k = props.getKey(item);
+                  const isSelected = props.selectedKeys?.has(k) ?? false;
+                  return (
+                    <div
+                      key={k}
+                      {...(props.onItemClick ? { onClick: () => props.onItemClick?.(item) } : {})}
+                      className={`relative rounded-lg border bg-background p-3 ${
+                        props.onItemClick
+                          ? "cursor-pointer hover:border-green hover:bg-green/5"
+                          : ""
+                      } ${isSelected ? "border-green ring-2 ring-green/20" : "border-border"}`}
+                    >
+                      {props.selectable && (
+                        <input
+                          type="checkbox"
+                          aria-label="Sélectionner"
+                          checked={isSelected}
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={(e) => {
+                            e.stopPropagation();
+                            props.onToggleSelect?.(k);
+                          }}
+                          className="absolute left-2 top-2 z-10 h-5 w-5 cursor-pointer"
+                        />
+                      )}
+                      <div className={props.selectable ? "pl-6" : undefined}>
+                        {props.renderKanbanCard(item)}
+                      </div>
+                    </div>
+                  );
+                })
               )}
             </div>
           </div>

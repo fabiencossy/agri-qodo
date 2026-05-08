@@ -73,6 +73,8 @@ export interface AccessibleParcelle extends Parcelle {
   tenantId: string;
   tenant: { id: string; nom: string; code: string };
   isOwn: boolean;
+  /** ID res.partner Odoo si rattachée à un client Odoo non-partenaire. */
+  odooPartnerId?: number | null;
 }
 
 /**
@@ -114,6 +116,34 @@ export function useCreateParcelle() {
       qc.setQueryData<Parcelle[]>(QUERY_KEY, (old) => (old ? [...old, created] : [created]));
       void qc.invalidateQueries({ queryKey: QUERY_KEY });
       void qc.invalidateQueries({ queryKey: MAP_QUERY_KEY });
+    },
+  });
+}
+
+export interface QuickParcelleInput {
+  nom: string;
+  surfaceM2: number;
+  centreLat?: number;
+  centreLng?: number;
+  /** Si rattachée à un client Odoo non-partenaire, son res.partner id. */
+  odooPartnerId?: number;
+}
+
+/**
+ * Création rapide d'une parcelle (nom + surface + point GPS, sans
+ * polygone). Utilisée depuis le sélecteur de parcelle dans
+ * /interventions/new pour les clients Odoo non-partenaires.
+ */
+export function useCreateQuickParcelle() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: QuickParcelleInput) =>
+      api<Parcelle>("/api/parcelles/quick", { method: "POST", body: input }),
+    onSuccess: (created) => {
+      qc.setQueryData<Parcelle[]>(QUERY_KEY, (old) => (old ? [...old, created] : [created]));
+      void qc.invalidateQueries({ queryKey: QUERY_KEY });
+      void qc.invalidateQueries({ queryKey: MAP_QUERY_KEY });
+      void qc.invalidateQueries({ queryKey: ["parcelles-accessibles"] });
     },
   });
 }

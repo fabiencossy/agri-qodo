@@ -152,6 +152,20 @@ export class TenantsService {
       );
     }
 
+    // Sprint B prestations v0.3 — 3 projets Odoo cibles. Pas de validation
+    // métier ici : le caller (UI) doit s'assurer que l'ID provient bien
+    // de GET /api/odoo/projects ; côté Odoo une mauvaise valeur
+    // déclenchera juste une erreur au prochain upsertTask.
+    if (dto.odooProjectIdTravauxTiers !== undefined) {
+      data.odooProjectIdTravauxTiers = dto.odooProjectIdTravauxTiers;
+    }
+    if (dto.odooProjectIdCarnetTiers !== undefined) {
+      data.odooProjectIdCarnetTiers = dto.odooProjectIdCarnetTiers;
+    }
+    if (dto.odooProjectIdCarnetInterne !== undefined) {
+      data.odooProjectIdCarnetInterne = dto.odooProjectIdCarnetInterne;
+    }
+
     if (Object.keys(data).length === 0) return this.getMine(tenantId);
     try {
       return await this.prisma.exploitation.update({ where: { id: tenantId }, data });

@@ -155,7 +155,7 @@ export default function ParcellesPage() {
   return (
     <>
       <Breadcrumb items={[{ label: "Accueil", href: "/app" }, { label: "Parcelles" }]} />
-      <div className="mx-auto max-w-5xl px-2 py-4 sm:px-4 sm:py-8">
+      <div className="mx-auto w-full px-2 py-4 sm:px-4 sm:py-8">
         <PageHeader
           title="Mes parcelles"
           icon={MapPin}
@@ -217,6 +217,29 @@ export default function ParcellesPage() {
           searchPlaceholder="Rechercher par nom, N° cadastral, zone…"
           filters={filters}
           groupBys={groupBys}
+          selectable
+          bulkActions={[
+            {
+              key: "delete",
+              label: "Supprimer",
+              icon: Trash2,
+              className: "bg-red-600 hover:bg-red-700",
+              confirm: "Supprimer {n} parcelle(s) ?",
+              handler: async (selected) => {
+                let ok = 0;
+                let ko = 0;
+                for (const p of selected) {
+                  try {
+                    await deleteMutation.mutateAsync(p.id);
+                    ok++;
+                  } catch {
+                    ko++;
+                  }
+                }
+                if (ko > 0) alert(`${ok} supprimées, ${ko} échecs.`);
+              },
+            },
+          ]}
           renderMapView={(filteredItems) => {
             const ids = new Set(filteredItems.map((p) => p.id));
             const filteredMap = (parcellesMap.data ?? []).filter((m) => ids.has(m.id));

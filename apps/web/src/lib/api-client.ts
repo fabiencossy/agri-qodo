@@ -38,6 +38,27 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Extrait le message le plus utile d'une erreur API/JS pour l'afficher
+ * à l'utilisateur. Prend en charge :
+ *   - ApiError → body.message (NestJS BadRequestException) ; si tableau
+ *     de messages class-validator, joint par "; ".
+ *   - Error standard → err.message.
+ *   - autres → null (laisse le caller mettre un fallback générique).
+ */
+export function extractApiErrorMessage(err: unknown): string | null {
+  if (!err) return null;
+  if (err instanceof ApiError) {
+    const body = err.body as { message?: string | string[] } | null;
+    if (body && body.message) {
+      return Array.isArray(body.message) ? body.message.join(" · ") : body.message;
+    }
+    return err.message;
+  }
+  if (err instanceof Error) return err.message;
+  return null;
+}
+
 interface RequestOptions {
   method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   body?: unknown;

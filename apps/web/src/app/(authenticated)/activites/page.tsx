@@ -1,6 +1,6 @@
 "use client";
 
-import { ClipboardCheck, Sprout, Timer } from "lucide-react";
+import { ClipboardCheck, Sprout, Timer, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo } from "react";
@@ -19,11 +19,12 @@ import {
 import {
   type Intervention,
   libelleType,
+  useDeleteIntervention,
   useInterventions,
   useInterventionsPending,
 } from "@/lib/interventions";
 import { useCurrentPresence } from "@/lib/presences";
-import { type Travail, useTravaux } from "@/lib/travaux";
+import { type Travail, useDeleteTravail, useTravaux } from "@/lib/travaux";
 
 function startOfDay(d: Date): Date {
   const x = new Date(d);
@@ -152,24 +153,29 @@ const COLUMNS: ListColumn<ActiviteUnifiee>[] = [
   {
     key: "titre",
     header: "Titre",
+    cell: (it) => (
+      <span className="font-medium">
+        {it.kind === "CARNET" ? libelleType(it.intervention.type) : it.travail.titre}
+      </span>
+    ),
+  },
+  {
+    key: "parcelle",
+    header: "Parcelle",
     cell: (it) =>
-      it.kind === "CARNET" ? (
-        <div>
-          <div className="font-medium">{libelleType(it.intervention.type)}</div>
-          <div className="text-xs text-foreground/60">
-            {it.intervention.parcelle.nom}
-            {it.intervention.produitRef ? ` · ${it.intervention.produitRef.libelle}` : ""}
-          </div>
-        </div>
-      ) : (
-        <div>
-          <div className="font-medium">{it.travail.titre}</div>
-          <div className="text-xs text-foreground/60">
-            {it.travail.partenaire?.nom ?? (it.kind === "INTERNE" ? "Interne" : "—")}
-            {it.travail.parcelle ? ` · ${it.travail.parcelle.nom}` : ""}
-          </div>
-        </div>
-      ),
+      it.kind === "CARNET"
+        ? (it.intervention.parcelle.nom ?? "—")
+        : (it.travail.parcelle?.nom ?? "—"),
+    hideBelow: "sm",
+  },
+  {
+    key: "client",
+    header: "Client",
+    cell: (it) => {
+      if (it.kind === "CARNET") return "—";
+      return it.travail.partenaire?.nom ?? (it.kind === "INTERNE" ? "Interne" : "—");
+    },
+    hideBelow: "md",
   },
   {
     key: "date",
@@ -206,6 +212,8 @@ export default function ActivitesPage() {
   const travaux = useTravaux();
   const pending = useInterventionsPending();
   const presenceCourante = useCurrentPresence();
+  const deleteIntervention = useDeleteIntervention();
+  const deleteTravail = useDeleteTravail();
 
   const items = useMemo<ActiviteUnifiee[]>(() => {
     const fromIv: ActiviteUnifiee[] = (interventions.data ?? []).map((iv: Intervention) => ({
@@ -213,10 +221,21 @@ export default function ActivitesPage() {
       date: iv.dateOperation,
       intervention: iv,
     }));
-    const fromTravaux: ActiviteUnifiee[] = (travaux.data ?? []).map((t: Travail) => {
-      const kind = travailKind(t);
-      return { kind, date: t.date, travail: t } as ActiviteUnifiee;
-    });
+    // Set des Travaux "shadow" créés automatiquement par une Intervention
+    // cas B/C (parcelle partenaire ou client Odoo). Ils sont collectés via
+    // Intervention.linkedTravailId pour être masqués de la liste — sinon
+    // chaque saisie chez un client apparaît 2 fois (CARNET + TIERS).
+    // Décision Fabien 2026-05-06 : "je veux uniquement une seule activité
+    // mais qui va dans le projet carnet des champs tiers sur Odoo".
+    const shadowTravailIds = new Set<string>(
+      (interventions.data ?? []).map((iv) => iv.linkedTravailId).filter((id): id is string => !!id),
+    );
+    const fromTravaux: ActiviteUnifiee[] = (travaux.data ?? [])
+      .filter((t: Travail) => !shadowTravailIds.has(t.id))
+      .map((t: Travail) => {
+        const kind = travailKind(t);
+        return { kind, date: t.date, travail: t } as ActiviteUnifiee;
+      });
     return [...fromIv, ...fromTravaux].sort((a, b) => {
       const aPending = a.kind === "CARNET" && a.intervention.validationStatus === "PENDING" ? 1 : 0;
       const bPending = b.kind === "CARNET" && b.intervention.validationStatus === "PENDING" ? 1 : 0;
@@ -232,19 +251,21 @@ export default function ActivitesPage() {
     return it.kind === "CARNET" ? `iv-${it.intervention.id}` : `tr-${it.travail.id}`;
   }
   function onItemClick(it: ActiviteUnifiee) {
-    // Click sur une carte → ouvre le formulaire de saisie pré-rempli
-    // (mode édition). Même UI que la création, valeurs chargées depuis l'API.
+    // Click sur une carte → ouvre la vue détail (lecture). Demande
+    // Fabien 2026-05-06 : "quand je clique sur une saisie je veux
+    // directement arriver sur la vue". L'édition reste accessible
+    // via le bouton "Modifier" sur la vue détail.
     if (it.kind === "CARNET") {
-      router.push(`/interventions/new?edit=${it.intervention.id}` as never);
+      router.push(`/interventions/${it.intervention.id}` as never);
     } else {
-      router.push(`/travaux/new?edit=${it.travail.id}` as never);
+      router.push(`/travaux/${it.travail.id}` as never);
     }
   }
 
   return (
     <>
       <Breadcrumb items={[{ label: "Accueil", href: "/app" }, { label: "Activités" }]} />
-      <div className="mx-auto max-w-3xl px-3 py-4 sm:py-6">
+      <div className="mx-auto w-full px-3 py-4 sm:py-6">
         <h1 className="mb-3 text-2xl font-bold sm:text-3xl">Activités</h1>
 
         {presenceCourante.data && (
@@ -289,6 +310,34 @@ export default function ActivitesPage() {
           searchPlaceholder="Rechercher type, titre, parcelle, client, produit, notes…"
           filters={filters}
           groupBys={GROUPBYS}
+          selectable
+          bulkActions={[
+            {
+              key: "delete",
+              label: "Supprimer",
+              icon: Trash2,
+              className: "bg-red-600 hover:bg-red-700",
+              confirm: "Supprimer {n} activité(s) ?",
+              handler: async (selected) => {
+                let ok = 0;
+                const errors: string[] = [];
+                for (const it of selected) {
+                  try {
+                    if (it.kind === "CARNET")
+                      await deleteIntervention.mutateAsync(it.intervention.id);
+                    else await deleteTravail.mutateAsync(it.travail.id);
+                    ok++;
+                  } catch (err) {
+                    const msg = err instanceof Error ? err.message : String(err);
+                    errors.push(`${it.kind === "CARNET" ? "Carnet" : "Travail"} : ${msg}`);
+                  }
+                }
+                if (errors.length > 0) {
+                  alert(`${ok} supprimée(s), ${errors.length} échec(s) :\n\n${errors.join("\n")}`);
+                }
+              },
+            },
+          ]}
           emptyState={
             <div>
               <Sprout className="mx-auto mb-2 h-10 w-10 text-foreground/30" />

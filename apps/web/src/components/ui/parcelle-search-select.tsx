@@ -9,11 +9,20 @@
  *
  * Filtre sur nom + identifiant cadastral + zone agricole.
  */
-import { Check, Loader2, MapPin, Plus, Search, X } from "lucide-react";
+import { Check, Loader2, MapPin, MapPinned, Plus, Search, X } from "lucide-react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Input } from "@/components/ui/input";
-import { type AccessibleParcelle, useParcellesAccessibles } from "@/lib/parcelles";
+import {
+  type AccessibleParcelle,
+  useCreateQuickParcelle,
+  useParcellesAccessibles,
+} from "@/lib/parcelles";
+
+const PointPickerMap = dynamic(() => import("@/components/maps/point-picker-map"), {
+  ssr: false,
+});
 
 interface ParcelleSearchSelectProps {
   value: string;
@@ -22,8 +31,14 @@ interface ParcelleSearchSelectProps {
   required?: boolean;
   /** Si true, désactive le sélecteur (ex: pas de parcelle disponible). */
   disabled?: boolean;
-  /** Filtre les parcelles à celles d'un tenant précis (= un client choisi en amont). */
+  /** Filtre les parcelles à celles d'un tenant précis (= un partenaire Agri Qodo). */
   filtreTenantId?: string;
+  /**
+   * Filtre les parcelles à celles rattachées à un client Odoo non-partenaire
+   * (Parcelle.odooPartnerId). Permet, après sélection d'un client Odoo, de
+   * ne montrer que ses parcelles déjà créées rapidement.
+   */
+  filtreOdooPartnerId?: number;
 }
 
 export function ParcelleSearchSelect({
@@ -33,6 +48,7 @@ export function ParcelleSearchSelect({
   required: _required,
   disabled,
   filtreTenantId,
+  filtreOdooPartnerId,
 }: ParcelleSearchSelectProps) {
   const parcelles = useParcellesAccessibles();
   const [open, setOpen] = useState(false);
@@ -86,6 +102,8 @@ export function ParcelleSearchSelect({
     let list = parcelles.data ?? [];
     if (filtreTenantId) {
       list = list.filter((p) => p.tenantId === filtreTenantId);
+    } else if (filtreOdooPartnerId !== undefined) {
+      list = list.filter((p) => p.odooPartnerId === filtreOdooPartnerId);
     }
     const q = query.trim().toLowerCase();
     if (!q) return list.slice().sort((a, b) => a.nom.localeCompare(b.nom, "fr"));
@@ -94,7 +112,7 @@ export function ParcelleSearchSelect({
         [p.nom, p.identifiantCadastral ?? "", p.zone].join(" ").toLowerCase().includes(q),
       )
       .sort((a, b) => a.nom.localeCompare(b.nom, "fr"));
-  }, [parcelles.data, query, filtreTenantId]);
+  }, [parcelles.data, query, filtreTenantId, filtreOdooPartnerId]);
 
   const handleSelect = (p: AccessibleParcelle) => {
     onChange(p.id, p);
@@ -140,6 +158,9 @@ export function ParcelleSearchSelect({
                 selectedId={value}
                 onSelect={handleSelect}
                 onClose={() => setOpen(false)}
+                {...(filtreOdooPartnerId !== undefined
+                  ? { quickOdooPartnerId: filtreOdooPartnerId }
+                  : {})}
               />
             }
           />
@@ -154,6 +175,9 @@ export function ParcelleSearchSelect({
               selectedId={value}
               onSelect={handleSelect}
               onClose={() => setOpen(false)}
+              {...(filtreOdooPartnerId !== undefined
+                ? { quickOdooPartnerId: filtreOdooPartnerId }
+                : {})}
             />
           </div>
         ))}
@@ -199,6 +223,7 @@ function Panel({
   selectedId,
   onSelect,
   onClose,
+  quickOdooPartnerId,
 }: {
   query: string;
   onQueryChange: (q: string) => void;
@@ -208,6 +233,7 @@ function Panel({
   selectedId: string;
   onSelect: (p: AccessibleParcelle) => void;
   onClose: () => void;
+  quickOdooPartnerId?: number;
 }) {
   const trimmed = query.trim();
   return (
@@ -280,18 +306,163 @@ function Panel({
       </div>
 
       <div className="border-t border-border bg-muted/30 p-3">
+        <QuickCreatePanel
+          onCreated={onSelect}
+          onClose={onClose}
+          {...(quickOdooPartnerId !== undefined ? { odooPartnerId: quickOdooPartnerId } : {})}
+        />
         <Link
           href="/parcelles/new"
           onClick={onClose}
-          className="flex w-full items-center justify-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-sm font-medium text-foreground/80 transition-colors hover:bg-muted"
+          className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-xs text-foreground/60 transition-colors hover:bg-muted"
         >
-          <Plus className="h-4 w-4" />
-          Créer une nouvelle parcelle
+          Créer avec géométrie cadastrale (GeoJSON / carte) →
         </Link>
-        <p className="mt-2 text-center text-xs text-foreground/50">
-          Une parcelle nécessite une géométrie cadastrale (import GeoJSON ou dessin sur carte).
-        </p>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Mini formulaire inline de création rapide de parcelle (nom + surface
+ * + point GPS). Pour les clients Odoo non-partenaires qui n'ont pas
+ * dessiné leurs parcelles. Le polygone précis sera ajouté plus tard
+ * via la fiche /parcelles/[id].
+ */
+function QuickCreatePanel({
+  onCreated,
+  onClose,
+  odooPartnerId,
+}: {
+  onCreated: (p: AccessibleParcelle) => void;
+  onClose: () => void;
+  odooPartnerId?: number;
+}) {
+  const create = useCreateQuickParcelle();
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState<{
+    nom: string;
+    surfaceHa: string;
+    point: { lat: number; lng: number } | null;
+  }>({
+    nom: "",
+    surfaceHa: "",
+    point: null,
+  });
+  const [pickerOpen, setPickerOpen] = useState(false);
+
+  async function submit() {
+    const surfaceHa = Number(draft.surfaceHa);
+    if (!draft.nom.trim() || !(surfaceHa > 0)) {
+      alert("Renseigne un nom et une surface en hectares.");
+      return;
+    }
+    try {
+      const created = await create.mutateAsync({
+        nom: draft.nom.trim(),
+        surfaceM2: Math.round(surfaceHa * 10_000),
+        ...(draft.point ? { centreLat: draft.point.lat, centreLng: draft.point.lng } : {}),
+        ...(odooPartnerId !== undefined ? { odooPartnerId } : {}),
+      });
+      // Adapter en AccessibleParcelle (le hook renvoie Parcelle, on
+      // fabrique la forme attendue côté caller — les champs absents sont
+      // récupérés au prochain refetch de useParcellesAccessibles).
+      onCreated({
+        id: created.id,
+        nom: created.nom,
+        surfaceM2: String(created.surfaceM2),
+        zone: created.zone,
+        identifiantCadastral: created.identifiantCadastral ?? null,
+        isOwn: true,
+        tenant: { id: "", nom: "", code: "", canton: "" },
+      } as unknown as AccessibleParcelle);
+      setDraft({ nom: "", surfaceHa: "", point: null });
+      setOpen(false);
+      onClose();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Création échouée.");
+    }
+  }
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="flex w-full items-center justify-center gap-2 rounded-lg border-2 border-green bg-background px-3 py-2 text-sm font-semibold text-green transition-colors hover:bg-green/10"
+      >
+        <Plus className="h-4 w-4" />
+        Créer une parcelle rapide (surface + GPS)
+      </button>
+    );
+  }
+
+  return (
+    <div className="space-y-2 rounded-lg border border-border bg-background p-3">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-bold uppercase tracking-wider text-foreground/60">
+          Nouvelle parcelle
+        </span>
+        <button
+          type="button"
+          onClick={() => setOpen(false)}
+          aria-label="Annuler"
+          className="rounded-full p-1 text-foreground/50 hover:bg-muted"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </div>
+      <input
+        autoFocus
+        value={draft.nom}
+        onChange={(e) => setDraft({ ...draft, nom: e.target.value })}
+        placeholder="Nom de la parcelle *"
+        className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green"
+      />
+      <div className="grid grid-cols-[1fr_auto] gap-2">
+        <input
+          type="number"
+          step="0.01"
+          min="0"
+          inputMode="decimal"
+          value={draft.surfaceHa}
+          onChange={(e) => setDraft({ ...draft, surfaceHa: e.target.value })}
+          placeholder="Surface (ha) *"
+          className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green"
+        />
+        <span className="flex h-9 items-center justify-center rounded-md border border-border bg-muted/30 px-2 text-xs font-medium text-foreground/60">
+          ha
+        </span>
+      </div>
+      <button
+        type="button"
+        onClick={() => setPickerOpen(true)}
+        className="flex h-9 w-full items-center justify-center gap-1.5 rounded-md border border-border bg-background px-2 text-sm font-medium text-foreground/80 hover:bg-muted"
+      >
+        <MapPinned className="h-4 w-4 text-green" />
+        {draft.point
+          ? `Point : ${draft.point.lat.toFixed(5)}, ${draft.point.lng.toFixed(5)}`
+          : "Choisir un point sur la carte (optionnel)"}
+      </button>
+      <button
+        type="button"
+        onClick={submit}
+        disabled={create.isPending || !draft.nom.trim() || !draft.surfaceHa}
+        className="flex w-full items-center justify-center gap-1.5 rounded-md bg-green py-2 text-sm font-semibold text-white hover:bg-green-dark disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        {create.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+        Créer et sélectionner
+      </button>
+      {pickerOpen && (
+        <PointPickerMap
+          initial={draft.point}
+          onCancel={() => setPickerOpen(false)}
+          onConfirm={(p) => {
+            setDraft((d) => ({ ...d, point: p }));
+            setPickerOpen(false);
+          }}
+        />
+      )}
     </div>
   );
 }

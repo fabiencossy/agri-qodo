@@ -4,6 +4,7 @@ import {
   IsArray,
   IsBoolean,
   IsDateString,
+  IsInt,
   IsNumber,
   IsOptional,
   IsString,
@@ -117,6 +118,24 @@ export class CreateTravailDto {
   @IsOptional()
   @IsUUID()
   partenaireId?: string;
+
+  @ApiPropertyOptional({
+    description:
+      "ID Odoo res.partner (entier) — client Odoo qui n'est PAS un partenaire Agri Qodo. Mutuellement exclusif avec partenaireId. Décision Fabien 2026-05-06 : ne plus créer de fausses Exploitations shadow pour les clients Odoo.",
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  odooPartnerId?: number;
+
+  @ApiPropertyOptional({
+    description:
+      "Nom du res.partner Odoo capturé au moment de la sélection. Sert au seul affichage côté Agri Qodo. Optionnel.",
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  odooPartnerName?: string;
 
   @ApiPropertyOptional({ description: "ID Parcelle concernée (optionnel)." })
   @IsOptional()

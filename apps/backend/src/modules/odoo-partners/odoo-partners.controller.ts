@@ -63,10 +63,31 @@ export class OdooPartnersController {
   @Post()
   @ApiOperation({
     summary:
-      "Création rapide d'un client (Sprint 2). Crée une Exploitation shadow + un PartnerLink ACTIVE + best-effort res.partner Odoo. Renvoie l'exploitationId pour utilisation immédiate dans Travail.partenaireId.",
+      "Création rapide d'un res.partner Odoo (sans Exploitation Agri Qodo). Décision Fabien 2026-05-06 : un client Odoo n'est PAS un partenaire — on stocke juste l'ID Odoo dans Travail.odooPartnerId.",
   })
   create(@Body() dto: CreateClientRapideDto) {
     const { tenantId } = this.tenantContext.get();
     return this.service.createQuickClient(tenantId, dto);
+  }
+}
+
+@ApiTags("odoo-projects")
+@ApiBearerAuth()
+@UseGuards(JwtAuthGuard)
+@Controller("odoo/projects")
+export class OdooProjectsController {
+  constructor(
+    private readonly service: OdooPartnersService,
+    private readonly tenantContext: TenantContextService,
+  ) {}
+
+  @Get()
+  @ApiOperation({
+    summary:
+      "Sprint B prestations — liste les project.project Odoo actifs du tenant. Alimente les 3 sélecteurs de /parametres/exploitation (Travaux tiers / Carnet tiers / Carnet interne).",
+  })
+  list() {
+    const { tenantId } = this.tenantContext.get();
+    return this.service.listProjects(tenantId);
   }
 }

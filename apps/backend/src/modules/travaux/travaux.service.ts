@@ -127,10 +127,14 @@ export class TravauxService {
         ...(dto.dateDebut ? { dateDebut: new Date(dto.dateDebut) } : {}),
         ...(dto.dateFin ? { dateFin: new Date(dto.dateFin) } : {}),
         ...(dto.partenaireId ? { partenaireId: dto.partenaireId } : {}),
+        ...(dto.odooPartnerId !== undefined ? { odooPartnerId: dto.odooPartnerId } : {}),
+        ...(dto.odooPartnerName !== undefined ? { odooPartnerName: dto.odooPartnerName } : {}),
         ...(dto.parcelleId ? { parcelleId: dto.parcelleId } : {}),
         ...(dto.projetId ? { projetId: dto.projetId } : {}),
         ...(dto.notes ? { notes: dto.notes } : {}),
-        ...(dto.datePrevue ? { datePrevue: new Date(dto.datePrevue) } : {}),
+        // datePrevue par défaut = date pour que tous les travaux
+        // apparaissent dans /planning (cf interventions.service).
+        datePrevue: dto.datePrevue ? new Date(dto.datePrevue) : new Date(dto.date),
         ...(dto.assignedToUserId ? { assignedToUserId: dto.assignedToUserId } : {}),
         ...(dto.lignesProduit && dto.lignesProduit.length > 0
           ? { lignesProduit: { create: dto.lignesProduit.map((l) => this.toLigneProduitData(l)) } }
@@ -362,11 +366,20 @@ export class TravauxService {
     const { tenantId } = this.tenantContext.get();
     const travail = await this.prisma.travail.findFirst({
       where: { id, tenantId },
-      select: { id: true, statut: true },
+      select: { id: true, statut: true, odooSaleOrderId: true },
     });
     if (!travail) throw new NotFoundException("Travail introuvable");
-    if (travail.statut === TravailStatut.INVOICED) {
-      throw new ConflictException("Travail déjà facturé — suppression interdite.");
+    // Refuse la suppression seulement si le travail est facturé ET
+    // toujours synchronisé avec un devis Odoo actif. Si le devis Odoo
+    // a été supprimé côté Odoo (odooSaleOrderId mais devis introuvable
+    // serait à vérifier — pour MVP on se base sur le mapping local) ou
+    // si l'agriculteur a réinitialisé la base Odoo, on permet la
+    // suppression (sinon les anciens travaux INVOICED sont coincés
+    // pour toujours).
+    if (travail.statut === TravailStatut.INVOICED && travail.odooSaleOrderId) {
+      throw new ConflictException(
+        `Travail déjà facturé via Odoo (sale.order #${travail.odooSaleOrderId}). Annule d'abord le devis côté Odoo, puis réessaie.`,
+      );
     }
     await this.prisma.travail.delete({ where: { id } });
   }

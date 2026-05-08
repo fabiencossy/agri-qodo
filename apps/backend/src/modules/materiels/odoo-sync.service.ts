@@ -139,6 +139,10 @@ export class MaterielsOdooSyncService {
   // Évite les lookup uom.uom à chaque création de produit.
   private readonly uomCache = new Map<string, Map<MaterielUnite, number>>();
 
+  // Cache mémoire (par tenant) du mapping tauxTvaPercent → account.tax
+  // Odoo (sale). Clé interne = `taux.toFixed(2)`. 0 = lookup négatif.
+  private readonly saleTaxCache = new Map<string, Map<string, number>>();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly tenantContext: TenantContextService,
@@ -187,6 +191,67 @@ export class MaterielsOdooSyncService {
     }
     cache.set(unite, 0); // 0 = not found, on cache pour ne pas relooker
     return null;
+  }
+
+  /**
+   * Résout l'`account.tax` Odoo (type_tax_use=sale) qui a `amount` égal au
+   * taux fourni. Retourne null si aucune taxe configurée. Cache par tenant.
+   */
+  private async resolveSaleTaxId(
+    client: import("@agri-qodo/odoo-client").OdooClient,
+    tenantId: string,
+    tauxPercent: number,
+  ): Promise<number | null> {
+    let cache = this.saleTaxCache.get(tenantId);
+    if (!cache) {
+      cache = new Map();
+      this.saleTaxCache.set(tenantId, cache);
+    }
+    const key = tauxPercent.toFixed(2);
+    const cached = cache.get(key);
+    if (cached !== undefined) return cached || null;
+    try {
+      const found = await client.searchRead<{ id: number }>(
+        "account.tax",
+        [
+          ["amount", "=", tauxPercent],
+          ["type_tax_use", "=", "sale"],
+          ["active", "=", true],
+        ],
+        { fields: ["id"], limit: 1 },
+      );
+      if (found.length > 0 && found[0]) {
+        cache.set(key, found[0].id);
+        return found[0].id;
+      }
+    } catch {
+      // Best-effort.
+    }
+    cache.set(key, 0);
+    return null;
+  }
+
+  /**
+   * Construit le payload Odoo `taxes_id` à partir du tauxTvaPercent local.
+   * Retourne `undefined` si non défini ou si la taxe n'existe pas côté
+   * Odoo (on laisse alors Odoo conserver ses taxes existantes / par défaut).
+   */
+  private async buildTaxesPayload(
+    client: import("@agri-qodo/odoo-client").OdooClient,
+    tenantId: string,
+    tauxTvaPercent: unknown,
+  ): Promise<{ taxes_id: Array<[number, number, number[]]> } | undefined> {
+    if (tauxTvaPercent === null || tauxTvaPercent === undefined) return undefined;
+    const taux = Number(tauxTvaPercent);
+    if (Number.isNaN(taux)) return undefined;
+    const taxId = await this.resolveSaleTaxId(client, tenantId, taux);
+    if (taxId === null) {
+      this.logger.warn(
+        `account.tax sale ${taux}% introuvable pour tenant ${tenantId} — taxes_id non poussé.`,
+      );
+      return undefined;
+    }
+    return { taxes_id: [[6, 0, [taxId]]] };
   }
 
   private assertAdmin(): void {
@@ -296,34 +361,143 @@ export class MaterielsOdooSyncService {
       where: { id: materielId, OR: [{ tenantId: null }, { tenantId }] },
     });
     if (!materiel) throw new NotFoundException("Matériel introuvable");
-    if (materiel.odooProductId) return materiel.odooProductId;
+
+    // Sync bidirectionnelle (demande Fabien 2026-05-06) : si déjà
+    // mappé, on aligne Odoo sur les valeurs locales (libellé, prix,
+    // unité), puis on relit Odoo pour rapatrier d'éventuels écarts
+    // (ex prix modifié côté Odoo entre-temps). Agri Qodo prime au
+    // moment du push, mais Odoo conserve la main sur les autres
+    // champs métier qu'on ne touche pas (catégorie comptable,
+    // taxes, etc.).
+    if (materiel.odooProductId) {
+      const client = await this.odooClientManager.forTenant(tenantId);
+      const uomId = await this.resolveUomId(client, tenantId, materiel.unite);
+      const taxesPayload = await this.buildTaxesPayload(client, tenantId, materiel.tauxTvaPercent);
+      // Push local → Odoo (best-effort). default_code mis à false
+      // pour effacer la référence interne AQ-... visible côté Odoo.
+      // uom_po_id même valeur que uom_id sinon Odoo refuse parfois
+      // le write d'uom_id seul (incohérence cat. unité achat/vente).
+      await client
+        .write("product.product", [materiel.odooProductId], {
+          name: materiel.libelle,
+          list_price: materiel.prixUnitaireCHF ? Number(materiel.prixUnitaireCHF) : 0,
+          default_code: false,
+          expense_policy: "no",
+          ...(uomId ? { uom_id: uomId, uom_po_id: uomId } : {}),
+          ...(taxesPayload ?? {}),
+        })
+        .catch((err) =>
+          this.logger.warn(
+            `Sync push (mat #${materiel.odooProductId}) échoué : ${err instanceof Error ? err.message : err}`,
+          ),
+        );
+      // Pull Odoo → local : on relit list_price, name, uom pour
+      // refléter ce qu'Odoo a finalement enregistré (taxes éventuelles
+      // sur le prix HT/TTC, validation Odoo). Best-effort.
+      try {
+        const probe = await client.searchRead<{
+          id: number;
+          name?: string;
+          list_price?: number;
+        }>("product.product", [["id", "=", materiel.odooProductId]], {
+          fields: ["id", "name", "list_price"],
+          limit: 1,
+        });
+        const o = probe[0];
+        if (o) {
+          await this.prisma.materiel.update({
+            where: { id: materiel.id },
+            data: {
+              ...(o.name ? { libelle: o.name } : {}),
+              ...(typeof o.list_price === "number"
+                ? { prixUnitaireCHF: o.list_price > 0 ? o.list_price : null }
+                : {}),
+              odooSyncedAt: new Date(),
+            },
+          });
+        }
+      } catch {
+        // Lecture best-effort.
+      }
+      return materiel.odooProductId;
+    }
+
+    // Dédup #1 : si on a déjà un matériel perso pour le même libellé
+    // côté tenant avec un odooProductId, on renvoie celui-ci sans rien
+    // recréer côté Odoo (cas où Fabien clique "Pousser" 2 fois sur un
+    // matériel global → on évite le doublon Odoo et le doublon perso).
+    if (materiel.tenantId === null) {
+      const existingPerso = await this.prisma.materiel.findFirst({
+        where: { tenantId, libelle: materiel.libelle, odooProductId: { not: null } },
+        select: { id: true, odooProductId: true },
+      });
+      if (existingPerso?.odooProductId) {
+        return existingPerso.odooProductId;
+      }
+    }
 
     const client = await this.odooClientManager.forTenant(tenantId);
 
     // Résout l'unité de mesure Odoo correspondant à matériel.unite.
     // Si introuvable, on laisse Odoo prendre l'unité par défaut.
     const uomId = await this.resolveUomId(client, tenantId, materiel.unite);
+    const taxesPayload = await this.buildTaxesPayload(client, tenantId, materiel.tauxTvaPercent);
 
-    let odooId: number;
+    // Dédup #2 : avant de créer côté Odoo, on cherche par
+    // default_code AQ-{code} ou par name=service. Si trouvé, on
+    // réutilise au lieu de créer un doublon Odoo.
+    const defaultCode = `AQ-${materiel.code}`;
+    let odooId: number | undefined;
     try {
-      odooId = await client.create("product.product", {
-        name: materiel.libelle,
-        type: "service",
-        list_price: materiel.prixUnitaireCHF ? Number(materiel.prixUnitaireCHF) : 0,
-        // Code interne traçable côté Odoo — repère que ce service a été
-        // créé par agri-qodo.
-        default_code: `AQ-${materiel.code}`,
-        // Unité de mesure (uom.uom Odoo) — sert à afficher "ha" / "m³" /
-        // "t" / "h" sur le sale.order au lieu du défaut "Unité(s)".
-        ...(uomId ? { uom_id: uomId, uom_po_id: uomId } : {}),
-      });
-    } catch (err) {
-      this.logger.error(
-        `Création product.product service échouée pour matériel ${materielId} : ${err instanceof Error ? err.message : err}`,
+      const found = await client.searchRead<{ id: number }>(
+        "product.product",
+        [
+          "|",
+          ["default_code", "=", defaultCode],
+          "&",
+          ["name", "=", materiel.libelle],
+          ["type", "=", "service"],
+        ],
+        { fields: ["id"], limit: 1 },
       );
-      throw new ServiceUnavailableException(
-        "Impossible de créer le service côté Odoo. Vérifie la config.",
-      );
+      if (found.length > 0 && found[0]) {
+        odooId = found[0].id;
+      }
+    } catch {
+      // Lookup best-effort, on continue avec création si échec.
+    }
+
+    if (!odooId) {
+      try {
+        odooId = await client.create("product.product", {
+          name: materiel.libelle,
+          type: "service",
+          list_price: materiel.prixUnitaireCHF ? Number(materiel.prixUnitaireCHF) : 0,
+          // default_code retiré (demande Fabien 2026-05-06) — la
+          // traçabilité Agri Qodo passe par odooProductId stocké en
+          // local, pas par une référence interne visible côté Odoo.
+          // Unité de mesure (uom.uom Odoo) — sert à afficher "ha" / "m³" /
+          // "t" / "h" sur le sale.order au lieu du défaut "Unité(s)".
+          ...(uomId ? { uom_id: uomId } : {}),
+          ...(taxesPayload ?? {}),
+        });
+      } catch (err) {
+        this.logger.error(
+          `Création product.product service échouée pour matériel ${materielId} : ${err instanceof Error ? err.message : err}`,
+        );
+        throw new ServiceUnavailableException(
+          "Impossible de créer le service côté Odoo. Vérifie la config.",
+        );
+      }
+    } else if (uomId || taxesPayload) {
+      // Produit existant côté Odoo : on aligne son unité (ha/m³/t/h…)
+      // et ses taxes sur celles d'Agri Qodo — best-effort.
+      await client
+        .write("product.product", [odooId], {
+          ...(uomId ? { uom_id: uomId } : {}),
+          ...(taxesPayload ?? {}),
+        })
+        .catch(() => undefined);
     }
 
     // Si le matériel est global (tenantId null), on ne peut pas y stocker
@@ -338,6 +512,7 @@ export class MaterielsOdooSyncService {
           categorie: materiel.categorie,
           unite: materiel.unite,
           prixUnitaireCHF: materiel.prixUnitaireCHF,
+          tauxTvaPercent: materiel.tauxTvaPercent,
           notes: materiel.notes,
           actif: materiel.actif,
           odooProductId: odooId,

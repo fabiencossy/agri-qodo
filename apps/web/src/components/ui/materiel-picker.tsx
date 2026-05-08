@@ -1,18 +1,23 @@
 "use client";
 
 /**
- * Sélecteur de matériel "gros doigts" — grille de cartes filtrées par
- * la catégorie correspondant au type d'intervention. Au lieu d'un
- * dropdown étriqué, l'agriculteur voit directement ses options visuellement.
+ * Sélecteur de matériel/prestation en overlay plein écran avec
+ * recherche live. Conçu pour les gros catalogues (113 prestations
+ * Agridea + persos). Pattern identique à ProduitFullscreenPicker pour
+ * cohérence d'UX.
  *
  * En cas B (parcelle d'un partenaire), le matériel sélectionné servira
  * à générer la ligne sale.order Odoo facturée au client (qty = surfaceHa,
  * prix = prixUnitaireCHF).
+ *
+ * Demande Fabien 2026-05-06 : "il faut pouvoir rechercher donc
+ * ouverture en pleine page des matériaux utilisés".
  */
-import { Check, Wrench } from "lucide-react";
-import { useMemo } from "react";
+import { Check, ChevronDown, Search, Wrench, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { InterventionType } from "@/lib/interventions";
 import {
+  MATERIEL_CATEGORIE_LABEL,
   type Materiel,
   type MaterielCategorie,
   MATERIEL_UNITE_LABEL,
@@ -30,12 +35,23 @@ const TYPE_TO_CATEGORIE: Record<InterventionType, MaterielCategorie | null> = {
   AUTRE: null,
 };
 
+const CATEGORIES_ORDER: MaterielCategorie[] = [
+  "TRAVAIL_DU_SOL",
+  "SEMIS",
+  "FERTILISATION",
+  "PROTECTION",
+  "RECOLTE",
+  "IRRIGATION",
+  "TRANSPORT",
+  "AUTRE",
+];
+
 function formatCHF(n: number): string {
   return n.toLocaleString("fr-CH", { style: "currency", currency: "CHF" });
 }
 
 export interface MaterielPickerProps {
-  /** Type d'intervention courant — filtre les matériels affichés. */
+  /** Type d'intervention courant — pré-filtre les matériels affichés. */
   interventionType: InterventionType;
   /** ID Matériel sélectionné, ou vide. */
   value: string;
@@ -43,80 +59,208 @@ export interface MaterielPickerProps {
 }
 
 export function MaterielPicker({ interventionType, value, onChange }: MaterielPickerProps) {
-  const categorie = TYPE_TO_CATEGORIE[interventionType];
-  const materiels = useMateriels(categorie ?? undefined);
+  // Pré-filtre par catégorie correspondant au type d'intervention.
+  // L'utilisateur peut basculer en "Toutes" dans le panel pour voir
+  // tous les matériels.
+  const presetCategorie = TYPE_TO_CATEGORIE[interventionType];
+  const allMateriels = useMateriels();
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [filtreCat, setFiltreCat] = useState<MaterielCategorie | null>(presetCategorie);
+  const inputRef = useRef<HTMLInputElement>(null);
 
-  const list = useMemo<Materiel[]>(() => {
-    if (!materiels.data) return [];
-    return [...materiels.data]
+  // Resync filtreCat quand le type d'intervention change (ex SEMIS → PHYTO).
+  useEffect(() => {
+    setFiltreCat(presetCategorie);
+  }, [presetCategorie]);
+
+  const choisi: Materiel | undefined = (allMateriels.data ?? []).find((m) => m.id === value);
+
+  useEffect(() => {
+    if (!open) return;
+    document.body.style.overflow = "hidden";
+    setTimeout(() => inputRef.current?.focus(), 50);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = "";
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  const filtered = useMemo<Materiel[]>(() => {
+    const q = query.trim().toLowerCase();
+    return (allMateriels.data ?? [])
       .filter((m) => m.actif)
+      .filter((m) => (filtreCat ? m.categorie === filtreCat : true))
+      .filter((m) =>
+        !q
+          ? true
+          : [m.libelle, m.notes ?? "", m.code].filter(Boolean).join(" ").toLowerCase().includes(q),
+      )
       .sort((a, b) => a.libelle.localeCompare(b.libelle, "fr"));
-  }, [materiels.data]);
+  }, [allMateriels.data, query, filtreCat]);
 
-  if (materiels.isLoading) {
-    return <div className="text-sm text-foreground/60">Chargement du catalogue matériel…</div>;
-  }
-
-  if (list.length === 0) {
-    return (
-      <div className="rounded-xl border-2 border-dashed border-border p-6 text-center text-sm text-foreground/60">
-        <Wrench className="mx-auto mb-2 h-8 w-8 opacity-40" />
-        <p>Aucun matériel disponible pour ce type d&apos;opération.</p>
-        <p className="mt-1 text-xs">
-          Demande à un OWNER d&apos;ajouter du matériel au catalogue ou de synchroniser depuis Odoo.
-        </p>
-      </div>
-    );
-  }
+  const triggerLabel = choisi
+    ? `${choisi.libelle}${choisi.prixUnitaireCHF ? ` · ${formatCHF(Number(choisi.prixUnitaireCHF))}/${MATERIEL_UNITE_LABEL[choisi.unite]}` : ""}`
+    : "Aucun matériel précis";
 
   return (
-    <div className="space-y-2">
+    <>
       <button
         type="button"
-        onClick={() => onChange("", null)}
-        className={`flex w-full items-center justify-between rounded-xl border-2 px-4 py-3 text-left transition-colors ${
-          value === ""
-            ? "border-foreground/30 bg-muted font-medium"
-            : "border-border bg-background hover:bg-muted/50"
-        }`}
+        onClick={() => setOpen(true)}
+        className="flex h-11 w-full items-center justify-between gap-2 rounded-lg border border-border bg-background px-3 text-left text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green"
       >
-        <span className="text-sm text-foreground/70">Aucun matériel précis</span>
-        {value === "" && <Check className="h-5 w-5 text-foreground/60" />}
+        <span
+          className={`flex min-w-0 items-center gap-2 truncate ${choisi ? "" : "text-foreground/50"}`}
+        >
+          {choisi && <Wrench className="h-4 w-4 flex-shrink-0 text-foreground/50" />}
+          <span className="truncate">{triggerLabel}</span>
+        </span>
+        <ChevronDown className="h-4 w-4 shrink-0 text-foreground/50" />
       </button>
 
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-        {list.map((m) => {
-          const isSelected = value === m.id;
-          return (
-            <button
-              key={m.id}
-              type="button"
-              onClick={() => onChange(m.id, m)}
-              className={`flex flex-col items-start gap-1 rounded-xl border-2 p-3 text-left transition-all active:scale-95 ${
-                isSelected
-                  ? "border-green bg-green/10 shadow-sm"
-                  : "border-border bg-background hover:border-foreground/20 hover:shadow-sm"
-              }`}
-            >
-              <div className="flex w-full items-start justify-between gap-2">
-                <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-muted">
-                  <Wrench className="h-4 w-4" />
-                </span>
-                {isSelected && <Check className="h-4 w-4 text-green" />}
+      {open && (
+        <div
+          className="fixed inset-0 z-[8000] flex flex-col bg-background"
+          role="dialog"
+          aria-label="Choisir un matériel"
+        >
+          <header className="border-b border-border bg-background p-3 sm:p-4">
+            <div className="mx-auto flex max-w-3xl items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                aria-label="Fermer"
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full hover:bg-muted"
+              >
+                <X className="h-5 w-5" />
+              </button>
+              <div className="relative flex-1">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-foreground/40" />
+                <input
+                  ref={inputRef}
+                  type="text"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Rechercher par libellé, notes…"
+                  className="h-11 w-full rounded-lg border border-border bg-background pl-9 pr-3 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green"
+                />
               </div>
-              <span className="text-sm font-medium leading-tight">{m.libelle}</span>
-              {m.prixUnitaireCHF ? (
-                <span className="font-mono text-xs tabular-nums text-foreground/60">
-                  {formatCHF(Number(m.prixUnitaireCHF))}
-                  <span className="text-foreground/40">/{MATERIEL_UNITE_LABEL[m.unite]}</span>
-                </span>
+            </div>
+            <div className="mx-auto mt-2 flex max-w-3xl flex-wrap gap-1.5">
+              <button
+                type="button"
+                onClick={() => setFiltreCat(null)}
+                className={`rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${
+                  filtreCat === null
+                    ? "border-green bg-green text-white"
+                    : "border-border bg-background text-foreground/60 hover:text-foreground"
+                }`}
+              >
+                Toutes
+              </button>
+              {CATEGORIES_ORDER.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => setFiltreCat(filtreCat === c ? null : c)}
+                  className={`rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${
+                    filtreCat === c
+                      ? "border-green bg-green text-white"
+                      : "border-border bg-background text-foreground/60 hover:text-foreground"
+                  }`}
+                >
+                  {MATERIEL_CATEGORIE_LABEL[c]}
+                </button>
+              ))}
+            </div>
+          </header>
+
+          <div className="flex-1 overflow-y-auto">
+            <div className="mx-auto max-w-3xl px-3 py-3 sm:px-4">
+              {/* Option "Aucun matériel" en tête */}
+              <button
+                type="button"
+                onClick={() => {
+                  onChange("", null);
+                  setOpen(false);
+                }}
+                className={`mb-2 flex w-full items-center justify-between rounded-xl border-2 px-4 py-3 text-left transition-colors ${
+                  value === ""
+                    ? "border-foreground/30 bg-muted font-medium"
+                    : "border-dashed border-border bg-background hover:bg-muted/50"
+                }`}
+              >
+                <span className="text-sm text-foreground/70">Aucun matériel précis</span>
+                {value === "" && <Check className="h-5 w-5 text-foreground/60" />}
+              </button>
+
+              {allMateriels.isLoading ? (
+                <p className="py-8 text-center text-sm text-foreground/60">Chargement…</p>
+              ) : filtered.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-border bg-muted/20 p-10 text-center">
+                  <p className="text-sm text-foreground/60">
+                    {query
+                      ? `Aucun matériel ne correspond à « ${query} ».`
+                      : "Aucun matériel dans cette catégorie."}
+                  </p>
+                </div>
               ) : (
-                <span className="text-xs text-foreground/40">tarif libre</span>
+                <ul className="divide-y divide-border rounded-2xl border border-border bg-background">
+                  {filtered.map((m) => (
+                    <li key={m.id}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onChange(m.id, m);
+                          setOpen(false);
+                        }}
+                        className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/30"
+                      >
+                        <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-muted">
+                          <Wrench className="h-4 w-4" />
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="truncate text-sm font-semibold">{m.libelle}</span>
+                            {m.id === value && (
+                              <Check
+                                className="h-4 w-4 shrink-0 text-green"
+                                aria-label="Sélectionné"
+                              />
+                            )}
+                          </div>
+                          <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-foreground/60">
+                            <span>{MATERIEL_CATEGORIE_LABEL[m.categorie]}</span>
+                            {m.notes && <span>· {m.notes}</span>}
+                          </div>
+                        </div>
+                        {m.prixUnitaireCHF ? (
+                          <span className="shrink-0 font-mono text-xs tabular-nums text-foreground/70">
+                            {formatCHF(Number(m.prixUnitaireCHF))}
+                            <span className="text-foreground/40">
+                              /{MATERIEL_UNITE_LABEL[m.unite]}
+                            </span>
+                          </span>
+                        ) : (
+                          <span className="shrink-0 text-xs text-foreground/40">tarif libre</span>
+                        )}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
               )}
-            </button>
-          );
-        })}
-      </div>
-    </div>
+              <p className="mt-3 text-center text-[11px] text-foreground/50">
+                {filtered.length} matériel{filtered.length > 1 ? "s" : ""}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }

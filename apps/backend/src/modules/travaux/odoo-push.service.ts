@@ -41,10 +41,18 @@ export interface PushTravailResult {
 }
 
 interface OdooSaleOrderLineCreate {
-  product_id: number;
+  product_id?: number;
   name?: string;
-  product_uom_qty: number;
+  product_uom_qty?: number;
   price_unit?: number;
+  /** Unité de mesure Odoo (uom.uom). Si absent, Odoo prend l'unité par défaut du produit. */
+  product_uom?: number;
+  /**
+   * "line_section" pour un titre de section, "line_note" pour une note
+   * libre. Si renseigné, Odoo n'attend ni product_id ni quantité —
+   * c'est juste un séparateur visuel dans le devis.
+   */
+  display_type?: "line_section" | "line_note";
 }
 
 interface ResPartnerRow {
@@ -54,6 +62,8 @@ interface ResPartnerRow {
 interface ProductProductRow {
   id: number;
   type?: "service" | "consu" | "product";
+  /** True = "Dépense refacturée" — bloque sale_line_id sur project.task. */
+  expense_policy?: string | false;
 }
 
 @Injectable()
@@ -63,6 +73,10 @@ export class OdooPushService {
   // Cache mémoire (par process) du product.product "Heure de travail"
   // résolu/créé par tenant. Évite d'aller le rechercher à chaque push.
   private readonly hourProductCache = new Map<string, number>();
+
+  // Cache mémoire du mapping uom (string → uom_id) par tenant. Évite
+  // de relire uom.uom à chaque ligne. Clé : `${tenantId}:${uomLabelNormalized}`.
+  private readonly uomIdCache = new Map<string, number>();
 
   // Cache mémoire du project.project "Agri Qodo — Carnet des champs"
   // résolu/créé par tenant. Sert de container aux project.task créées
@@ -153,7 +167,12 @@ export class OdooPushService {
 
     // 1. Résolution / création du res.partner (client) ----------------
     let partnerId: number | undefined;
-    if (travail.partenaireId && travail.partenaire) {
+    // Décision Fabien 2026-05-06 : si Travail.odooPartnerId est posé,
+    // c'est un client Odoo "seul" (pas un partenaire Agri Qodo) — on
+    // l'utilise directement, pas de lookup PartnerLink.
+    if (travail.odooPartnerId) {
+      partnerId = travail.odooPartnerId;
+    } else if (travail.partenaireId && travail.partenaire) {
       const link = await this.prisma.partnerLink.findFirst({
         where: {
           OR: [
@@ -223,6 +242,35 @@ export class OdooPushService {
     // lignes côté FSM si on en crée une.
     const physicalLines: { productId: number; qty: number; name: string }[] = [];
 
+    // 2pre-section. Section en tête du devis avec date des travaux et
+    // nom de la parcelle (demande Fabien 2026-05-06). Permet à
+    // l'agriculteur et au client de voir d'un coup d'œil "à quoi
+    // correspond ce devis" sans aller fouiller dans la note ou la
+    // référence client.
+    const dateLabel = travail.date.toLocaleDateString("fr-CH");
+    const parcelleNom = travail.parcelle?.nom ?? null;
+    const sectionTitle = parcelleNom
+      ? `Travaux du ${dateLabel} — ${parcelleNom}`
+      : `Travaux du ${dateLabel}`;
+    orderLines.push({
+      display_type: "line_section",
+      name: sectionTitle,
+    });
+
+    // Décision Fabien 2026-05-06 : ne PAS ajouter de ligne placeholder
+    // "Main d'œuvre" sur le devis — il n'en veut pas car non facturable
+    // donc inutile pour le client. Conséquences :
+    //   - Le devis ne contient que la section + les vraies lignes
+    //     facturables (matériel à l'ha).
+    //   - sale_line_id reste best-effort : la task sera liée à la 1re
+    //     ligne facturable si Odoo l'accepte, sinon "Non facturable"
+    //     (cas produits is_expense). Le smart button "Devis" reste
+    //     visible via sale_order_id.
+    //   - Les heures pointées remontent quand même sur la task via
+    //     account.analytic.line direct (project_id + task_id), pas
+    //     via sale_line_id — donc "Temps passé" non nul.
+    const hourProductId = await this.ensureHourProductId(client, tenantId);
+
     // 2a. Lignes produit
     for (const lp of travail.lignesProduit) {
       let productId: number | undefined = lp.produit?.odooProductId ?? undefined;
@@ -259,9 +307,24 @@ export class OdooPushService {
         const got = await client.searchRead<ProductProductRow>(
           "product.product",
           [["id", "=", productId]],
-          { fields: ["id", "type"], limit: 1 },
+          { fields: ["id", "type", "expense_policy"], limit: 1 },
         );
         productType = got[0]?.type;
+
+        // Désactive expense_policy si "no" attendu — sinon Odoo
+        // empêche la liaison sale_line_id↔project.task ("dépense
+        // refacturée"). Best-effort : si Odoo refuse le write
+        // (ACL), on continue, le smart button manquera mais le
+        // devis sera créé.
+        if (got[0] && got[0].expense_policy && got[0].expense_policy !== "no") {
+          await client
+            .write("product.product", [productId], { expense_policy: "no" })
+            .catch((err) =>
+              this.logger.warn(
+                `Désactivation expense_policy sur product #${productId} échouée : ${err instanceof Error ? err.message : err}`,
+              ),
+            );
+        }
       }
       const line: OdooSaleOrderLineCreate = {
         product_id: productId,
@@ -269,6 +332,11 @@ export class OdooPushService {
         product_uom_qty: Number(lp.quantite),
       };
       if (lp.prixUnitaireCHF) line.price_unit = Number(lp.prixUnitaireCHF);
+      // Unité de mesure : on essaie de mapper lp.unite ("ha", "kg", "L"…)
+      // vers un uom.uom Odoo. Si non résolu, Odoo prend l'unité par
+      // défaut du produit (souvent "Unité(s)" — pas idéal pour des ha).
+      const uomId = await this.resolveUomId(client, tenantId, lp.unite);
+      if (uomId) line.product_uom = uomId;
       orderLines.push(line);
       // Routage FSM : seuls les produits "biens" (consu/product) — pas
       // les services — alimentent la future industry.fsm.task. Si
@@ -284,40 +352,22 @@ export class OdooPushService {
       }
     }
 
-    // 2b. Lignes heures : produit "Main d'œuvre" générique par tenant
-    if (travail.lignesHeure.length > 0) {
-      let hourProductId = this.hourProductCache.get(tenantId);
-      if (!hourProductId) {
-        const found = await client.searchRead<ProductProductRow>(
-          "product.product",
-          [
-            ["name", "=", "Main d'œuvre (Agri Qodo)"],
-            ["type", "=", "service"],
-          ],
-          { fields: ["id"], limit: 1 },
-        );
-        if (found.length > 0 && found[0]) {
-          hourProductId = found[0].id;
-        } else {
-          hourProductId = await client.create("product.product", {
-            name: "Main d'œuvre (Agri Qodo)",
-            type: "service",
-            list_price: 0,
-          });
-          productsCreated++;
-        }
-        this.hourProductCache.set(tenantId, hourProductId);
-      }
-      for (const lh of travail.lignesHeure) {
-        const heures = Number(lh.dureeMinutes) / 60;
-        const line: OdooSaleOrderLineCreate = {
-          product_id: hourProductId,
-          name: lh.notes ?? `Travail (${heures.toFixed(2)}h)`,
-          product_uom_qty: heures,
-        };
-        if (lh.tauxHoraireCHF) line.price_unit = Number(lh.tauxHoraireCHF);
-        orderLines.push(line);
-      }
+    // 2b. Lignes heures saisies dans Agri Qodo (LigneTravailHeure).
+    // Décision Fabien 2026-05-06 : ne PAS afficher la main d'œuvre
+    // dans le devis quand elle n'est pas facturable (tauxHoraireCHF
+    // null/0). On garde la ligne uniquement si l'agriculteur a
+    // explicitement saisi un taux horaire (= il VEUT la facturer).
+    // Les heures non facturables remontent quand même côté task via
+    // account.analytic.line direct (cf push timesheet plus bas).
+    for (const lh of travail.lignesHeure) {
+      if (!lh.tauxHoraireCHF || Number(lh.tauxHoraireCHF) <= 0) continue;
+      const heures = Number(lh.dureeMinutes) / 60;
+      orderLines.push({
+        product_id: hourProductId,
+        name: lh.notes ?? `Travail (${heures.toFixed(2)}h)`,
+        product_uom_qty: heures,
+        price_unit: Number(lh.tauxHoraireCHF),
+      });
     }
 
     // 3. Création du sale.order brouillon -------------------------------
@@ -345,6 +395,175 @@ export class OdooPushService {
       data: { odooSaleOrderId: saleOrderId },
     });
 
+    // 4.5. Sprint D prestations v0.3 §5.4 — création d'une project.task
+    // standard liée au sale.order quand le tenant a configuré son projet
+    // Travaux pour tiers dans /parametres/exploitation. Best-effort :
+    // un échec ici ne casse pas le push sale.order. Permet de retrouver
+    // le travail dans la vue projet Odoo et de le visualiser comme une
+    // intervention terrain (sans dépendre d'industry_fsm).
+    let projectTaskId: number | null = null;
+    try {
+      const tenantProject = await this.prisma.exploitation.findUnique({
+        where: { id: tenantId },
+        select: {
+          odooProjectIdTravauxTiers: true,
+          odooProjectIdCarnetTiers: true,
+        },
+      });
+      // Décision Fabien 2026-05-06 : un Travail issu d'une Intervention
+      // Carnet (cas B parcelle partenaire ou cas C client Odoo)
+      // appartient au projet "Carnet des champs tiers". Un Travail
+      // saisi explicitement via /travaux/new appartient à "Travaux
+      // pour tiers". On se base sur la présence d'une intervention
+      // liée pour distinguer les 2 cas.
+      const isFromCarnet = !!(await this.prisma.intervention.findFirst({
+        where: { linkedTravailId: travailId },
+        select: { id: true },
+      }));
+      const targetProjectId = isFromCarnet
+        ? (tenantProject?.odooProjectIdCarnetTiers ?? tenantProject?.odooProjectIdTravauxTiers)
+        : tenantProject?.odooProjectIdTravauxTiers;
+      if (targetProjectId) {
+        // Active allow_billable et allow_timesheets sur le projet (one-time
+        // idempotent) — sans ces flags, Odoo masque le smart button
+        // "Devis" sur la task même si sale_order_id est posé. Best-effort.
+        try {
+          await client.write("project.project", [targetProjectId], {
+            allow_billable: true,
+            allow_timesheets: true,
+          });
+        } catch (err) {
+          this.logger.warn(
+            `Impossible d'activer allow_billable sur projet #${targetProjectId} : ${err instanceof Error ? err.message : err}`,
+          );
+        }
+
+        // Création de la project.task. On pose sale_order_id pour que
+        // le smart button natif Odoo "Commande client" apparaisse en
+        // haut à droite de la fiche task (le projet ayant
+        // allow_billable=True activé juste avant). Pas de description
+        // custom — on laisse Odoo gérer son UI native.
+        projectTaskId = await client.create("project.task", {
+          name: travail.titre,
+          project_id: targetProjectId,
+          partner_id: partnerId,
+          date_deadline: travail.date.toISOString().slice(0, 10),
+          sale_order_id: saleOrderId,
+        });
+
+        // Pour faire apparaître le smart button "Commande client" sur
+        // la task (compute sale_order_count Odoo), on pose task_id
+        // côté sale.order.line — c'est l'inverse de sale_line_id sur
+        // task, et plus toléré par Odoo quand le produit est
+        // is_expense=true (la contrainte "dépense refacturée" est
+        // testée seulement quand on assigne sale_line_id à la task,
+        // pas quand on assigne task_id à la ligne).
+        try {
+          const lines = await client.searchRead<{ id: number }>(
+            "sale.order.line",
+            [
+              ["order_id", "=", saleOrderId],
+              ["display_type", "=", false],
+            ],
+            { fields: ["id"], order: "sequence,id" },
+          );
+          for (const ln of lines) {
+            // ligne par ligne best-effort — si une ligne refuse
+            // (rare), on continue avec les autres.
+            await client
+              .write("sale.order.line", [ln.id], { task_id: projectTaskId })
+              .catch(() => undefined);
+          }
+        } catch (err) {
+          this.logger.warn(
+            `task_id non posé sur les lignes du devis ${saleOrderId} (task #${projectTaskId} créée OK) : ${err instanceof Error ? err.message : err}`,
+          );
+        }
+
+        // Liaison bidirectionnelle (tasks_ids est Many2many côté sale.order).
+        // Cette write force aussi le recompute de sale_order_count côté
+        // task, ce qui rend visible le smart button "Commande client".
+        await client.write("sale.order", [saleOrderId], {
+          tasks_ids: [[4, projectTaskId, 0]],
+        });
+
+        // Force le recompute de sale_order_count en réécrivant
+        // sale_order_id sur la task (Odoo ne déclenche pas toujours
+        // le compute sur le create, surtout avec les @api.depends
+        // qui pointent vers sale.order.line.task_id).
+        await client
+          .write("project.task", [projectTaskId], { sale_order_id: saleOrderId })
+          .catch(() => undefined);
+
+        // Diagnostic : on lit sale_order_count + sale_line_id pour
+        // savoir côté serveur si le smart button "Commande client"
+        // sera visible côté UI Odoo.
+        try {
+          const probe = await client.searchRead<{
+            id: number;
+            sale_order_count?: number;
+            sale_order_id?: [number, string] | false;
+            sale_line_id?: [number, string] | false;
+          }>("project.task", [["id", "=", projectTaskId]], {
+            fields: ["id", "sale_order_count", "sale_order_id", "sale_line_id"],
+            limit: 1,
+          });
+          const t = probe[0];
+          if (t) {
+            this.logger.log(
+              `Task #${projectTaskId} probe : sale_order_count=${t.sale_order_count ?? "?"} sale_order_id=${
+                Array.isArray(t.sale_order_id) ? t.sale_order_id[0] : t.sale_order_id
+              } sale_line_id=${Array.isArray(t.sale_line_id) ? t.sale_line_id[0] : t.sale_line_id}`,
+            );
+          }
+        } catch {
+          // diagnostic best-effort
+        }
+
+        await this.prisma.travail.update({
+          where: { id: travailId },
+          data: { odooTaskId: projectTaskId },
+        });
+        this.logger.log(
+          `project.task #${projectTaskId} créée pour travail ${travailId} ↔ sale.order #${saleOrderId} (projet #${targetProjectId})`,
+        );
+
+        // Push des feuilles de temps : pour chaque LigneTravailHeure,
+        // on crée un account.analytic.line (= timesheet) sur la task,
+        // ce qui remplit "Temps passé" côté Odoo. Best-effort : si la
+        // table n'existe pas ou le mapping employé manque, on log et
+        // on continue. Si User.odooEmployeeId mappé, on l'utilise ;
+        // sinon Odoo prendra l'employé associé au compte API.
+        for (const lh of travail.lignesHeure) {
+          try {
+            const heures = Number(lh.dureeMinutes) / 60;
+            // Lookup employé Odoo si User a un odooEmployeeId mappé.
+            const userRow = await this.prisma.user.findUnique({
+              where: { id: lh.user.id },
+              select: { odooEmployeeId: true },
+            });
+            const employeeId = userRow?.odooEmployeeId ?? undefined;
+            await client.create("account.analytic.line", {
+              name: lh.notes ?? travail.titre,
+              date: travail.date.toISOString().slice(0, 10),
+              unit_amount: heures,
+              project_id: targetProjectId,
+              task_id: projectTaskId,
+              ...(employeeId ? { employee_id: employeeId } : {}),
+            });
+          } catch (err) {
+            this.logger.warn(
+              `Timesheet non créé sur task #${projectTaskId} : ${err instanceof Error ? err.message : err}`,
+            );
+          }
+        }
+      }
+    } catch (err) {
+      this.logger.warn(
+        `Création project.task best-effort échouée pour travail ${travailId} : ${err instanceof Error ? err.message : err}`,
+      );
+    }
+
     // 5. Création optionnelle de la industry.fsm.task ------------------
     // Si au moins une ligne physique ET le module FSM est installé,
     // on crée une tâche Field Service liée au sale.order. Permet à
@@ -371,8 +590,8 @@ export class OdooPushService {
 
     this.logger.log(
       `Push Odoo OK : travail ${travailId} → sale.order #${saleOrderId} (${orderLines.length} lignes)${
-        odooFsmTaskId ? ` + fsm.task #${odooFsmTaskId}` : ""
-      }`,
+        projectTaskId ? ` + project.task #${projectTaskId}` : ""
+      }${odooFsmTaskId ? ` + fsm.task #${odooFsmTaskId}` : ""}`,
     );
 
     return {
@@ -491,6 +710,92 @@ export class OdooPushService {
   }
 
   /**
+   * Résout l'ID uom.uom Odoo correspondant à une string métier ("ha",
+   * "kg", "L", "t", "m³"…). Cache par tenant. Lookup tolérant à la
+   * casse via name=ilike. Renvoie undefined si pas trouvé (Odoo
+   * utilisera l'unité par défaut du produit).
+   *
+   * Demande Fabien 2026-05-06 : "l'unité est fausse alors que sur
+   * agri qodo elle est juste". Avant ce helper, le push n'envoyait
+   * pas product_uom et Odoo prenait "Unité(s)" même pour des ha/kg.
+   */
+  private async resolveUomId(
+    client: OdooClient,
+    tenantId: string,
+    uomLabel: string | null | undefined,
+  ): Promise<number | undefined> {
+    if (!uomLabel) return undefined;
+    const normalized = uomLabel.trim().toLowerCase();
+    if (!normalized) return undefined;
+    const cacheKey = `${tenantId}:${normalized}`;
+    const cached = this.uomIdCache.get(cacheKey);
+    if (cached !== undefined) return cached;
+
+    // Synonymes courants côté Odoo FR pour matcher correctement même
+    // quand l'agriculteur a saisi en minuscules ou avec/sans accent.
+    const candidates: string[] = [uomLabel.trim()];
+    const synonyms: Record<string, string[]> = {
+      ha: ["ha", "Hectare", "hectares"],
+      kg: ["kg", "Kg", "Kilogramme", "kilogrammes"],
+      g: ["g", "Gramme", "grammes"],
+      t: ["t", "Tonne", "tonnes"],
+      l: ["L", "l", "Litre", "litres"],
+      m3: ["m³", "m3", "Mètre cube", "mètres cubes"],
+      "m³": ["m³", "m3", "Mètre cube"],
+      dose: ["dose", "Dose", "doses"],
+      unite: ["Unité(s)", "Unité", "unit"],
+      heure: ["Heures", "heure", "h"],
+    };
+    if (synonyms[normalized]) candidates.push(...synonyms[normalized]);
+
+    for (const candidate of candidates) {
+      const found = await client.searchRead<{ id: number }>(
+        "uom.uom",
+        [["name", "=ilike", candidate]],
+        { fields: ["id"], limit: 1 },
+      );
+      if (found.length > 0 && found[0]) {
+        this.uomIdCache.set(cacheKey, found[0].id);
+        return found[0].id;
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * Trouve ou crée le product.product service "Main d'œuvre (Agri Qodo)"
+   * pour le tenant. Sert à deux usages :
+   *   - lignes d'heures saisies dans Agri Qodo (LigneTravailHeure)
+   *   - ligne placeholder "Suivi des heures" en tête du sale.order
+   *     (ancrage sale_line_id de la project.task)
+   * Cache mémoire pour éviter le lookup répété.
+   */
+  private async ensureHourProductId(client: OdooClient, tenantId: string): Promise<number> {
+    const cached = this.hourProductCache.get(tenantId);
+    if (cached) return cached;
+    const found = await client.searchRead<ProductProductRow>(
+      "product.product",
+      [
+        ["name", "=", "Main d'œuvre (Agri Qodo)"],
+        ["type", "=", "service"],
+      ],
+      { fields: ["id"], limit: 1 },
+    );
+    let productId: number;
+    if (found.length > 0 && found[0]) {
+      productId = found[0].id;
+    } else {
+      productId = await client.create("product.product", {
+        name: "Main d'œuvre (Agri Qodo)",
+        type: "service",
+        list_price: 0,
+      });
+    }
+    this.hourProductCache.set(tenantId, productId);
+    return productId;
+  }
+
+  /**
    * Trouve ou crée le project.project conteneur des travaux internes
    * pour le tenant. Cache mémoire pour éviter le lookup répété.
    */
@@ -498,6 +803,18 @@ export class OdooPushService {
     const cacheKey = `internal:${tenantId}`;
     const cached = this.carnetProjectCache.get(cacheKey);
     if (cached) return cached;
+
+    // Sprint B prestations v0.3 §2 : si l'OWNER a configuré le projet
+    // Odoo Carnet interne, on le réutilise pour les Travaux internes
+    // (même rôle métier : tâche sans devis). Sinon fallback historique.
+    const tenant = await this.prisma.exploitation.findUnique({
+      where: { id: tenantId },
+      select: { odooProjectIdCarnetInterne: true },
+    });
+    if (tenant?.odooProjectIdCarnetInterne) {
+      this.carnetProjectCache.set(cacheKey, tenant.odooProjectIdCarnetInterne);
+      return tenant.odooProjectIdCarnetInterne;
+    }
 
     const projectName = "Agri Qodo — Travaux internes";
     const found = await client.searchRead<{ id: number }>(
@@ -757,6 +1074,19 @@ export class OdooPushService {
   private async ensureCarnetProject(client: OdooClient, tenantId: string): Promise<number> {
     const cached = this.carnetProjectCache.get(tenantId);
     if (cached) return cached;
+
+    // Sprint B prestations v0.3 §2 : si l'OWNER a configuré le projet
+    // Odoo cible pour le Carnet interne dans Paramètres → Exploitation,
+    // on l'utilise. Sinon fallback sur l'auto-creation historique pour
+    // ne pas casser les tenants pré-Sprint B.
+    const tenant = await this.prisma.exploitation.findUnique({
+      where: { id: tenantId },
+      select: { odooProjectIdCarnetInterne: true },
+    });
+    if (tenant?.odooProjectIdCarnetInterne) {
+      this.carnetProjectCache.set(tenantId, tenant.odooProjectIdCarnetInterne);
+      return tenant.odooProjectIdCarnetInterne;
+    }
 
     const projectName = "Agri Qodo — Carnet des champs";
     const found = await client.searchRead<{ id: number }>(

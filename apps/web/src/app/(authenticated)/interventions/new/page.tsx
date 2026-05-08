@@ -15,6 +15,7 @@ import {
   HeuresSimplesInput,
   type HeuresSimplesValue,
 } from "@/components/activites/heures-simples-input";
+import { extractApiErrorMessage } from "@/lib/api-client";
 import { useTenantDetail } from "@/lib/tenants";
 import { useUsers } from "@/lib/users";
 import { Button } from "@/components/ui/button";
@@ -22,7 +23,7 @@ import { Input } from "@/components/ui/input";
 import { MaterielPicker } from "@/components/ui/materiel-picker";
 import { ParcelleSearchSelect } from "@/components/ui/parcelle-search-select";
 import { PartenaireSelect } from "@/components/ui/partenaire-select";
-import { ProduitSearchSelect } from "@/components/ui/produit-search-select";
+import { ProduitFullscreenPicker } from "@/components/ui/produit-fullscreen-picker";
 import {
   emojiType,
   type InterventionGeoJsonPolygon,
@@ -208,7 +209,21 @@ export default function NewInterventionPage() {
     // Note : on ne touche pas `toutLeChamp` ici — l'effet
     // selectedParcelleId le reset à true. L'utilisateur peut décocher
     // s'il veut modifier la sous-zone partielle.
-  }, [isEditMode, existingIntervention.data, loadedId, reset]);
+    //
+    // Pré-remplir le sélecteur Client à partir de la parcelle de
+    // l'intervention :
+    // - cas A (parcelle perso) → pas de client
+    // - cas B (parcelle d'un partenaire) → clientId = parcelle.tenantId
+    // - cas C (parcelle d'un client Odoo) → clientOdooId = parcelle.odooPartnerId
+    const accessible = accessiblesParcelles.data?.find((p) => p.id === iv.parcelleId);
+    if (accessible) {
+      if (!accessible.isOwn) {
+        setClientId(accessible.tenantId);
+      } else if (accessible.odooPartnerId) {
+        setClientOdooId(accessible.odooPartnerId);
+      }
+    }
+  }, [isEditMode, existingIntervention.data, loadedId, reset, accessiblesParcelles.data]);
 
   const selectedType = useWatch({ control, name: "type" });
   const selectedProduitId = useWatch({ control, name: "produitId" });
@@ -257,7 +272,12 @@ export default function NewInterventionPage() {
   // Client choisi en haut du formulaire — sert à filtrer les parcelles
   // visibles dans le ParcelleSearchSelect (UX "trouver vite la bonne parcelle").
   // Pas persisté côté serveur : le tenantId effectif vient de la parcelle.
+  // Carnet : 2 sélections distinctes possibles dans le sélecteur Client.
+  // - clientId (UUID Exploitation) → filtre les parcelles à celles du client.
+  // - clientOdooId (Int) → simple mémorisation, pas de filtre parcelles
+  //   (un client Odoo "seul" n'a pas de parcelles côté Agri Qodo).
   const [clientId, setClientId] = useState("");
+  const [clientOdooId, setClientOdooId] = useState<number | null>(null);
 
   const [toutLeChamp, setToutLeChamp] = useState(true);
   // Mode de saisie de la sous-zone : numérique (m² entré au clavier) ou
@@ -511,14 +531,20 @@ export default function NewInterventionPage() {
             hint="Si renseigné, filtre les parcelles à celles du client. Laisse vide pour tes parcelles."
           >
             <PartenaireSelect
-              value={clientId}
-              onChange={(id) => {
-                setClientId(id);
-                // Reset parcelle si on change de client (sinon l'ID
-                // sélectionné peut ne plus matcher la liste filtrée).
-                setValue("parcelleId", "");
+              value={{
+                ...(clientId ? { partenaireId: clientId } : {}),
+                ...(clientOdooId ? { odooPartnerId: clientOdooId } : {}),
               }}
-              placeholder="Choisir un client lié…"
+              onChange={(next) => {
+                setClientId(next.partenaireId ?? "");
+                setClientOdooId(next.odooPartnerId ?? null);
+                // Reset parcelle uniquement si on change de partenaire Agri Qodo
+                // (les clients Odoo "seuls" n'ont pas de parcelles à filtrer).
+                if (next.partenaireId !== clientId) {
+                  setValue("parcelleId", "");
+                }
+              }}
+              placeholder="Choisir un client…"
             />
           </Field>
 
@@ -532,7 +558,11 @@ export default function NewInterventionPage() {
                   onChange={(id) => onChange(id)}
                   required
                   disabled={noParcelles}
-                  {...(clientId ? { filtreTenantId: clientId } : {})}
+                  {...(clientId
+                    ? { filtreTenantId: clientId }
+                    : clientOdooId
+                      ? { filtreOdooPartnerId: clientOdooId }
+                      : {})}
                 />
               )}
             />
@@ -647,8 +677,7 @@ export default function NewInterventionPage() {
                 control={control}
                 name="produitId"
                 render={({ field: { value, onChange } }) => (
-                  <ProduitSearchSelect
-                    categorie={categorie}
+                  <ProduitFullscreenPicker
                     value={value ?? ""}
                     onChange={(id) => onChange(id)}
                     placeholder={
@@ -656,7 +685,7 @@ export default function NewInterventionPage() {
                         ? "Choisir une semence…"
                         : "Choisir un produit du catalogue…"
                     }
-                    required={selectedType === "SEMIS"}
+                    defaultCategorie={categorie}
                   />
                 )}
               />
@@ -879,8 +908,9 @@ export default function NewInterventionPage() {
 
           {(createMutation.isError || updateMutation.isError) && (
             <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
-              {isEditMode ? "Modification impossible" : "Saisie impossible"}. Vérifie les valeurs et
-              réessaie.
+              <strong>{isEditMode ? "Modification impossible" : "Saisie impossible"} :</strong>{" "}
+              {extractApiErrorMessage(createMutation.error ?? updateMutation.error) ??
+                "Vérifie les valeurs et réessaie."}
             </div>
           )}
 

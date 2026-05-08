@@ -1,11 +1,13 @@
 import { ApiPropertyOptional } from "@nestjs/swagger";
 import {
   IsBoolean,
+  IsInt,
   IsOptional,
   IsString,
   IsUUID,
   Matches,
   MaxLength,
+  Min,
   MinLength,
 } from "class-validator";
 
@@ -116,4 +118,29 @@ export class UpdateTenantDto {
   @IsOptional()
   @IsUUID()
   projetHeuresTravauxInterneId?: string | null;
+
+  // ----- Sprint B prestations v0.3 §2 — projets Odoo cibles -----------
+  @ApiPropertyOptional({
+    description: "ID Odoo project.project — cible Travaux pour tiers.",
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  odooProjectIdTravauxTiers?: number | null;
+
+  @ApiPropertyOptional({
+    description: "ID Odoo project.project — cible Carnet des champs avec client.",
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  odooProjectIdCarnetTiers?: number | null;
+
+  @ApiPropertyOptional({
+    description: "ID Odoo project.project — cible Carnet des champs interne.",
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  odooProjectIdCarnetInterne?: number | null;
 }

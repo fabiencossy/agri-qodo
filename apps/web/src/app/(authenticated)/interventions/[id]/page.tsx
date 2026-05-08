@@ -3,6 +3,7 @@
 import { Calendar, Check, MapPin, Sprout, Trash2, X } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
+import { useEffect } from "react";
 import { Breadcrumb } from "@/components/app/breadcrumb";
 import { DetailHeader } from "@/components/app/detail-header";
 import {
@@ -23,6 +24,17 @@ export default function InterventionDetailPage() {
   const validate = useValidateIntervention();
   const reject = useRejectIntervention();
   const del = useDeleteIntervention();
+
+  // Si l'intervention a un Travail lié (cas B parcelle partenaire ou
+  // cas C client Odoo), on redirige vers la fiche Travail qui est
+  // plus complète (produits, heures, total CHF, devis Odoo). Décision
+  // Fabien 2026-05-06 : "j'ai tjs cette page" — la page intervention
+  // minimaliste (Parcelle/Date/Matériel) n'apportait rien de plus
+  // que la fiche Travail.
+  useEffect(() => {
+    const id = intervention.data?.linkedTravailId;
+    if (id) router.replace(`/travaux/${id}` as never);
+  }, [intervention.data?.linkedTravailId, router]);
 
   if (intervention.isLoading) {
     return (
