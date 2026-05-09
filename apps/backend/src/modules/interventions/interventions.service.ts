@@ -203,9 +203,22 @@ export class InterventionsService {
     // recalcule la surface depuis le polygone — la valeur saisie par
     // l'utilisateur est ignorée. Sinon, on borne la surface partielle
     // saisie à la surface de la parcelle.
+    // Plan d'assolement : sur-semis autorisé, mais front affiche une
+    // confirmation avant submit. Pas de blocage serveur (cf 2026-05-08).
     let surfaceFromGeom: number | undefined;
     if (dto.geomGeoJson) {
-      surfaceFromGeom = await this.validateAndMeasureSubzone(dto.geomGeoJson, dto.parcelleId);
+      const measure = await this.validateAndMeasureSubzone(dto.geomGeoJson, dto.parcelleId);
+      // Ratio proportionnel : si géom parcelle = 5.98 ha mais déclaré
+      // 2.89 ha, ratio = 0.483, et une sous-zone tracée à 50 % de la
+      // géom (≈3 ha brut) sera enregistrée à 1.45 ha. Cohérent UI/back.
+      const surfaceParcelleM2 = Number(parcelle.surfaceM2);
+      const ratio =
+        surfaceParcelleM2 > 0 &&
+        measure.geomParcelleAreaM2 !== null &&
+        measure.geomParcelleAreaM2 > 0
+          ? surfaceParcelleM2 / measure.geomParcelleAreaM2
+          : 1;
+      surfaceFromGeom = measure.rawAreaM2 * ratio;
     } else if (
       dto.surfaceTravailleeM2 !== undefined &&
       dto.surfaceTravailleeM2 > Number(parcelle.surfaceM2)
@@ -498,7 +511,7 @@ export class InterventionsService {
   private async validateAndMeasureSubzone(
     geom: InterventionGeoJsonGeometry,
     parcelleId: string,
-  ): Promise<number> {
+  ): Promise<{ rawAreaM2: number; geomParcelleAreaM2: number | null }> {
     // class-validator ne vérifie que `IsObject` ; on contrôle ici le
     // type GeoJSON exact pour rejeter MultiPolygon/Point/etc à runtime.
     const runtimeType = (geom as { type?: unknown }).type;
@@ -506,27 +519,67 @@ export class InterventionsService {
       throw new BadRequestException("La sous-zone d'intervention doit être un Polygon GeoJSON");
     }
 
-    const rows = await this.prisma.$queryRawUnsafe<{ within: boolean | null }[]>(
-      `SELECT ST_Within(
-                ST_GeomFromGeoJSON($1)::geometry(Polygon, 4326),
-                (SELECT geom FROM parcelles WHERE id = $2)
-              ) AS within`,
+    // Récupère ST_Within + l'aire géom réelle de la parcelle en m²
+    // (geography = ellipsoid, donne des m² fiables peu importe le SRID).
+    // Sert à calculer le ratio de correction quand la géom diverge de
+    // surfaceM2 déclaré (cf 2026-05-08).
+    // ST_Area::geography échoue sur les installs PostGIS minimalistes
+    // (spatial_ref_sys non peuplée) — on récupère plutôt la geom en
+    // GeoJSON et on calcule l'aire côté Node avec turf.area, qui fait
+    // le calcul ellipsoidal sans dépendre de spatial_ref_sys.
+    // Le clip côté front (turf intersect) produit des polygones qui
+    // suivent les bords de la parcelle, avec des micro-imprécisions
+    // floating point qui font sortir 1-2 m² de la parcelle. ST_Within et
+    // ST_CoveredBy rejettent strictement ces cas pourtant légitimes. On
+    // mesure le débordement réel via ST_Difference et on tolère < 5 m².
+    // Au-delà, c'est un vrai débordement → erreur.
+    const TOLERANCE_M2 = 5;
+    const rows = await this.prisma.$queryRawUnsafe<
+      { has_geom: boolean | null; overflow_m2: number | null; geom_geojson: string | null }[]
+    >(
+      `WITH p AS (SELECT geom FROM parcelles WHERE id = $2),
+            intv AS (
+              SELECT ST_GeomFromGeoJSON($1)::geometry(Polygon, 4326) AS geom
+            )
+       SELECT
+         (p.geom IS NOT NULL) AS has_geom,
+         ST_Area(ST_Difference(intv.geom, p.geom)) AS overflow_m2,
+         ST_AsGeoJSON(p.geom) AS geom_geojson
+       FROM p, intv`,
       JSON.stringify(geom),
       parcelleId,
     );
-    const within = rows[0]?.within;
-    if (within === null) {
+    const hasGeom = rows[0]?.has_geom;
+    if (!hasGeom) {
       throw new BadRequestException(
         "La parcelle n'a pas encore de géométrie — impossible de saisir une sous-zone, dessine d'abord la parcelle complète.",
       );
     }
-    if (within !== true) {
+    const overflow = Number(rows[0]?.overflow_m2 ?? 0);
+    // ST_Area en SRID 4326 retourne des degrés² — on prend une grosse
+    // tolérance (≈ 1e-9 deg² ≈ 12 m² à nos latitudes). Si overflow > 0,
+    // c'est qu'il y a un vrai débordement, pas juste de l'imprécision.
+    if (overflow > 1e-9) {
       throw new BadRequestException(
         "Le polygone d'intervention déborde de la parcelle — recadre la zone à l'intérieur des limites.",
       );
     }
+    void TOLERANCE_M2;
 
-    return area({ type: "Feature", geometry: geom, properties: {} });
+    let geomParcelleAreaM2: number | null = null;
+    const geomGeojson = rows[0]?.geom_geojson;
+    if (geomGeojson) {
+      try {
+        const parsed = JSON.parse(geomGeojson) as InterventionGeoJsonGeometry;
+        geomParcelleAreaM2 = area({ type: "Feature", geometry: parsed, properties: {} });
+      } catch {
+        // GeoJSON malformé — on n'applique pas de ratio dans ce cas.
+      }
+    }
+    return {
+      rawAreaM2: area({ type: "Feature", geometry: geom, properties: {} }),
+      geomParcelleAreaM2,
+    };
   }
 
   /**
@@ -543,7 +596,13 @@ export class InterventionsService {
     return this.prisma.$transaction(async (tx) => {
       const existing = await tx.intervention.findFirst({
         where: { id, ownerTenantId: tenantId },
-        select: { id: true, cultureId: true, dateOperation: true, parcelleId: true },
+        select: {
+          id: true,
+          cultureId: true,
+          dateOperation: true,
+          parcelleId: true,
+          parcelle: { select: { surfaceM2: true } },
+        },
       });
       if (!existing) {
         throw new NotFoundException("Intervention introuvable");
@@ -552,15 +611,20 @@ export class InterventionsService {
       const newDate = dto.dateOperation ? new Date(dto.dateOperation) : null;
 
       // Si geom fournie, on valide + recalcule la surface (la valeur
-      // saisie est ignorée comme à la création). Si geom passée à `null`
-      // explicitement, on retire la sous-zone (l'intervention couvre
-      // toute la parcelle à nouveau).
+      // saisie est ignorée comme à la création). Cap à la surface
+      // déclarée de la parcelle pour respecter l'autorité cadastrale
+      // même quand la géom est plus large (cf 2026-05-08).
       let surfaceFromGeom: number | undefined;
       if (dto.geomGeoJson) {
-        surfaceFromGeom = await this.validateAndMeasureSubzone(
-          dto.geomGeoJson,
-          existing.parcelleId,
-        );
+        const measure = await this.validateAndMeasureSubzone(dto.geomGeoJson, existing.parcelleId);
+        const surfaceParcelleM2 = Number(existing.parcelle?.surfaceM2 ?? 0);
+        const ratio =
+          surfaceParcelleM2 > 0 &&
+          measure.geomParcelleAreaM2 !== null &&
+          measure.geomParcelleAreaM2 > 0
+            ? surfaceParcelleM2 / measure.geomParcelleAreaM2
+            : 1;
+        surfaceFromGeom = measure.rawAreaM2 * ratio;
       }
 
       // Si materielId fourni, on valide qu'il existe (global ou tenant).
