@@ -13,6 +13,12 @@ export interface Parcelle {
   identifiantCadastral: string | null;
   notes: string | null;
   couleurHex: string | null;
+  /**
+   * Culture en place / statut initial — code espèce libre (ex.
+   * `prairie_permanente`, `ble_panifiable`). Sert de fallback dans le
+   * Suisse-Bilanz quand aucune Culture n'est saisie pour la campagne.
+   */
+  cultureActuelle: string | null;
   geom: GeoJsonPolygon | null;
   /**
    * Point garanti à l'intérieur de geom (ST_PointOnSurface) — sert au
@@ -37,6 +43,7 @@ export interface CreateParcelleInput {
   identifiantCadastral?: string;
   notes?: string;
   couleurHex?: string;
+  cultureActuelle?: string;
   geomGeoJson?: GeoJsonPolygon;
 }
 
@@ -47,6 +54,7 @@ export interface UpdateParcelleInput {
   identifiantCadastral?: string | null;
   notes?: string | null;
   couleurHex?: string | null;
+  cultureActuelle?: string | null;
   geomGeoJson?: GeoJsonPolygon;
 }
 

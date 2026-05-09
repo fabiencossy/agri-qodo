@@ -12,6 +12,7 @@ import { Breadcrumb } from "@/components/app/breadcrumb";
 import { CouleurPicker } from "@/components/parcelles/couleur-picker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { CULTURE_OPTIONS } from "@/lib/culture-codes";
 import {
   COULEUR_PARCELLE_DEFAUT,
   type GeoJsonPolygon,
@@ -46,6 +47,7 @@ const formSchema = z.object({
     .positive("La surface doit être positive"),
   zone: z.enum(["ZA", "ZP", "ZM1", "ZM2", "ZM3", "ZM4", "ZE"]),
   identifiantCadastral: z.string().max(50).optional().or(z.literal("")),
+  cultureActuelle: z.string().max(60).optional().or(z.literal("")),
   notes: z.string().max(500).optional().or(z.literal("")),
 });
 
@@ -77,6 +79,7 @@ export default function EditParcellePage() {
       surfaceM2: 0,
       zone: "ZA",
       identifiantCadastral: "",
+      cultureActuelle: "",
       notes: "",
     },
   });
@@ -89,6 +92,7 @@ export default function EditParcellePage() {
         surfaceM2: Number(parcelle.data.surfaceM2),
         zone: parcelle.data.zone,
         identifiantCadastral: parcelle.data.identifiantCadastral ?? "",
+        cultureActuelle: parcelle.data.cultureActuelle ?? "",
         notes: parcelle.data.notes ?? "",
       });
       setGeom(parcelle.data.geom);
@@ -113,6 +117,7 @@ export default function EditParcellePage() {
         surfaceM2: values.surfaceM2,
         zone: values.zone,
         identifiantCadastral: values.identifiantCadastral || null,
+        cultureActuelle: values.cultureActuelle || null,
         notes: values.notes || null,
         couleurHex,
         ...(mode === "carte" && geomChanged && geom ? { geomGeoJson: geom } : {}),
@@ -219,6 +224,28 @@ export default function EditParcellePage() {
                 error={errors.identifiantCadastral?.message}
               >
                 <Input placeholder="VD-1234-5678" {...register("identifiantCadastral")} />
+              </Field>
+
+              <Field
+                label="Culture en place (statut initial)"
+                hint="Utilisé comme fallback dans le Suisse-Bilanz si aucune Culture n'est saisie pour la campagne courante. Idéal pour les prairies permanentes / vergers qui restent d'année en année."
+                error={errors.cultureActuelle?.message}
+              >
+                <select
+                  className="h-11 w-full rounded-lg border border-border bg-background px-3 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green"
+                  {...register("cultureActuelle")}
+                >
+                  <option value="">— aucune —</option>
+                  {Array.from(new Set(CULTURE_OPTIONS.map((o) => o.groupe))).map((groupe) => (
+                    <optgroup key={groupe} label={groupe}>
+                      {CULTURE_OPTIONS.filter((o) => o.groupe === groupe).map((o) => (
+                        <option key={o.code} value={o.code}>
+                          {o.label}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ))}
+                </select>
               </Field>
 
               <Field label="Couleur sur la carte">
