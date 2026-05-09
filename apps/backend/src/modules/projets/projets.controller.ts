@@ -51,6 +51,15 @@ export class ProjetsController {
     return this.service.create(dto);
   }
 
+  @Post("sync")
+  @ApiOperation({
+    summary:
+      "Pull les `project.project` Odoo et upsert les Projets AQ. Bidirectionnel : les push sont automatiques au create/update local.",
+  })
+  syncFromOdoo() {
+    return this.service.syncFromOdoo();
+  }
+
   @Patch(":id")
   @ApiOperation({ summary: "Modifie un projet (nom, description, type, archive…)" })
   update(@Param("id", ParseUUIDPipe) id: string, @Body() dto: UpdateProjetDto) {
