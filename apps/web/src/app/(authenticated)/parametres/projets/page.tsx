@@ -1,6 +1,14 @@
 "use client";
 
-import { Archive, ArchiveRestore, Briefcase, FolderOpen, Plus, Trash2 } from "lucide-react";
+import {
+  Archive,
+  ArchiveRestore,
+  Briefcase,
+  FolderOpen,
+  Plus,
+  RefreshCw,
+  Trash2,
+} from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Breadcrumb } from "@/components/app/breadcrumb";
 import { PageHeader } from "@/components/app/page-header";
@@ -19,6 +27,7 @@ import {
   useCreateProjet,
   useDeleteProjet,
   useProjets,
+  useSyncProjetsFromOdoo,
   useUpdateProjet,
 } from "@/lib/projets";
 
@@ -35,6 +44,7 @@ export default function ProjetsPage() {
   // tout, puis on laisse l'utilisateur trier via le filtre.
   const projets = useProjets({ includeArchived: true });
   const create = useCreateProjet();
+  const sync = useSyncProjetsFromOdoo();
   const [editingProjet, setEditingProjet] = useState<Projet | null>(null);
 
   const data = useMemo(() => projets.data ?? [], [projets.data]);
@@ -54,6 +64,23 @@ export default function ProjetsPage() {
         },
       },
     );
+  };
+
+  const handleSync = () => {
+    sync.mutate(undefined, {
+      onSuccess: (r) => {
+        const parts: string[] = [];
+        if (r.created > 0) parts.push(`${r.created} créé(s)`);
+        if (r.updated > 0) parts.push(`${r.updated} mis à jour`);
+        if (r.archivedFromOdoo > 0) parts.push(`${r.archivedFromOdoo} archivé(s)`);
+        if (r.skipped > 0) parts.push(`${r.skipped} ignoré(s)`);
+        const summary = parts.length > 0 ? parts.join(", ") : "rien à mettre à jour";
+        alert(`Sync Odoo : ${r.pulled} projet(s) lus — ${summary}.`);
+      },
+      onError: (err) => {
+        alert(`Sync Odoo impossible : ${err instanceof Error ? err.message : err}`);
+      },
+    });
   };
 
   const columns = useMemo<ListColumn<Projet>[]>(
@@ -85,6 +112,31 @@ export default function ProjetsPage() {
             <span className="text-xs text-foreground/70">{p.description}</span>
           ) : (
             <span className="text-foreground/30">—</span>
+          ),
+        hideBelow: "md",
+      },
+      {
+        key: "odoo",
+        header: "Odoo",
+        cell: (p) =>
+          p.odooProjectId ? (
+            <span
+              className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-800"
+              title={
+                p.odooSyncedAt
+                  ? `project.project #${p.odooProjectId} — sync ${new Date(p.odooSyncedAt).toLocaleString("fr-CH")}`
+                  : `project.project #${p.odooProjectId}`
+              }
+            >
+              #{p.odooProjectId}
+            </span>
+          ) : (
+            <span
+              className="text-[10px] text-foreground/40"
+              title="Pas encore poussé vers Odoo (Odoo non configuré ou push échoué)"
+            >
+              non poussé
+            </span>
           ),
         hideBelow: "md",
       },
@@ -155,7 +207,15 @@ export default function ProjetsPage() {
         <PageHeader
           title="Projets"
           icon={FolderOpen}
-          subtitle="Étiquettes pour regrouper tes interventions et travaux (ex : « Récolte 2026 », « Chantier Bruhlart »)."
+          subtitle="Étiquettes pour regrouper tes interventions et travaux. Sync bidirectionnelle avec les project.project Odoo (créer/renommer ici → push Odoo, modifier côté Odoo → bouton Resync)."
+          menuActions={[
+            {
+              label: sync.isPending ? "Synchronisation…" : "Resync depuis Odoo",
+              icon: RefreshCw,
+              disabled: sync.isPending,
+              onClick: handleSync,
+            },
+          ]}
         />
 
         {/* Création rapide — garde l'encart inline historique pour le pattern speed-typing */}

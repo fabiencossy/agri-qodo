@@ -321,6 +321,12 @@ model Projet {
   couleurHex  String?     @map("couleur_hex")
   /// Projet archivé : caché des sélecteurs mais conservé pour historique.
   archive     Boolean     @default(false)
+  /// ID `project.project` Odoo correspondant. NULL = pas encore poussé
+  /// vers Odoo (Odoo non configuré ou push échoué). Sync bidirectionnelle :
+  /// pull au resync depuis Odoo, push à chaque create/update local.
+  odooProjectId Int?      @map("odoo_project_id")
+  /// Timestamp du dernier pull réussi depuis Odoo. Diagnostic.
+  odooSyncedAt  DateTime? @map("odoo_synced_at")
   createdAt   DateTime    @default(now()) @map("created_at")
   updatedAt   DateTime    @updatedAt @map("updated_at")
 
@@ -332,6 +338,7 @@ model Projet {
   travaux                          Travail[]      @relation("TravailProjet")
 
   @@unique([tenantId, nom])
+  @@unique([tenantId, odooProjectId], name: "tenantId_odooProjectId")
   @@index([tenantId, archive])
   @@map("projets")
 }

@@ -20,8 +20,20 @@ export interface Projet {
   type: ProjetType;
   couleurHex: string | null;
   archive: boolean;
+  /** ID `project.project` Odoo correspondant. Null = pas encore poussé. */
+  odooProjectId: number | null;
+  /** Dernier pull réussi depuis Odoo (ISO). Null = jamais sync. */
+  odooSyncedAt: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface OdooProjetsSyncResult {
+  pulled: number;
+  created: number;
+  updated: number;
+  archivedFromOdoo: number;
+  skipped: number;
 }
 
 export interface CreateProjetInput {
@@ -82,6 +94,20 @@ export function useDeleteProjet() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => api<void>(`/api/projets/${id}`, { method: "DELETE" }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: KEY });
+    },
+  });
+}
+
+/**
+ * Pull manuel des `project.project` Odoo et upsert dans Projet AQ.
+ * Renvoie un résumé (créés / mis à jour / archivés / skipped).
+ */
+export function useSyncProjetsFromOdoo() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api<OdooProjetsSyncResult>("/api/projets/sync", { method: "POST" }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: KEY });
     },
