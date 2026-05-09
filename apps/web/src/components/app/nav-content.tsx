@@ -2,20 +2,16 @@
 
 import {
   BarChart3,
-  Beef,
   BookOpen,
   CalendarDays,
-  ClipboardList,
   Clock,
   Cog,
-  FlaskConical,
   Handshake,
   Home,
   Layers,
   LogOut,
   type LucideIcon,
   MapPin,
-  Package,
   Tractor,
   Timer,
   UserCircle,
@@ -24,7 +20,7 @@ import {
 import Link from "next/link";
 import type { Route } from "next";
 import { usePathname } from "next/navigation";
-import { useCurrentTenant, useLogout } from "@/lib/auth";
+import { useCurrentTenant, useCurrentUser, useLogout } from "@/lib/auth";
 import { useOdooConnected } from "@/lib/odoo-config";
 import { TenantSwitcher } from "./tenant-switcher";
 
@@ -43,13 +39,14 @@ const NAVIGATION: NavLink[] = [
   { href: "/planning", label: "Planning", icon: CalendarDays },
   { href: "/presences", label: "Présences", icon: Timer },
   { href: "/mes-heures", label: "Mes heures", icon: Clock },
-  { href: "/animaux", label: "Cheptel", icon: Beef },
-  { href: "/srpa", label: "SRPA — sorties pâturage", icon: ClipboardList },
+  // Cheptel + SRPA cachés tant que Fabien ne travaille pas dessus (2026-05-09)
+  // — réactiver en remettant `/animaux` et `/srpa` quand le module sera repris.
 ];
 
 const PILOTAGE: NavLink[] = [
   { href: "/assolement", label: "Plan d'assolement", icon: Layers },
-  { href: "/suisse-bilanz", label: "Suisse-Bilanz", icon: FlaskConical },
+  // Suisse-Bilanz caché tant que Fabien ne travaille pas dessus (2026-05-09)
+  // — la page reste accessible via URL directe pour les tests.
   { href: "/stats", label: "Statistiques", icon: BarChart3 },
   { href: "/veille", label: "Veille réglementaire", icon: BookOpen },
 ];
@@ -57,9 +54,9 @@ const PILOTAGE: NavLink[] = [
 const ADMINISTRATION: NavLink[] = [
   { href: "/utilisateurs", label: "Utilisateurs", icon: Users },
   { href: "/partenaires", label: "Partenaires", icon: Handshake },
-  { href: "/produits", label: "Produits", icon: Package },
-  { href: "/profil", label: "Mon profil", icon: UserCircle },
   { href: "/parametres", label: "Paramètres", icon: Cog },
+  // Produits déplacés dans Paramètres → Catalogue produits (2026-05-09)
+  // Mon profil déplacé en bas du sidebar (footer compact ci-dessous)
 ];
 
 /**
@@ -69,9 +66,11 @@ const ADMINISTRATION: NavLink[] = [
 export function NavContent() {
   const pathname = usePathname();
   const tenant = useCurrentTenant();
+  const me = useCurrentUser();
   const logout = useLogout();
   const odoo = useOdooConnected();
   const visible = (link: NavLink) => !link.requiresOdoo || odoo.connected;
+  const profilActive = pathname.startsWith("/profil");
 
   return (
     <>
@@ -100,11 +99,22 @@ export function NavContent() {
         </NavSection>
       </nav>
 
-      <footer className="border-t border-border p-3">
+      <footer className="border-t border-border p-2">
+        <Link
+          href={"/profil" as Route}
+          className={`flex items-center gap-3 rounded-md p-2 text-sm transition-colors ${
+            profilActive ? "bg-green/10 text-green" : "text-foreground/80 hover:bg-muted"
+          }`}
+        >
+          <UserCircle className="h-5 w-5 flex-shrink-0" />
+          <span className="min-w-0 flex-1 truncate">
+            {me.data ? `${me.data.prenom} ${me.data.nom}` : "Mon profil"}
+          </span>
+        </Link>
         <button
           onClick={() => logout.mutate()}
           disabled={logout.isPending}
-          className="flex w-full items-center gap-3 rounded-md p-2 text-sm text-foreground/70 hover:bg-muted disabled:opacity-50"
+          className="mt-1 flex w-full items-center gap-3 rounded-md p-2 text-sm text-foreground/60 hover:bg-muted disabled:opacity-50"
         >
           <LogOut className="h-4 w-4" />
           <span>{logout.isPending ? "Déconnexion…" : "Déconnexion"}</span>
