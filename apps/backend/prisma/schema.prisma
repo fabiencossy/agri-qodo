@@ -1108,6 +1108,11 @@ model Presence {
   // est ouverte ou non rattachée. SetNull si la ligne est supprimée
   // côté Travail (la Presence reste comme historique brut).
   linkedLigneHeureId String?  @unique @map("linked_ligne_heure_id")
+  /// True = créée automatiquement depuis une LigneTravailHeure (source
+  /// unique heures→présence). Permet de purger/régénérer ces Presences
+  /// à chaque PATCH Travail sans toucher aux Presences pointées via
+  /// clock-in. False = saisie manuelle ou clock-in.
+  autoFromHeures Boolean  @default(false) @map("auto_from_heures")
   // Géolocalisation optionnelle au clock-in (lat/lng WGS84). Sert à
   // valider que l'employé était bien sur la parcelle. Saisie plus tard
   // si l'app mobile la demande.

@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { type Prisma, TravailStatut } from "@prisma/client";
+import { type Prisma, PresenceType, TravailStatut } from "@prisma/client";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { TenantContextService } from "@/common/tenant/tenant-context.service";
 import { AuditService } from "@/modules/audit/audit.service";
@@ -117,33 +117,41 @@ export class TravauxService {
       (!dto.lignesProduit || dto.lignesProduit.length === 0) &&
       (!dto.lignesHeure || dto.lignesHeure.length === 0);
 
-    const created = await this.prisma.travail.create({
-      data: {
-        tenantId,
-        titre: dto.titre.trim(),
-        date: new Date(dto.date),
-        statut: isPlanningOnly ? TravailStatut.PLANIFIE : TravailStatut.DRAFT,
-        ...(dto.interne !== undefined ? { interne: dto.interne } : {}),
-        ...(dto.dateDebut ? { dateDebut: new Date(dto.dateDebut) } : {}),
-        ...(dto.dateFin ? { dateFin: new Date(dto.dateFin) } : {}),
-        ...(dto.partenaireId ? { partenaireId: dto.partenaireId } : {}),
-        ...(dto.odooPartnerId !== undefined ? { odooPartnerId: dto.odooPartnerId } : {}),
-        ...(dto.odooPartnerName !== undefined ? { odooPartnerName: dto.odooPartnerName } : {}),
-        ...(dto.parcelleId ? { parcelleId: dto.parcelleId } : {}),
-        ...(dto.projetId ? { projetId: dto.projetId } : {}),
-        ...(dto.notes ? { notes: dto.notes } : {}),
-        // datePrevue par défaut = date pour que tous les travaux
-        // apparaissent dans /planning (cf interventions.service).
-        datePrevue: dto.datePrevue ? new Date(dto.datePrevue) : new Date(dto.date),
-        ...(dto.assignedToUserId ? { assignedToUserId: dto.assignedToUserId } : {}),
-        ...(dto.lignesProduit && dto.lignesProduit.length > 0
-          ? { lignesProduit: { create: dto.lignesProduit.map((l) => this.toLigneProduitData(l)) } }
-          : {}),
-        ...(dto.lignesHeure && dto.lignesHeure.length > 0
-          ? { lignesHeure: { create: dto.lignesHeure.map((l) => this.toLigneHeureData(l)) } }
-          : {}),
-      },
-      include: this.include,
+    const created = await this.prisma.$transaction(async (tx) => {
+      const row = await tx.travail.create({
+        data: {
+          tenantId,
+          titre: dto.titre.trim(),
+          date: new Date(dto.date),
+          statut: isPlanningOnly ? TravailStatut.PLANIFIE : TravailStatut.DRAFT,
+          ...(dto.interne !== undefined ? { interne: dto.interne } : {}),
+          ...(dto.dateDebut ? { dateDebut: new Date(dto.dateDebut) } : {}),
+          ...(dto.dateFin ? { dateFin: new Date(dto.dateFin) } : {}),
+          ...(dto.partenaireId ? { partenaireId: dto.partenaireId } : {}),
+          ...(dto.odooPartnerId !== undefined ? { odooPartnerId: dto.odooPartnerId } : {}),
+          ...(dto.odooPartnerName !== undefined ? { odooPartnerName: dto.odooPartnerName } : {}),
+          ...(dto.parcelleId ? { parcelleId: dto.parcelleId } : {}),
+          ...(dto.projetId ? { projetId: dto.projetId } : {}),
+          ...(dto.notes ? { notes: dto.notes } : {}),
+          // datePrevue par défaut = date pour que tous les travaux
+          // apparaissent dans /planning (cf interventions.service).
+          datePrevue: dto.datePrevue ? new Date(dto.datePrevue) : new Date(dto.date),
+          ...(dto.assignedToUserId ? { assignedToUserId: dto.assignedToUserId } : {}),
+          ...(dto.lignesProduit && dto.lignesProduit.length > 0
+            ? {
+                lignesProduit: { create: dto.lignesProduit.map((l) => this.toLigneProduitData(l)) },
+              }
+            : {}),
+          ...(dto.lignesHeure && dto.lignesHeure.length > 0
+            ? { lignesHeure: { create: dto.lignesHeure.map((l) => this.toLigneHeureData(l)) } }
+            : {}),
+        },
+        include: this.include,
+      });
+      // Source unique heures→présences (auto-création des Presences pour
+      // les lignes avec horaires précis).
+      await this.syncPresencesFromHeures(tx, row.id, tenantId);
+      return row;
     });
 
     // Push Odoo automatique en best-effort (review 2026-05-04 : "je veux
@@ -241,6 +249,11 @@ export class TravauxService {
         }
 
         await tx.travail.update({ where: { id }, data });
+        // Source unique heures→présences : on régénère seulement si les
+        // lignes d'heures ont changé (sinon les Presences déjà à jour).
+        if (dto.lignesHeure !== undefined) {
+          await this.syncPresencesFromHeures(tx, id, tenantId);
+        }
         return tx.travail.findUniqueOrThrow({ where: { id }, include: this.include });
       })
       .then(async (updated) => {
@@ -381,7 +394,13 @@ export class TravauxService {
         `Travail déjà facturé via Odoo (sale.order #${travail.odooSaleOrderId}). Annule d'abord le devis côté Odoo, puis réessaie.`,
       );
     }
-    await this.prisma.travail.delete({ where: { id } });
+    // Purge les Presences créées auto par la sync heures→présences. Les
+    // Presences saisies manuellement (clock-in) avec travailId vers ce
+    // Travail passeront en SetNull via la cascade FK — on garde l'historique.
+    await this.prisma.$transaction(async (tx) => {
+      await tx.presence.deleteMany({ where: { travailId: id, autoFromHeures: true } });
+      await tx.travail.delete({ where: { id } });
+    });
   }
 
   // ---- helpers ---------------------------------------------------------
@@ -395,6 +414,72 @@ export class TravauxService {
       ...(l.prixUnitaireCHF !== undefined ? { prixUnitaireCHF: l.prixUnitaireCHF } : {}),
       ...(l.notes ? { notes: l.notes } : {}),
     };
+  }
+
+  /**
+   * Source unique heures ↔ présences (2026-05-09).
+   *
+   * À chaque PATCH/POST Travail, on régénère les Presences `autoFromHeures`
+   * de ce Travail pour qu'elles reflètent strictement les
+   * `LigneTravailHeure` courantes : 1 ligne avec `heureDebut + heureFin`
+   * = 1 Presence (type CHANTIER, durée recalculée). Les Presences
+   * pointées via clock-in (autoFromHeures = false) sont laissées
+   * intactes, même si elles partagent le même travailId.
+   *
+   * Lignes sans horaires précis ignorées (décision Fabien 2026-05-09 :
+   * pas de présence inventée).
+   */
+  private async syncPresencesFromHeures(
+    tx: Prisma.TransactionClient,
+    travailId: string,
+    tenantId: string,
+  ): Promise<void> {
+    // 1. Purge les Presences auto précédentes — la ligne d'origine peut
+    //    avoir été supprimée/recréée à l'update, l'ID linkedLigneHeureId
+    //    n'est pas garanti stable.
+    await tx.presence.deleteMany({
+      where: { travailId, autoFromHeures: true },
+    });
+
+    // 2. Recharge les lignes d'heures courantes (post-deleteMany/createMany
+    //    en update, ou post-create en POST).
+    const lignes = await tx.ligneTravailHeure.findMany({
+      where: { travailId },
+      select: {
+        id: true,
+        userId: true,
+        heureDebut: true,
+        heureFin: true,
+        dureeMinutes: true,
+        notes: true,
+      },
+    });
+
+    for (const l of lignes) {
+      if (!l.heureDebut || !l.heureFin) continue; // pas d'horaire = pas de présence
+      // Skip si une Presence non-auto pointe déjà cette ligne (cas
+      // clock-in/clock-out via /presences qui a généré la ligne) —
+      // sinon violation `linked_ligne_heure_id` UNIQUE.
+      const alreadyLinked = await tx.presence.findUnique({
+        where: { linkedLigneHeureId: l.id },
+        select: { id: true },
+      });
+      if (alreadyLinked) continue;
+      await tx.presence.create({
+        data: {
+          tenantId,
+          userId: l.userId,
+          type: PresenceType.CHANTIER,
+          dateDebut: l.heureDebut,
+          dateFin: l.heureFin,
+          dureeMinutes: l.dureeMinutes,
+          travailId,
+          linkedLigneHeureId: l.id,
+          autoFromHeures: true,
+          ...(l.notes ? { notes: l.notes } : {}),
+        },
+      });
+    }
   }
 
   private toLigneHeureData(l: CreateLigneHeureDto) {
