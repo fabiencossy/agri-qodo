@@ -14,6 +14,8 @@ export interface User {
   isActive: boolean;
   lastLoginAt: string | null;
   createdAt: string;
+  /** ID hr.employee Odoo lié (null = pas mappé). */
+  odooEmployeeId: number | null;
 }
 
 export interface CreateUserInput {
@@ -30,6 +32,8 @@ export interface UpdateUserInput {
   role?: UserRole;
   isActive?: boolean;
   password?: string;
+  /** `null` retire le mapping Odoo, `number` le pose. OWNER uniquement. */
+  odooEmployeeId?: number | null;
 }
 
 const KEY = ["users"] as const;

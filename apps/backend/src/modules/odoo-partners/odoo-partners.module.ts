@@ -4,12 +4,16 @@
  */
 import { Module } from "@nestjs/common";
 import { OdooModule } from "@/modules/odoo/odoo.module";
-import { OdooPartnersController, OdooProjectsController } from "./odoo-partners.controller";
+import {
+  OdooEmployeesController,
+  OdooPartnersController,
+  OdooProjectsController,
+} from "./odoo-partners.controller";
 import { OdooPartnersService } from "./odoo-partners.service";
 
 @Module({
   imports: [OdooModule],
-  controllers: [OdooPartnersController, OdooProjectsController],
+  controllers: [OdooPartnersController, OdooProjectsController, OdooEmployeesController],
   providers: [OdooPartnersService],
   exports: [OdooPartnersService],
 })

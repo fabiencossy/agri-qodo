@@ -168,4 +168,36 @@ export class OdooPartnersService {
       return [];
     }
   }
+
+  /**
+   * Liste les `hr.employee` Odoo actifs du tenant. Vide si Odoo non
+   * configuré ou si le module hr n'est pas installé. Alimente le select
+   * "Employé Odoo" sur /utilisateurs (mapping User.odooEmployeeId pour
+   * que les timesheets remontent au bon employé Odoo).
+   */
+  async listEmployees(
+    tenantId: string,
+  ): Promise<Array<{ odooId: number; name: string; workEmail: string | null }>> {
+    const client = await this.odoo.forTenant(tenantId).catch(() => null);
+    if (!client) return [];
+    try {
+      const rows = await client.searchRead<{
+        id: number;
+        name: string;
+        work_email?: string | false;
+      }>("hr.employee", [["active", "=", true]], {
+        fields: ["id", "name", "work_email"],
+        limit: 500,
+        order: "name asc",
+      });
+      return rows.map((r) => ({
+        odooId: r.id,
+        name: r.name,
+        workEmail: typeof r.work_email === "string" ? r.work_email : null,
+      }));
+    } catch (e) {
+      this.log.warn(`Échec listage hr.employee Odoo : ${(e as Error).message}`);
+      return [];
+    }
+  }
 }
