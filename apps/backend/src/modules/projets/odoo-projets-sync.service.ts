@@ -145,7 +145,17 @@ export class OdooProjetsSyncService {
   async pushCreate(tenantId: string, projetId: string): Promise<number | null> {
     const projet = await this.prisma.projet.findFirst({
       where: { id: projetId, tenantId },
-      select: { id: true, nom: true, odooProjectId: true, archive: true },
+      select: {
+        id: true,
+        nom: true,
+        description: true,
+        odooProjectId: true,
+        archive: true,
+        dateDebut: true,
+        dateFin: true,
+        allowBillable: true,
+        odooPartnerId: true,
+      },
     });
     if (!projet) return null;
     if (projet.odooProjectId) return projet.odooProjectId; // déjà push
@@ -154,13 +164,20 @@ export class OdooProjetsSyncService {
     if (!client) return null;
 
     try {
-      const odooId = await client.create("project.project", {
+      const payload: Record<string, unknown> = {
         name: projet.nom,
         active: !projet.archive,
         // Activate timesheets sur tous les projets sync depuis AQ —
         // les heures saisies AQ remonteront en account.analytic.line.
         allow_timesheets: true,
-      });
+        allow_billable: projet.allowBillable,
+      };
+      if (projet.description) payload.description = projet.description;
+      if (projet.dateDebut) payload.date_start = projet.dateDebut.toISOString().slice(0, 10);
+      if (projet.dateFin) payload.date = projet.dateFin.toISOString().slice(0, 10);
+      if (projet.odooPartnerId) payload.partner_id = projet.odooPartnerId;
+
+      const odooId = await client.create("project.project", payload);
       await this.prisma.projet.update({
         where: { id: projet.id },
         data: { odooProjectId: odooId, odooSyncedAt: new Date() },

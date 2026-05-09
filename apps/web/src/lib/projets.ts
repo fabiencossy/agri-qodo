@@ -24,6 +24,14 @@ export interface Projet {
   odooProjectId: number | null;
   /** Dernier pull réussi depuis Odoo (ISO). Null = jamais sync. */
   odooSyncedAt: string | null;
+  /** Date de début planifiée (Odoo `date_start`). ISO string ou null. */
+  dateDebut: string | null;
+  /** Date d'échéance / fin (Odoo `date` deadline). ISO string ou null. */
+  dateFin: string | null;
+  /** Permet le rattachement à un sale.order facturable. */
+  allowBillable: boolean;
+  /** ID `res.partner` Odoo (client lié). */
+  odooPartnerId: number | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -41,6 +49,13 @@ export interface CreateProjetInput {
   description?: string;
   type?: ProjetType;
   couleurHex?: string;
+  /** ISO date string (YYYY-MM-DD ou full ISO). */
+  dateDebut?: string;
+  /** ISO date string (YYYY-MM-DD ou full ISO). */
+  dateFin?: string;
+  allowBillable?: boolean;
+  /** ID `res.partner` Odoo. */
+  odooPartnerId?: number;
 }
 
 export interface UpdateProjetInput extends Partial<CreateProjetInput> {

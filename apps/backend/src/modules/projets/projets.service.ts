@@ -55,6 +55,10 @@ export class ProjetsService {
           ...(dto.description ? { description: dto.description } : {}),
           ...(dto.type ? { type: dto.type } : {}),
           ...(dto.couleurHex ? { couleurHex: dto.couleurHex } : {}),
+          ...(dto.dateDebut ? { dateDebut: new Date(dto.dateDebut) } : {}),
+          ...(dto.dateFin ? { dateFin: new Date(dto.dateFin) } : {}),
+          ...(dto.allowBillable !== undefined ? { allowBillable: dto.allowBillable } : {}),
+          ...(dto.odooPartnerId !== undefined ? { odooPartnerId: dto.odooPartnerId } : {}),
         },
       });
     } catch (err) {
@@ -86,6 +90,14 @@ export class ProjetsService {
           ...(dto.type !== undefined ? { type: dto.type } : {}),
           ...(dto.couleurHex !== undefined ? { couleurHex: dto.couleurHex || null } : {}),
           ...(dto.archive !== undefined ? { archive: dto.archive } : {}),
+          ...(dto.dateDebut !== undefined
+            ? { dateDebut: dto.dateDebut ? new Date(dto.dateDebut) : null }
+            : {}),
+          ...(dto.dateFin !== undefined
+            ? { dateFin: dto.dateFin ? new Date(dto.dateFin) : null }
+            : {}),
+          ...(dto.allowBillable !== undefined ? { allowBillable: dto.allowBillable } : {}),
+          ...(dto.odooPartnerId !== undefined ? { odooPartnerId: dto.odooPartnerId } : {}),
         },
       });
     } catch (err) {

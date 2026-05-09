@@ -327,6 +327,17 @@ model Projet {
   odooProjectId Int?      @map("odoo_project_id")
   /// Timestamp du dernier pull réussi depuis Odoo. Diagnostic.
   odooSyncedAt  DateTime? @map("odoo_synced_at")
+  /// Date de début planifiée (Odoo `date_start`).
+  dateDebut     DateTime? @map("date_debut")
+  /// Date d'échéance / fin (Odoo `date` deadline).
+  dateFin       DateTime? @map("date_fin")
+  /// Si true, le projet accepte le rattachement à un sale.order facturable
+  /// (Odoo `allow_billable`). Défaut false ; recommandé true pour les
+  /// projets de type TRAVAUX_TIERS.
+  allowBillable Boolean   @default(false) @map("allow_billable")
+  /// Client Odoo associé au projet (`project.project.partner_id`). Cache
+  /// d'ID Odoo, pas de FK locale — pattern identique à `Travail.odooPartnerId`.
+  odooPartnerId Int?      @map("odoo_partner_id")
   createdAt   DateTime    @default(now()) @map("created_at")
   updatedAt   DateTime    @updatedAt @map("updated_at")
 
