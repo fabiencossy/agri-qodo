@@ -30,6 +30,7 @@ import {
   type TechniqueEpandage,
   useInterventions,
 } from "@/lib/interventions";
+import { libelleCulture } from "@/lib/culture-codes";
 import { formatSurface, libelleZone, useParcelle } from "@/lib/parcelles";
 
 const ParcelleSingleMap = dynamic(() => import("@/components/maps/parcelle-single-map"), {
@@ -110,6 +111,9 @@ export default function ParcelleDetailPage() {
                   {formatSurface(parcelle.data.surfaceM2)} · {libelleZone(parcelle.data.zone)}
                   {parcelle.data.identifiantCadastral
                     ? ` · ${parcelle.data.identifiantCadastral}`
+                    : ""}
+                  {parcelle.data.cultureActuelle
+                    ? ` · ${libelleCulture(parcelle.data.cultureActuelle)}`
                     : ""}
                 </p>
               </div>

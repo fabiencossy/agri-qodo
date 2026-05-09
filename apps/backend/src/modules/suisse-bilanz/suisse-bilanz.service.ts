@@ -47,6 +47,38 @@ export class SuisseBilanzService {
       espece: c.espece,
     }));
 
+    // Fallback "statut initial" : pour les parcelles qui n'ont pas de
+    // Culture saisie pour la campagne mais qui portent un
+    // `cultureActuelle` (ex. prairie permanente qui reste d'année en
+    // année), on injecte une entrée virtuelle dans le bilan. Évite à
+    // l'agriculteur de re-saisir une Culture chaque campagne pour ses
+    // prairies permanentes / vergers.
+    const parcellesAvecCulture = new Set(cultures.map((c) => c.parcelleId));
+    const parcellesFallback = await this.prisma.tenantAware.parcelle.findMany({
+      where: {
+        cultureActuelle: { not: null },
+        id: { notIn: Array.from(parcellesAvecCulture) },
+      },
+      select: { id: true, nom: true, surfaceM2: true, cultureActuelle: true },
+    });
+    let fallbackCount = 0;
+    for (const p of parcellesFallback) {
+      if (!p.cultureActuelle) continue;
+      culturesInput.push({
+        parcelleId: p.id,
+        parcelleNom: p.nom,
+        surfaceHa: Number(p.surfaceM2) / 10000,
+        espece: p.cultureActuelle,
+      });
+      fallbackCount++;
+    }
+    if (fallbackCount > 0) {
+      warnings.push(
+        `${fallbackCount} parcelle(s) sans Culture saisie pour ${annee} — ` +
+          "le statut initial (champ « culture en place ») a été utilisé en fallback.",
+      );
+    }
+
     // Animaux actifs groupés par catégorie (filtre tenantId auto)
     const animauxGroupes = await this.prisma.tenantAware.animal.groupBy({
       by: ["categorie"],

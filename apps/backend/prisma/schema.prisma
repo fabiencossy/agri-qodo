@@ -470,6 +470,12 @@ model Parcelle {
   /// prestataire (= moi qui exécute le travail).
   odooPartnerId        Int?                                         @map("odoo_partner_id")
   zone                 ZoneAgricole
+  /// Culture en place / statut initial — code espèce libre (réutilise
+  /// les clés `besoinNParCulture` du domain : prairie_permanente,
+  /// ble_panifiable, …). Sert de fallback Suisse-Bilanz quand aucune
+  /// Culture n'a été saisie pour la campagne — utile pour les prairies
+  /// permanentes qui restent d'année en année.
+  cultureActuelle      String?                                      @map("culture_actuelle")
   // Couleur de surbrillance sur les cartes — hex 7-char (#RRGGBB).
   // Permet à l'agriculteur de différencier visuellement ses parcelles.
   couleurHex           String?                                      @map("couleur_hex") @db.VarChar(7)

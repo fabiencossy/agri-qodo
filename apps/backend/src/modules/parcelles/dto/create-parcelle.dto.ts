@@ -60,6 +60,16 @@ export class CreateParcelleDto {
   })
   couleurHex?: string;
 
+  @ApiPropertyOptional({
+    description:
+      "Culture en place / statut initial. Code espèce libre (ex. prairie_permanente, ble_panifiable). Utilisé comme fallback Suisse-Bilanz si aucune Culture n'est saisie pour la campagne courante.",
+    example: "prairie_permanente",
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(60)
+  cultureActuelle?: string;
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
