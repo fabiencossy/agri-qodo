@@ -20,8 +20,11 @@ import {
   type ListColumn,
   ResourceView,
 } from "@/components/ui/resource-view";
+import { useOdooConnected } from "@/lib/odoo-config";
+import { type OdooPartner, useOdooPartners } from "@/lib/odoo-partners";
 import {
   PROJET_TYPE_LABEL,
+  type CreateProjetInput,
   type Projet,
   type ProjetType,
   useCreateProjet,
@@ -38,33 +41,54 @@ const TYPES: { value: ProjetType; label: string }[] = [
   { value: "AUTRE", label: "Autre" },
 ];
 
+interface ProjetFormState {
+  nom: string;
+  type: ProjetType;
+  description: string;
+  dateDebut: string;
+  dateFin: string;
+  allowBillable: boolean;
+  odooPartnerId: number | null;
+  couleurHex: string;
+}
+
+function emptyFormFor(type: ProjetType = "AUTRE"): ProjetFormState {
+  return {
+    nom: "",
+    type,
+    description: "",
+    dateDebut: "",
+    dateFin: "",
+    // Pré-coché si type facturable par défaut.
+    allowBillable: type === "TRAVAUX_TIERS",
+    odooPartnerId: null,
+    couleurHex: "",
+  };
+}
+
+function projetToForm(p: Projet): ProjetFormState {
+  return {
+    nom: p.nom,
+    type: p.type,
+    description: p.description ?? "",
+    dateDebut: p.dateDebut ? p.dateDebut.slice(0, 10) : "",
+    dateFin: p.dateFin ? p.dateFin.slice(0, 10) : "",
+    allowBillable: p.allowBillable,
+    odooPartnerId: p.odooPartnerId,
+    couleurHex: p.couleurHex ?? "",
+  };
+}
+
 export default function ProjetsPage() {
   // ResourceView gère son propre filtre archives via FilterOption — mais
   // l'API exige `includeArchived=true` pour les retourner. On charge donc
   // tout, puis on laisse l'utilisateur trier via le filtre.
   const projets = useProjets({ includeArchived: true });
-  const create = useCreateProjet();
   const sync = useSyncProjetsFromOdoo();
   const [editingProjet, setEditingProjet] = useState<Projet | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
 
   const data = useMemo(() => projets.data ?? [], [projets.data]);
-
-  const [draftNom, setDraftNom] = useState("");
-  const [draftType, setDraftType] = useState<ProjetType>("AUTRE");
-
-  const handleCreate = (e?: React.FormEvent) => {
-    e?.preventDefault();
-    if (!draftNom.trim()) return;
-    create.mutate(
-      { nom: draftNom.trim(), type: draftType },
-      {
-        onSuccess: () => {
-          setDraftNom("");
-          setDraftType("AUTRE");
-        },
-      },
-    );
-  };
 
   const handleSync = () => {
     sync.mutate(undefined, {
@@ -90,6 +114,13 @@ export default function ProjetsPage() {
         header: "Nom",
         cell: (p) => (
           <span className="flex items-center gap-2 font-medium">
+            {p.couleurHex && (
+              <span
+                className="inline-block h-3 w-3 flex-shrink-0 rounded-full"
+                style={{ backgroundColor: p.couleurHex }}
+                aria-hidden
+              />
+            )}
             {p.nom}
             {p.archive && (
               <span className="rounded-full bg-foreground/10 px-2 py-0.5 text-[10px] uppercase tracking-wide">
@@ -105,15 +136,32 @@ export default function ProjetsPage() {
         cell: (p) => <span className="text-xs">{PROJET_TYPE_LABEL[p.type]}</span>,
       },
       {
-        key: "description",
-        header: "Description",
+        key: "billable",
+        header: "Facturable",
         cell: (p) =>
-          p.description ? (
-            <span className="text-xs text-foreground/70">{p.description}</span>
+          p.allowBillable ? (
+            <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-800">
+              oui
+            </span>
           ) : (
-            <span className="text-foreground/30">—</span>
+            <span className="text-[10px] text-foreground/40">—</span>
           ),
         hideBelow: "md",
+      },
+      {
+        key: "dates",
+        header: "Période",
+        cell: (p) => {
+          const start = p.dateDebut ? new Date(p.dateDebut).toLocaleDateString("fr-CH") : null;
+          const end = p.dateFin ? new Date(p.dateFin).toLocaleDateString("fr-CH") : null;
+          if (!start && !end) return <span className="text-foreground/30">—</span>;
+          return (
+            <span className="whitespace-nowrap text-xs text-foreground/70">
+              {start ?? "…"} → {end ?? "…"}
+            </span>
+          );
+        },
+        hideBelow: "lg",
       },
       {
         key: "odoo",
@@ -140,16 +188,6 @@ export default function ProjetsPage() {
           ),
         hideBelow: "md",
       },
-      {
-        key: "createdAt",
-        header: "Créé le",
-        cell: (p) => (
-          <span className="whitespace-nowrap text-xs text-foreground/60">
-            {new Date(p.createdAt).toLocaleDateString("fr-CH")}
-          </span>
-        ),
-        hideBelow: "lg",
-      },
     ],
     [],
   );
@@ -161,6 +199,11 @@ export default function ProjetsPage() {
         label: t.label,
         predicate: (p: Projet) => p.type === t.value,
       })),
+      {
+        key: "billable",
+        label: "Facturables",
+        predicate: (p: Projet) => p.allowBillable,
+      },
       {
         key: "archive-actif",
         label: "Actifs uniquement",
@@ -207,7 +250,7 @@ export default function ProjetsPage() {
         <PageHeader
           title="Projets"
           icon={FolderOpen}
-          subtitle="Étiquettes pour regrouper tes interventions et travaux. Sync bidirectionnelle avec les project.project Odoo (créer/renommer ici → push Odoo, modifier côté Odoo → bouton Resync)."
+          subtitle="Étiquettes pour regrouper tes interventions et travaux. Sync bidirectionnelle avec les project.project Odoo (créer ici → push Odoo, modifier côté Odoo → bouton Resync)."
           menuActions={[
             {
               label: sync.isPending ? "Synchronisation…" : "Resync depuis Odoo",
@@ -217,39 +260,6 @@ export default function ProjetsPage() {
             },
           ]}
         />
-
-        {/* Création rapide — garde l'encart inline historique pour le pattern speed-typing */}
-        <section className="mb-6 rounded-2xl border border-border bg-background p-4 sm:p-5">
-          <h2 className="mb-3 text-sm font-medium">Nouveau projet</h2>
-          <form onSubmit={handleCreate} className="grid gap-2 sm:grid-cols-[2fr_1fr_auto]">
-            <Input
-              value={draftNom}
-              onChange={(e) => setDraftNom(e.target.value)}
-              placeholder="Nom du projet"
-              maxLength={120}
-            />
-            <select
-              value={draftType}
-              onChange={(e) => setDraftType(e.target.value as ProjetType)}
-              className="h-11 rounded-lg border border-border bg-background px-3 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green"
-            >
-              {TYPES.map((t) => (
-                <option key={t.value} value={t.value}>
-                  {t.label}
-                </option>
-              ))}
-            </select>
-            <Button type="submit" disabled={!draftNom.trim() || create.isPending} className="h-11">
-              <Plus className="mr-1 h-4 w-4" />
-              Créer
-            </Button>
-          </form>
-          {create.isError && (
-            <p className="mt-2 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
-              {create.error instanceof Error ? create.error.message : "Création impossible."}
-            </p>
-          )}
-        </section>
 
         {projets.isError && (
           <div className="mb-3 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -272,7 +282,16 @@ export default function ProjetsPage() {
           renderKanbanCard={(p) => (
             <div>
               <div className="flex items-start justify-between gap-2">
-                <span className="truncate font-medium">{p.nom}</span>
+                <span className="flex items-center gap-1.5 truncate font-medium">
+                  {p.couleurHex && (
+                    <span
+                      className="inline-block h-2 w-2 flex-shrink-0 rounded-full"
+                      style={{ backgroundColor: p.couleurHex }}
+                      aria-hidden
+                    />
+                  )}
+                  <span className="truncate">{p.nom}</span>
+                </span>
                 {p.archive && (
                   <span className="rounded-full bg-foreground/10 px-2 py-0.5 text-[10px] uppercase tracking-wide">
                     Archivé
@@ -290,13 +309,24 @@ export default function ProjetsPage() {
               <Briefcase className="mx-auto mb-2 h-10 w-10 text-foreground/30" />
               <p className="text-sm text-foreground/60">Aucun projet pour l'instant.</p>
               <p className="mt-1 text-xs text-foreground/50">
-                Crée un premier projet ci-dessus pour regrouper tes opérations.
+                Tape sur le bouton + en bas à droite pour créer ton premier projet.
               </p>
             </div>
           }
         />
       </div>
 
+      {/* FAB local : « + Nouveau projet » contextuel (à gauche du FAB global). */}
+      <button
+        type="button"
+        onClick={() => setCreateOpen(true)}
+        aria-label="Nouveau projet"
+        className="fixed bottom-6 right-24 z-30 flex h-14 w-14 items-center justify-center rounded-full bg-green text-white shadow-xl transition-transform duration-200 hover:scale-105 hover:bg-green-dark active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green focus-visible:ring-offset-2"
+      >
+        <Plus className="h-6 w-6" />
+      </button>
+
+      {createOpen && <NewProjetDialog onClose={() => setCreateOpen(false)} />}
       {editingProjet && (
         <EditProjetDialog projet={editingProjet} onClose={() => setEditingProjet(null)} />
       )}
@@ -304,30 +334,87 @@ export default function ProjetsPage() {
   );
 }
 
+function NewProjetDialog({ onClose }: { onClose: () => void }) {
+  const [form, setForm] = useState<ProjetFormState>(() => emptyFormFor("AUTRE"));
+  const create = useCreateProjet();
+
+  // Synchronise allowBillable au changement de type — facilite la saisie
+  // (TRAVAUX_TIERS = facturable par défaut, les autres non).
+  useEffect(() => {
+    setForm((f) => ({ ...f, allowBillable: f.type === "TRAVAUX_TIERS" ? true : f.allowBillable }));
+  }, [form.type]);
+
+  const onSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.nom.trim()) return;
+    const input: CreateProjetInput = {
+      nom: form.nom.trim(),
+      type: form.type,
+      ...(form.description.trim() ? { description: form.description.trim() } : {}),
+      ...(form.dateDebut ? { dateDebut: form.dateDebut } : {}),
+      ...(form.dateFin ? { dateFin: form.dateFin } : {}),
+      ...(form.allowBillable ? { allowBillable: true } : {}),
+      ...(form.odooPartnerId ? { odooPartnerId: form.odooPartnerId } : {}),
+      ...(form.couleurHex ? { couleurHex: form.couleurHex } : {}),
+    };
+    create.mutate(input, { onSuccess: () => onClose() });
+  };
+
+  return (
+    <DialogShell title="Nouveau projet" onClose={onClose}>
+      <form onSubmit={onSubmit} className="space-y-4">
+        <ProjetFormFields form={form} setForm={setForm} disabled={create.isPending} />
+        {create.isError && (
+          <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+            {create.error instanceof Error ? create.error.message : "Création impossible."}
+          </div>
+        )}
+        <div className="flex justify-end gap-2 pt-2">
+          <Button type="button" variant="ghost" onClick={onClose}>
+            Annuler
+          </Button>
+          <Button type="submit" disabled={!form.nom.trim() || create.isPending}>
+            {create.isPending ? "Création…" : "Créer le projet"}
+          </Button>
+        </div>
+      </form>
+    </DialogShell>
+  );
+}
+
 function EditProjetDialog({ projet, onClose }: { projet: Projet; onClose: () => void }) {
-  const [nom, setNom] = useState(projet.nom);
-  const [type, setType] = useState<ProjetType>(projet.type);
-  const [description, setDescription] = useState(projet.description ?? "");
+  const [form, setForm] = useState<ProjetFormState>(() => projetToForm(projet));
   const update = useUpdateProjet();
   const del = useDeleteProjet();
 
   useEffect(() => {
-    setNom(projet.nom);
-    setType(projet.type);
-    setDescription(projet.description ?? "");
+    setForm(projetToForm(projet));
   }, [projet]);
 
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const trimmedDescription = description.trim();
+    const trimmedDesc = form.description.trim();
+    const currentDateDebut = projet.dateDebut ? projet.dateDebut.slice(0, 10) : "";
+    const currentDateFin = projet.dateFin ? projet.dateFin.slice(0, 10) : "";
+    const dateDebutChanged = currentDateDebut !== form.dateDebut;
+    const dateFinChanged = currentDateFin !== form.dateFin;
+    const odooPartnerChanged = form.odooPartnerId !== projet.odooPartnerId;
+    const couleurChanged = (projet.couleurHex ?? "") !== form.couleurHex;
     update.mutate(
       {
         id: projet.id,
-        ...(nom !== projet.nom ? { nom } : {}),
-        ...(type !== projet.type ? { type } : {}),
-        ...((projet.description ?? "") !== trimmedDescription
-          ? { description: trimmedDescription }
+        ...(form.nom !== projet.nom ? { nom: form.nom } : {}),
+        ...(form.type !== projet.type ? { type: form.type } : {}),
+        ...((projet.description ?? "") !== trimmedDesc ? { description: trimmedDesc } : {}),
+        ...(dateDebutChanged && form.dateDebut ? { dateDebut: form.dateDebut } : {}),
+        ...(dateFinChanged && form.dateFin ? { dateFin: form.dateFin } : {}),
+        ...(form.allowBillable !== projet.allowBillable
+          ? { allowBillable: form.allowBillable }
           : {}),
+        ...(odooPartnerChanged && form.odooPartnerId !== null
+          ? { odooPartnerId: form.odooPartnerId }
+          : {}),
+        ...(couleurChanged && form.couleurHex ? { couleurHex: form.couleurHex } : {}),
       },
       { onSuccess: () => onClose() },
     );
@@ -340,7 +427,7 @@ function EditProjetDialog({ projet, onClose }: { projet: Projet; onClose: () => 
   const onDelete = () => {
     if (
       !confirm(
-        `Supprimer définitivement le projet "${projet.nom}" ?\n\nLes opérations qui y faisaient référence ne seront PAS supprimées.`,
+        `Supprimer définitivement le projet "${projet.nom}" ?\n\nLes opérations qui y faisaient référence ne seront PAS supprimées. Côté Odoo, le projet sera archivé.`,
       )
     )
       return;
@@ -348,90 +435,215 @@ function EditProjetDialog({ projet, onClose }: { projet: Projet; onClose: () => 
   };
 
   return (
+    <DialogShell title="Modifier le projet" onClose={onClose}>
+      <form onSubmit={onSubmit} className="space-y-4">
+        <ProjetFormFields form={form} setForm={setForm} disabled={update.isPending} />
+        {update.isError && (
+          <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+            {update.error instanceof Error ? update.error.message : "Erreur"}
+          </div>
+        )}
+        <div className="flex flex-wrap items-center justify-between gap-2 pt-2">
+          <div className="flex gap-2">
+            <Button type="button" variant="ghost" onClick={onArchive} disabled={update.isPending}>
+              {projet.archive ? (
+                <>
+                  <ArchiveRestore className="mr-2 h-4 w-4" /> Désarchiver
+                </>
+              ) : (
+                <>
+                  <Archive className="mr-2 h-4 w-4" /> Archiver
+                </>
+              )}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={onDelete}
+              disabled={del.isPending}
+              className="text-red-600 hover:bg-red-50 hover:text-red-700"
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              Supprimer
+            </Button>
+          </div>
+          <div className="flex gap-2">
+            <Button type="button" variant="ghost" onClick={onClose}>
+              Annuler
+            </Button>
+            <Button type="submit" disabled={update.isPending}>
+              {update.isPending ? "Enregistrement…" : "Enregistrer"}
+            </Button>
+          </div>
+        </div>
+      </form>
+    </DialogShell>
+  );
+}
+
+function ProjetFormFields({
+  form,
+  setForm,
+  disabled,
+}: {
+  form: ProjetFormState;
+  setForm: React.Dispatch<React.SetStateAction<ProjetFormState>>;
+  disabled?: boolean;
+}) {
+  const odooConnected = useOdooConnected();
+  const partnersQuery = useOdooPartners();
+  const partners: OdooPartner[] = odooConnected.connected ? (partnersQuery.data ?? []) : [];
+
+  return (
+    <>
+      <Field label="Nom du projet *">
+        <Input
+          value={form.nom}
+          onChange={(e) => setForm((f) => ({ ...f, nom: e.target.value }))}
+          required
+          maxLength={120}
+          placeholder="Récolte 2026 — Champ du Bas"
+          disabled={disabled}
+        />
+      </Field>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field label="Type">
+          <select
+            value={form.type}
+            onChange={(e) => setForm((f) => ({ ...f, type: e.target.value as ProjetType }))}
+            disabled={disabled}
+            className="h-10 w-full rounded-lg border border-border bg-background px-3 text-base"
+          >
+            {TYPES.map((t) => (
+              <option key={t.value} value={t.value}>
+                {t.label}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Couleur sur les listes">
+          <div className="flex items-center gap-2">
+            <input
+              type="color"
+              value={form.couleurHex || "#4CAF50"}
+              onChange={(e) => setForm((f) => ({ ...f, couleurHex: e.target.value }))}
+              disabled={disabled}
+              className="h-10 w-14 cursor-pointer rounded-lg border border-border bg-background"
+            />
+            {form.couleurHex && (
+              <button
+                type="button"
+                onClick={() => setForm((f) => ({ ...f, couleurHex: "" }))}
+                disabled={disabled}
+                className="text-xs text-foreground/60 hover:text-foreground"
+              >
+                Retirer
+              </button>
+            )}
+          </div>
+        </Field>
+      </div>
+
+      <Field label="Description">
+        <textarea
+          value={form.description}
+          onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+          disabled={disabled}
+          maxLength={500}
+          rows={3}
+          placeholder="Notes internes (côté Odoo : description du projet)"
+          className="min-h-20 w-full rounded-lg border border-border bg-background px-3 py-2 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green"
+        />
+      </Field>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field label="Date de début">
+          <Input
+            type="date"
+            value={form.dateDebut}
+            onChange={(e) => setForm((f) => ({ ...f, dateDebut: e.target.value }))}
+            disabled={disabled}
+          />
+        </Field>
+        <Field label="Date d'échéance">
+          <Input
+            type="date"
+            value={form.dateFin}
+            onChange={(e) => setForm((f) => ({ ...f, dateFin: e.target.value }))}
+            disabled={disabled}
+          />
+        </Field>
+      </div>
+
+      <Field label="Client (Odoo)">
+        <select
+          value={form.odooPartnerId ?? ""}
+          onChange={(e) =>
+            setForm((f) => ({
+              ...f,
+              odooPartnerId: e.target.value === "" ? null : Number(e.target.value),
+            }))
+          }
+          disabled={disabled || !odooConnected.connected || partners.length === 0}
+          className="h-10 w-full rounded-lg border border-border bg-background px-3 text-base disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          <option value="">— Aucun client —</option>
+          {partners.map((p) => (
+            <option key={p.odooId} value={p.odooId}>
+              {p.name}
+              {p.ville ? ` — ${p.ville}` : ""}
+            </option>
+          ))}
+        </select>
+        {!odooConnected.connected && (
+          <p className="mt-1 text-xs text-foreground/60">
+            Connecte Odoo dans <span className="font-mono">Paramètres → Connexion Odoo</span> pour
+            sélectionner un client.
+          </p>
+        )}
+      </Field>
+
+      <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border bg-muted/20 p-3">
+        <input
+          type="checkbox"
+          checked={form.allowBillable}
+          onChange={(e) => setForm((f) => ({ ...f, allowBillable: e.target.checked }))}
+          disabled={disabled}
+          className="mt-0.5 h-5 w-5 cursor-pointer accent-green disabled:cursor-not-allowed"
+        />
+        <span className="flex-1">
+          <span className="block text-sm font-medium">Projet facturable (allow_billable)</span>
+          <span className="mt-0.5 block text-xs text-foreground/60">
+            Active le rattachement à une commande client Odoo. Recommandé pour les Travaux pour
+            tiers.
+          </span>
+        </span>
+      </label>
+    </>
+  );
+}
+
+function DialogShell({
+  title,
+  onClose,
+  children,
+}: {
+  title: string;
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-md rounded-2xl border border-border bg-background p-6 shadow-xl"
+        className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-border bg-background p-6 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 className="mb-4 text-xl font-bold">Modifier le projet</h2>
-        <form onSubmit={onSubmit} className="space-y-4">
-          <Field label="Nom">
-            <Input
-              value={nom}
-              onChange={(e) => setNom(e.target.value)}
-              required
-              maxLength={120}
-              disabled={update.isPending}
-            />
-          </Field>
-          <Field label="Type">
-            <select
-              value={type}
-              onChange={(e) => setType(e.target.value as ProjetType)}
-              disabled={update.isPending}
-              className="h-10 w-full rounded-lg border border-border bg-background px-3 text-base"
-            >
-              {TYPES.map((t) => (
-                <option key={t.value} value={t.value}>
-                  {t.label}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Description">
-            <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              disabled={update.isPending}
-              maxLength={500}
-              rows={3}
-              className="min-h-20 w-full rounded-lg border border-border bg-background px-3 py-2 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green"
-            />
-          </Field>
-
-          {update.isError && (
-            <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
-              {update.error instanceof Error ? update.error.message : "Erreur"}
-            </div>
-          )}
-
-          <div className="flex flex-wrap items-center justify-between gap-2 pt-2">
-            <div className="flex gap-2">
-              <Button type="button" variant="ghost" onClick={onArchive} disabled={update.isPending}>
-                {projet.archive ? (
-                  <>
-                    <ArchiveRestore className="mr-2 h-4 w-4" /> Désarchiver
-                  </>
-                ) : (
-                  <>
-                    <Archive className="mr-2 h-4 w-4" /> Archiver
-                  </>
-                )}
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={onDelete}
-                disabled={del.isPending}
-                className="text-red-600 hover:bg-red-50 hover:text-red-700"
-              >
-                <Trash2 className="mr-2 h-4 w-4" />
-                Supprimer
-              </Button>
-            </div>
-            <div className="flex gap-2">
-              <Button type="button" variant="ghost" onClick={onClose}>
-                Annuler
-              </Button>
-              <Button type="submit" disabled={update.isPending}>
-                {update.isPending ? "Enregistrement…" : "Enregistrer"}
-              </Button>
-            </div>
-          </div>
-        </form>
+        <h2 className="mb-4 text-xl font-bold">{title}</h2>
+        {children}
       </div>
     </div>
   );
