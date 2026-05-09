@@ -91,3 +91,24 @@ export class OdooProjectsController {
     return this.service.listProjects(tenantId);
   }
 }
+
+@ApiTags("odoo-employees")
+@ApiBearerAuth()
+@UseGuards(JwtAuthGuard)
+@Controller("odoo/employees")
+export class OdooEmployeesController {
+  constructor(
+    private readonly service: OdooPartnersService,
+    private readonly tenantContext: TenantContextService,
+  ) {}
+
+  @Get()
+  @ApiOperation({
+    summary:
+      "Liste les hr.employee Odoo actifs du tenant. Alimente le select Employé Odoo sur /utilisateurs (mapping User.odooEmployeeId).",
+  })
+  list() {
+    const { tenantId } = this.tenantContext.get();
+    return this.service.listEmployees(tenantId);
+  }
+}

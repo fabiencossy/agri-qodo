@@ -3,10 +3,12 @@ import { UserRole } from "@prisma/client";
 import {
   IsBoolean,
   IsEnum,
+  IsInt,
   IsObject,
   IsOptional,
   IsString,
   MaxLength,
+  Min,
   MinLength,
 } from "class-validator";
 
@@ -54,4 +56,15 @@ export class UpdateUserDto {
   @MinLength(4)
   @MaxLength(120)
   password?: string;
+
+  @ApiPropertyOptional({
+    description:
+      "ID hr.employee Odoo lié à ce compte. Quand mappé, les timesheets poussés depuis un Travail dont l'auteur des heures est ce User remontent sur cet employé Odoo. `null` retire le mapping.",
+    type: "integer",
+    nullable: true,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  odooEmployeeId?: number | null;
 }

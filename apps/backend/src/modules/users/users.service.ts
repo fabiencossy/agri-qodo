@@ -43,6 +43,7 @@ export class UsersService {
     isActive: true,
     lastLoginAt: true,
     createdAt: true,
+    odooEmployeeId: true,
   } satisfies Prisma.UserSelect;
 
   list() {
@@ -123,6 +124,13 @@ export class UsersService {
       }
     }
 
+    // Mapping Odoo réservé à OWNER : c'est un réglage admin (lie le compte
+    // à un hr.employee Odoo pour les timesheets). Un EMPLOYE qui édite son
+    // propre profil ne peut pas se l'auto-attribuer.
+    if (dto.odooEmployeeId !== undefined && callerRole !== UserRole.OWNER) {
+      throw new ForbiddenException("Seul le propriétaire peut mapper un employé Odoo");
+    }
+
     const data: Prisma.UserUpdateInput = {
       ...(dto.prenom !== undefined ? { prenom: dto.prenom } : {}),
       ...(dto.nom !== undefined ? { nom: dto.nom } : {}),
@@ -133,6 +141,7 @@ export class UsersService {
       ...(dto.role !== undefined ? { role: dto.role } : {}),
       ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
       ...(dto.password ? { passwordHash: await bcrypt.hash(dto.password, 10) } : {}),
+      ...(dto.odooEmployeeId !== undefined ? { odooEmployeeId: dto.odooEmployeeId } : {}),
     };
 
     await this.prisma.user.update({ where: { id }, data });

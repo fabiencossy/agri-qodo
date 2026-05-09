@@ -6,6 +6,7 @@ import { Breadcrumb } from "@/components/app/breadcrumb";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useCurrentUser } from "@/lib/auth";
+import { type OdooEmployee, useOdooEmployees } from "@/lib/odoo-employees";
 import {
   ROLE_LABEL,
   ROLES_ORDER,
@@ -20,10 +21,12 @@ import {
 export default function UtilisateursPage() {
   const users = useUsers();
   const me = useCurrentUser();
+  const employees = useOdooEmployees();
   const [createOpen, setCreateOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
 
   const isOwner = me.data?.role === "OWNER";
+  const odooEmployees = employees.data ?? [];
 
   return (
     <>
@@ -81,12 +84,21 @@ export default function UtilisateursPage() {
                     user={u}
                     isOwner={isOwner}
                     isMe={u.id === me.data?.id}
+                    odooEmployees={odooEmployees}
                     onOpen={() => setEditingUser(u)}
                   />
                 ))}
               </tbody>
             </table>
           </div>
+        )}
+
+        {isOwner && employees.isFetched && odooEmployees.length === 0 && (
+          <p className="mt-3 text-xs text-foreground/60">
+            Aucun employé Odoo détecté. Configure Odoo dans{" "}
+            <span className="font-mono">/parametres</span> et active le module Employés (HR) pour
+            mapper les comptes aux feuilles de temps.
+          </p>
         )}
       </div>
 
@@ -96,6 +108,7 @@ export default function UtilisateursPage() {
           user={editingUser}
           isOwner={isOwner}
           isMe={editingUser.id === me.data?.id}
+          odooEmployees={odooEmployees}
           onClose={() => setEditingUser(null)}
         />
       )}
@@ -107,22 +120,32 @@ function UserRow({
   user,
   isOwner,
   isMe,
+  odooEmployees,
   onOpen,
 }: {
   user: User;
   isOwner: boolean;
   isMe: boolean;
+  odooEmployees: OdooEmployee[];
   onOpen: () => void;
 }) {
   const updateMut = useUpdateUser();
   const deleteMut = useDeleteUser();
 
+  const odooEmployeeName = (() => {
+    if (!user.odooEmployeeId) return null;
+    return (
+      odooEmployees.find((e) => e.odooId === user.odooEmployeeId)?.name ??
+      `Odoo #${user.odooEmployeeId}`
+    );
+  })();
+
   // Le rôle reste éditable inline (action rapide la plus fréquente
   // selon Fabien) — le dialog s'ouvre pour tout le reste.
-  const onChangeRole = (e: React.MouseEvent | React.ChangeEvent, role: UserRole) => {
+  const onChangeRole = (e: React.ChangeEvent<HTMLSelectElement>) => {
     e.stopPropagation();
     if (!isOwner || isMe) return;
-    updateMut.mutate({ id: user.id, role });
+    updateMut.mutate({ id: user.id, role: e.target.value as UserRole });
   };
 
   const onToggleActive = (e: React.MouseEvent) => {
@@ -148,6 +171,14 @@ function UserRow({
       <td className="px-4 py-2 font-medium">
         {user.prenom} {user.nom}
         {isMe && <span className="ml-2 text-xs text-foreground/60">(toi)</span>}
+        {odooEmployeeName && (
+          <span
+            className="ml-2 rounded bg-foreground/5 px-1.5 py-0.5 text-[10px] text-foreground/60"
+            title="Mapping vers hr.employee Odoo (timesheets)"
+          >
+            Odoo: {odooEmployeeName}
+          </span>
+        )}
       </td>
       <td className="px-4 py-2 text-foreground/70">{user.email}</td>
       <td className="px-4 py-2">
@@ -155,7 +186,7 @@ function UserRow({
           <select
             value={user.role}
             onClick={(e) => e.stopPropagation()}
-            onChange={(e) => onChangeRole(e, e.target.value as UserRole)}
+            onChange={onChangeRole}
             disabled={updateMut.isPending}
             className="h-8 rounded-md border border-border bg-background px-2 text-sm"
           >
@@ -206,17 +237,20 @@ function EditUserDialog({
   user,
   isOwner,
   isMe,
+  odooEmployees,
   onClose,
 }: {
   user: User;
   isOwner: boolean;
   isMe: boolean;
+  odooEmployees: OdooEmployee[];
   onClose: () => void;
 }) {
   const [prenom, setPrenom] = useState(user.prenom);
   const [nom, setNom] = useState(user.nom);
   const [role, setRole] = useState<UserRole>(user.role);
   const [isActive, setIsActive] = useState(user.isActive);
+  const [odooEmployeeId, setOdooEmployeeId] = useState<number | null>(user.odooEmployeeId);
   const [password, setPassword] = useState("");
   const update = useUpdateUser();
   const del = useDeleteUser();
@@ -227,11 +261,13 @@ function EditUserDialog({
     setNom(user.nom);
     setRole(user.role);
     setIsActive(user.isActive);
+    setOdooEmployeeId(user.odooEmployeeId);
   }, [user]);
 
   const canEditOthers = isOwner && !isMe;
   const canEditSelf = isMe;
   const canEdit = canEditOthers || canEditSelf;
+  const showOdooField = isOwner && odooEmployees.length > 0;
 
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -242,6 +278,9 @@ function EditUserDialog({
     if (canEditOthers) {
       if (role !== user.role) patch.role = role;
       if (isActive !== user.isActive) patch.isActive = isActive;
+    }
+    if (canEditOthers && odooEmployeeId !== user.odooEmployeeId) {
+      patch.odooEmployeeId = odooEmployeeId;
     }
     if (password) patch.password = password;
     update.mutate(patch, { onSuccess: () => onClose() });
@@ -329,6 +368,30 @@ function EditUserDialog({
               </label>
               <p className="mt-1 text-xs text-foreground/60">
                 Désactiver révoque immédiatement les sessions.
+              </p>
+            </Field>
+          )}
+
+          {showOdooField && (
+            <Field label="Employé Odoo (timesheets)">
+              <select
+                value={odooEmployeeId ?? ""}
+                onChange={(e) =>
+                  setOdooEmployeeId(e.target.value === "" ? null : Number(e.target.value))
+                }
+                disabled={!canEditOthers || update.isPending}
+                className="h-10 w-full rounded-lg border border-border bg-background px-3 text-base disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <option value="">— non mappé —</option>
+                {odooEmployees.map((emp) => (
+                  <option key={emp.odooId} value={emp.odooId}>
+                    {emp.name}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1 text-xs text-foreground/60">
+                Les heures saisies sur les Travaux remontent sur cet employé Odoo (
+                <span className="font-mono">hr.employee</span>).
               </p>
             </Field>
           )}
