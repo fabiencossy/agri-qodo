@@ -129,13 +129,7 @@ export default function PresencesPage() {
 
   return (
     <>
-      <Breadcrumb
-        items={[
-          { label: "Accueil", href: "/app" },
-          { label: "Activités", href: "/activites" },
-          { label: "Présences" },
-        ]}
-      />
+      <Breadcrumb items={[{ label: "Accueil", href: "/app" }, { label: "Présences" }]} />
       <div className="mx-auto max-w-2xl px-3 py-4 sm:py-8">
         <PageHeader
           title="Présences"

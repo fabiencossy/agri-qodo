@@ -23,7 +23,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { MaterielPicker } from "@/components/ui/materiel-picker";
 import { ParcelleSearchSelect } from "@/components/ui/parcelle-search-select";
-import { PartenaireSelect } from "@/components/ui/partenaire-select";
 import { ProduitFullscreenPicker } from "@/components/ui/produit-fullscreen-picker";
 import {
   emojiType,
@@ -41,7 +40,7 @@ import {
   useInterventionsWithGeom,
   useUpdateIntervention,
 } from "@/lib/interventions";
-import { formatSurface, useParcelle, useParcelles, useParcellesAccessibles } from "@/lib/parcelles";
+import { formatSurface, useParcelle, useParcelles } from "@/lib/parcelles";
 import { useCheckFumureOrganique } from "@/lib/per";
 
 // Leaflet a besoin de window — on dynamiquement charge sans SSR.
@@ -154,7 +153,6 @@ export default function NewInterventionPage() {
   // on clique sur "Planifier".
   const [assignedToUserId, setAssignedToUserId] = useState<string>("");
   const parcelles = useParcelles();
-  const accessiblesParcelles = useParcellesAccessibles();
   const produits = useProduits();
 
   const {
@@ -211,21 +209,7 @@ export default function NewInterventionPage() {
     // Note : on ne touche pas `toutLeChamp` ici — l'effet
     // selectedParcelleId le reset à true. L'utilisateur peut décocher
     // s'il veut modifier la sous-zone partielle.
-    //
-    // Pré-remplir le sélecteur Client à partir de la parcelle de
-    // l'intervention :
-    // - cas A (parcelle perso) → pas de client
-    // - cas B (parcelle d'un partenaire) → clientId = parcelle.tenantId
-    // - cas C (parcelle d'un client Odoo) → clientOdooId = parcelle.odooPartnerId
-    const accessible = accessiblesParcelles.data?.find((p) => p.id === iv.parcelleId);
-    if (accessible) {
-      if (!accessible.isOwn) {
-        setClientId(accessible.tenantId);
-      } else if (accessible.odooPartnerId) {
-        setClientOdooId(accessible.odooPartnerId);
-      }
-    }
-  }, [isEditMode, existingIntervention.data, loadedId, reset, accessiblesParcelles.data]);
+  }, [isEditMode, existingIntervention.data, loadedId, reset]);
 
   const selectedType = useWatch({ control, name: "type" });
   const selectedProduitId = useWatch({ control, name: "produitId" });
@@ -271,16 +255,6 @@ export default function NewInterventionPage() {
     return TECHNIQUES_ORDER;
   }, [selectedProduit]);
 
-  // Client choisi en haut du formulaire — sert à filtrer les parcelles
-  // visibles dans le ParcelleSearchSelect (UX "trouver vite la bonne parcelle").
-  // Pas persisté côté serveur : le tenantId effectif vient de la parcelle.
-  // Carnet : 2 sélections distinctes possibles dans le sélecteur Client.
-  // - clientId (UUID Exploitation) → filtre les parcelles à celles du client.
-  // - clientOdooId (Int) → simple mémorisation, pas de filtre parcelles
-  //   (un client Odoo "seul" n'a pas de parcelles côté Agri Qodo).
-  const [clientId, setClientId] = useState("");
-  const [clientOdooId, setClientOdooId] = useState<number | null>(null);
-
   const [toutLeChamp, setToutLeChamp] = useState(true);
   // Mode de saisie de la sous-zone : numérique (m² entré au clavier) ou
   // dessiné sur carte (polygone clippé à la parcelle, surface auto).
@@ -294,12 +268,6 @@ export default function NewInterventionPage() {
   const [sousZoneOverlapM2, setSousZoneOverlapM2] = useState<number>(0);
 
   const selectedParcelle = parcelles.data?.find((p) => p.id === selectedParcelleId);
-  // Détection cas A (parcelle perso) vs cas B (parcelle d'un partenaire) —
-  // pour afficher le bandeau "facturé à {client}" et déclencher le push
-  // automatique sale.order Odoo (PR-6).
-  const accessibleParcelle = accessiblesParcelles.data?.find((p) => p.id === selectedParcelleId);
-  const casB = accessibleParcelle && !accessibleParcelle.isOwn;
-  const proprietaireParcelle = accessibleParcelle?.tenant;
   // Le getById expose la geom — utile pour afficher le contour parent.
   const parcelleDetail = useParcelle(selectedParcelleId || undefined);
   const surfaceParcelleM2 = selectedParcelle ? Number(selectedParcelle.surfaceM2) : 0;
@@ -585,28 +553,6 @@ export default function NewInterventionPage() {
             </select>
           </Field>
 
-          <Field
-            label="Client (optionnel)"
-            hint="Si renseigné, filtre les parcelles à celles du client. Laisse vide pour tes parcelles."
-          >
-            <PartenaireSelect
-              value={{
-                ...(clientId ? { partenaireId: clientId } : {}),
-                ...(clientOdooId ? { odooPartnerId: clientOdooId } : {}),
-              }}
-              onChange={(next) => {
-                setClientId(next.partenaireId ?? "");
-                setClientOdooId(next.odooPartnerId ?? null);
-                // Reset parcelle uniquement si on change de partenaire Agri Qodo
-                // (les clients Odoo "seuls" n'ont pas de parcelles à filtrer).
-                if (next.partenaireId !== clientId) {
-                  setValue("parcelleId", "");
-                }
-              }}
-              placeholder="Choisir un client…"
-            />
-          </Field>
-
           <Field label="Parcelle" error={errors.parcelleId?.message}>
             <Controller
               control={control}
@@ -617,11 +563,6 @@ export default function NewInterventionPage() {
                   onChange={(id) => onChange(id)}
                   required
                   disabled={noParcelles}
-                  {...(clientId
-                    ? { filtreTenantId: clientId }
-                    : clientOdooId
-                      ? { filtreOdooPartnerId: clientOdooId }
-                      : {})}
                 />
               )}
             />
@@ -640,25 +581,6 @@ export default function NewInterventionPage() {
               <CalendarDays className="h-4 w-4" />
               Planifier (sans saisir les détails)
             </button>
-          )}
-
-          {casB && proprietaireParcelle && (
-            <div className="flex items-start gap-3 rounded-2xl border-2 border-amber-300 bg-white p-4 text-sm dark:border-amber-800 dark:bg-zinc-900">
-              <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-amber-600 text-white">
-                <span className="text-base" aria-hidden>
-                  🚜
-                </span>
-              </span>
-              <div className="flex-1">
-                <p className="font-semibold text-amber-900 dark:text-amber-200">
-                  Travail pour tiers chez <strong>{proprietaireParcelle.nom}</strong>
-                </p>
-                <p className="mt-1 text-xs text-foreground/80">
-                  L'intervention sera enregistrée dans le carnet du client (en attente de
-                  validation) et générera un devis Odoo facturable.
-                </p>
-              </div>
-            </div>
           )}
 
           <Field label="Type d'opération" error={errors.type?.message}>
@@ -693,12 +615,8 @@ export default function NewInterventionPage() {
           </Field>
 
           <Field
-            label={casB ? "Matériel utilisé (facturé au client)" : "Matériel utilisé"}
-            hint={
-              casB
-                ? "Le matériel sélectionné servira à générer la ligne de facture Odoo (quantité = surface en hectares)."
-                : "Outil/machine utilisé : charrue, semoir, pulvé, ensileuse… Optionnel."
-            }
+            label="Matériel utilisé"
+            hint="Outil/machine utilisé : charrue, semoir, pulvé, ensileuse… Optionnel."
             actionRight={
               <Link href="/materiels" className="text-xs font-medium text-green hover:underline">
                 + Gérer

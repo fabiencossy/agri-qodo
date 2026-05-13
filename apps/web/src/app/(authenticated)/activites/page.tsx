@@ -4,11 +4,7 @@ import { ClipboardCheck, Sprout, Timer, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo } from "react";
-import {
-  ActiviteCard,
-  type ActiviteKind,
-  type ActiviteUnifiee,
-} from "@/components/activites/activite-card";
+import { ActiviteCard, type ActiviteUnifiee } from "@/components/activites/activite-card";
 import { Breadcrumb } from "@/components/app/breadcrumb";
 import {
   type FilterOption,
@@ -24,7 +20,8 @@ import {
   useInterventionsPending,
 } from "@/lib/interventions";
 import { useCurrentPresence } from "@/lib/presences";
-import { type Travail, useDeleteTravail, useTravaux } from "@/lib/travaux";
+
+type CarnetItem = Extract<ActiviteUnifiee, { kind: "CARNET" }>;
 
 function startOfDay(d: Date): Date {
   const x = new Date(d);
@@ -44,40 +41,20 @@ function semaineFromDate(d: Date): { lundi: Date; dimanche: Date } {
   dimanche.setDate(lundi.getDate() + 6);
   return { lundi, dimanche };
 }
-function travailKind(t: Travail): "TIERS" | "INTERNE" {
-  return t.interne ? "INTERNE" : "TIERS";
-}
 
-const KIND_LABEL: Record<ActiviteKind, string> = {
-  CARNET: "Carnet",
-  TIERS: "Travail tiers",
-  INTERNE: "Travail interne",
-};
-const KIND_ORDER: ActiviteKind[] = ["CARNET", "TIERS", "INTERNE"];
-
-function searchFields(item: ActiviteUnifiee): string {
-  if (item.kind === "CARNET") {
-    const iv = item.intervention;
-    return [
-      libelleType(iv.type),
-      iv.parcelle.nom,
-      iv.produit ?? "",
-      iv.produitRef?.libelle ?? "",
-      iv.culture?.espece ?? "",
-      iv.notes ?? "",
-    ].join(" ");
-  }
-  const t = item.travail;
+function searchFields(item: CarnetItem): string {
+  const iv = item.intervention;
   return [
-    t.titre,
-    t.partenaire?.nom ?? "",
-    t.parcelle?.nom ?? "",
-    t.projet?.nom ?? "",
-    t.notes ?? "",
+    libelleType(iv.type),
+    iv.parcelle.nom,
+    iv.produit ?? "",
+    iv.produitRef?.libelle ?? "",
+    iv.culture?.espece ?? "",
+    iv.notes ?? "",
   ].join(" ");
 }
 
-function buildFilters(): FilterOption<ActiviteUnifiee>[] {
+function buildFilters(): FilterOption<CarnetItem>[] {
   const today = startOfDay(new Date());
   const tomorrow = new Date(today);
   tomorrow.setDate(today.getDate() + 1);
@@ -99,25 +76,15 @@ function buildFilters(): FilterOption<ActiviteUnifiee>[] {
         return t >= sem.lundi.getTime() && t <= sem.dimanche.getTime();
       },
     },
-    { key: "carnet", label: "Carnet uniquement", predicate: (it) => it.kind === "CARNET" },
-    { key: "tiers", label: "Travaux pour tiers", predicate: (it) => it.kind === "TIERS" },
-    { key: "interne", label: "Travaux internes", predicate: (it) => it.kind === "INTERNE" },
     {
       key: "pending",
-      label: "Carnet à valider",
-      predicate: (it) => it.kind === "CARNET" && it.intervention.validationStatus === "PENDING",
+      label: "À valider",
+      predicate: (it) => it.intervention.validationStatus === "PENDING",
     },
   ];
 }
 
-const GROUPBYS: GroupByOption<ActiviteUnifiee>[] = [
-  {
-    key: "kind",
-    label: "Type d'activité",
-    groupKey: (it) => it.kind,
-    groupLabel: (k) => KIND_LABEL[k as ActiviteKind] ?? k,
-    order: KIND_ORDER,
-  },
+const GROUPBYS: GroupByOption<CarnetItem>[] = [
   {
     key: "jour",
     label: "Jour",
@@ -141,40 +108,30 @@ const GROUPBYS: GroupByOption<ActiviteUnifiee>[] = [
       });
     },
   },
+  {
+    key: "type",
+    label: "Type d'intervention",
+    groupKey: (it) => it.intervention.type,
+    groupLabel: (k) => libelleType(k as Intervention["type"]),
+  },
 ];
 
-const COLUMNS: ListColumn<ActiviteUnifiee>[] = [
+const COLUMNS: ListColumn<CarnetItem>[] = [
   {
     key: "type",
     header: "Type",
-    cell: (it) => <KindPill kind={it.kind} />,
-    className: "w-28",
-  },
-  {
-    key: "titre",
-    header: "Titre",
-    cell: (it) => (
-      <span className="font-medium">
-        {it.kind === "CARNET" ? libelleType(it.intervention.type) : it.travail.titre}
-      </span>
-    ),
+    cell: (it) => <span className="font-medium">{libelleType(it.intervention.type)}</span>,
   },
   {
     key: "parcelle",
     header: "Parcelle",
-    cell: (it) =>
-      it.kind === "CARNET"
-        ? (it.intervention.parcelle.nom ?? "—")
-        : (it.travail.parcelle?.nom ?? "—"),
+    cell: (it) => it.intervention.parcelle.nom ?? "—",
     hideBelow: "sm",
   },
   {
-    key: "client",
-    header: "Client",
-    cell: (it) => {
-      if (it.kind === "CARNET") return "—";
-      return it.travail.partenaire?.nom ?? (it.kind === "INTERNE" ? "Interne" : "—");
-    },
+    key: "produit",
+    header: "Produit / culture",
+    cell: (it) => it.intervention.produitRef?.libelle ?? it.intervention.culture?.espece ?? "—",
     hideBelow: "md",
   },
   {
@@ -186,87 +143,36 @@ const COLUMNS: ListColumn<ActiviteUnifiee>[] = [
   },
 ];
 
-function KindPill({ kind }: { kind: ActiviteKind }) {
-  const map: Record<ActiviteKind, string> = {
-    CARNET: "bg-emerald-50 text-emerald-700 border-emerald-300",
-    TIERS: "bg-purple-50 text-purple-700 border-purple-300",
-    INTERNE: "bg-sky-50 text-sky-700 border-sky-300",
-  };
-  const labels: Record<ActiviteKind, string> = {
-    CARNET: "Carnet",
-    TIERS: "Tiers",
-    INTERNE: "Interne",
-  };
-  return (
-    <span
-      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${map[kind]}`}
-    >
-      {labels[kind]}
-    </span>
-  );
-}
-
-export default function ActivitesPage() {
+export default function CarnetDesChampsPage() {
   const router = useRouter();
   const interventions = useInterventions();
-  const travaux = useTravaux();
   const pending = useInterventionsPending();
   const presenceCourante = useCurrentPresence();
   const deleteIntervention = useDeleteIntervention();
-  const deleteTravail = useDeleteTravail();
 
-  const items = useMemo<ActiviteUnifiee[]>(() => {
-    const fromIv: ActiviteUnifiee[] = (interventions.data ?? []).map((iv: Intervention) => ({
-      kind: "CARNET" as const,
-      date: iv.dateOperation,
-      intervention: iv,
-    }));
-    // Set des Travaux "shadow" créés automatiquement par une Intervention
-    // cas B/C (parcelle partenaire ou client Odoo). Ils sont collectés via
-    // Intervention.linkedTravailId pour être masqués de la liste — sinon
-    // chaque saisie chez un client apparaît 2 fois (CARNET + TIERS).
-    // Décision Fabien 2026-05-06 : "je veux uniquement une seule activité
-    // mais qui va dans le projet carnet des champs tiers sur Odoo".
-    const shadowTravailIds = new Set<string>(
-      (interventions.data ?? []).map((iv) => iv.linkedTravailId).filter((id): id is string => !!id),
-    );
-    const fromTravaux: ActiviteUnifiee[] = (travaux.data ?? [])
-      .filter((t: Travail) => !shadowTravailIds.has(t.id))
-      .map((t: Travail) => {
-        const kind = travailKind(t);
-        return { kind, date: t.date, travail: t } as ActiviteUnifiee;
+  const items = useMemo<CarnetItem[]>(() => {
+    return (interventions.data ?? [])
+      .map((iv: Intervention) => ({
+        kind: "CARNET" as const,
+        date: iv.dateOperation,
+        intervention: iv,
+      }))
+      .sort((a, b) => {
+        const aPending = a.intervention.validationStatus === "PENDING" ? 1 : 0;
+        const bPending = b.intervention.validationStatus === "PENDING" ? 1 : 0;
+        if (aPending !== bPending) return bPending - aPending;
+        return new Date(b.date).getTime() - new Date(a.date).getTime();
       });
-    return [...fromIv, ...fromTravaux].sort((a, b) => {
-      const aPending = a.kind === "CARNET" && a.intervention.validationStatus === "PENDING" ? 1 : 0;
-      const bPending = b.kind === "CARNET" && b.intervention.validationStatus === "PENDING" ? 1 : 0;
-      if (aPending !== bPending) return bPending - aPending;
-      return new Date(b.date).getTime() - new Date(a.date).getTime();
-    });
-  }, [interventions.data, travaux.data]);
+  }, [interventions.data]);
 
   const pendingCount = pending.data?.length ?? 0;
   const filters = useMemo(buildFilters, []);
 
-  function getItemKey(it: ActiviteUnifiee): string {
-    return it.kind === "CARNET" ? `iv-${it.intervention.id}` : `tr-${it.travail.id}`;
-  }
-  function onItemClick(it: ActiviteUnifiee) {
-    // Click sur une carte → ouvre la vue détail (lecture). Demande
-    // Fabien 2026-05-06 : "quand je clique sur une saisie je veux
-    // directement arriver sur la vue". L'édition reste accessible
-    // via le bouton "Modifier" sur la vue détail.
-    if (it.kind === "CARNET") {
-      router.push(`/interventions/${it.intervention.id}` as never);
-    } else {
-      router.push(`/travaux/${it.travail.id}` as never);
-    }
-  }
-
   return (
     <>
-      <Breadcrumb items={[{ label: "Accueil", href: "/app" }, { label: "Activités" }]} />
+      <Breadcrumb items={[{ label: "Accueil", href: "/app" }, { label: "Carnet des champs" }]} />
       <div className="mx-auto w-full px-3 py-4 sm:py-6">
-        <h1 className="mb-3 text-2xl font-bold sm:text-3xl">Activités</h1>
+        <h1 className="mb-3 text-2xl font-bold sm:text-3xl">Carnet des champs</h1>
 
         {presenceCourante.data && (
           <Link
@@ -289,25 +195,24 @@ export default function ActivitesPage() {
               <strong>
                 {pendingCount} intervention{pendingCount > 1 ? "s" : ""}
               </strong>{" "}
-              à valider — utilise le filtre "Carnet à valider".
+              à valider — utilise le filtre "À valider".
             </span>
           </div>
         )}
 
-        {/* ResourceView : barre de recherche + 5 vues + filtres + groupBy */}
-        <ResourceView<ActiviteUnifiee>
-          storageKey="activites-unifiees-v3"
+        <ResourceView<CarnetItem>
+          storageKey="carnet-des-champs-v1"
           defaultView="list"
           availableViews={["list", "kanban", "calendar"]}
           data={items}
           columns={COLUMNS}
           renderCard={(it) => <ActiviteCard item={it} />}
           renderKanbanCard={(it) => <ActiviteCard item={it} />}
-          getKey={getItemKey}
+          getKey={(it) => `iv-${it.intervention.id}`}
           dateField={(it) => it.date}
-          onItemClick={onItemClick}
+          onItemClick={(it) => router.push(`/interventions/${it.intervention.id}` as never)}
           searchFields={searchFields}
-          searchPlaceholder="Rechercher type, titre, parcelle, client, produit, notes…"
+          searchPlaceholder="Rechercher type, parcelle, produit, culture, notes…"
           filters={filters}
           groupBys={GROUPBYS}
           selectable
@@ -317,19 +222,17 @@ export default function ActivitesPage() {
               label: "Supprimer",
               icon: Trash2,
               className: "bg-red-600 hover:bg-red-700",
-              confirm: "Supprimer {n} activité(s) ?",
+              confirm: "Supprimer {n} intervention(s) ?",
               handler: async (selected) => {
                 let ok = 0;
                 const errors: string[] = [];
                 for (const it of selected) {
                   try {
-                    if (it.kind === "CARNET")
-                      await deleteIntervention.mutateAsync(it.intervention.id);
-                    else await deleteTravail.mutateAsync(it.travail.id);
+                    await deleteIntervention.mutateAsync(it.intervention.id);
                     ok++;
                   } catch (err) {
                     const msg = err instanceof Error ? err.message : String(err);
-                    errors.push(`${it.kind === "CARNET" ? "Carnet" : "Travail"} : ${msg}`);
+                    errors.push(`${libelleType(it.intervention.type)} : ${msg}`);
                   }
                 }
                 if (errors.length > 0) {
@@ -341,9 +244,9 @@ export default function ActivitesPage() {
           emptyState={
             <div>
               <Sprout className="mx-auto mb-2 h-10 w-10 text-foreground/30" />
-              <p className="text-sm text-foreground/60">Aucune activité pour l'instant.</p>
+              <p className="text-sm text-foreground/60">Aucune intervention pour l'instant.</p>
               <p className="mt-1 text-xs text-foreground/50">
-                Tape sur le bouton + en bas à droite pour commencer.
+                Tape sur le bouton + en bas à droite pour saisir ta première intervention.
               </p>
             </div>
           }
