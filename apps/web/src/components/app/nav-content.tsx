@@ -12,6 +12,7 @@ import {
   LogOut,
   type LucideIcon,
   MapPin,
+  Sprout,
   Tractor,
   Timer,
   UserCircle,
@@ -35,7 +36,8 @@ interface NavLink {
 const NAVIGATION: NavLink[] = [
   { href: "/app", label: "Accueil", icon: Home },
   { href: "/parcelles", label: "Parcelles", icon: MapPin },
-  { href: "/activites", label: "Activités", icon: Tractor },
+  { href: "/activites", label: "Carnet des champs", icon: Sprout },
+  { href: "/travaux", label: "Travaux", icon: Tractor },
   { href: "/planning", label: "Planning", icon: CalendarDays },
   { href: "/presences", label: "Présences", icon: Timer },
   { href: "/mes-heures", label: "Mes heures", icon: Clock },

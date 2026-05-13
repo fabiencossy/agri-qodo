@@ -44,7 +44,7 @@ export default function InterventionsPendingPage() {
       <Breadcrumb
         items={[
           { label: "Accueil", href: "/app" },
-          { label: "Activités", href: "/activites" },
+          { label: "Carnet des champs", href: "/activites" },
           { label: "Interventions à valider" },
         ]}
       />

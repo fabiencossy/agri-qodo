@@ -343,14 +343,13 @@ export default function NewTravailPage() {
         ]}
       />
       <div className="mx-auto max-w-3xl px-4 pb-32 pt-6 sm:py-8">
-        {!isEditMode && <TypeSaisieHeader active={interne ? "interne" : "tiers"} />}
+        {!isEditMode && (
+          <TypeSaisieHeader active={interne ? "interne" : "tiers"} closeHref="/travaux" />
+        )}
         {isEditMode && editId && (
           <div className="mb-6 flex items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-3">
-              <Link
-                href={"/activites" as never}
-                className="text-foreground/60 hover:text-foreground"
-              >
+              <Link href={"/travaux" as never} className="text-foreground/60 hover:text-foreground">
                 <ArrowLeft className="h-5 w-5" />
               </Link>
               <h1 className="flex min-w-0 items-center gap-2 text-2xl font-bold sm:text-3xl">
@@ -361,12 +360,12 @@ export default function NewTravailPage() {
             <EditActionsMenu
               onComplete={() => {
                 completeTravail.mutate(editId, {
-                  onSuccess: () => router.push("/activites"),
+                  onSuccess: () => router.push("/travaux"),
                 });
               }}
               onDelete={() => {
                 deleteTravail.mutate(editId, {
-                  onSuccess: () => router.push("/activites"),
+                  onSuccess: () => router.push("/travaux"),
                 });
               }}
               completing={completeTravail.isPending}
