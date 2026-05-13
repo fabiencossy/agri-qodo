@@ -47,22 +47,50 @@ export default function ImportPage() {
     setParseError(null);
     setResult(null);
     try {
-      const text = await file.text();
-      const data = JSON.parse(text) as {
-        type?: string;
-        features?: GeoFeature[];
-      };
-      if (data.type !== "FeatureCollection" || !Array.isArray(data.features)) {
-        throw new Error("Le fichier n'est pas un GeoJSON FeatureCollection valide.");
+      const ext = file.name.toLowerCase().split(".").pop() ?? "";
+      let parsed: { features?: unknown } | null = null;
+
+      if (ext === "pdf") {
+        throw new Error(
+          "Le PDF n'est pas un format de données importable (c'est juste une image du plan). Dans Acorda, choisis l'export « Shape » (.zip) ou « KML ».",
+        );
+      } else if (ext === "kml") {
+        const text = await file.text();
+        const xml = new DOMParser().parseFromString(text, "text/xml");
+        if (xml.getElementsByTagName("parsererror").length > 0) {
+          throw new Error("Le fichier KML est mal formé.");
+        }
+        const { kml } = await import("@tmcw/togeojson");
+        parsed = kml(xml) as { features?: unknown };
+      } else if (ext === "zip") {
+        const buffer = await file.arrayBuffer();
+        const { default: shp } = await import("shpjs");
+        const result = await shp(buffer);
+        parsed = Array.isArray(result)
+          ? { features: result.flatMap((fc) => fc.features ?? []) }
+          : (result as { features?: unknown });
+      } else if (ext === "geojson" || ext === "json") {
+        const text = await file.text();
+        const data = JSON.parse(text) as { type?: string; features?: unknown };
+        if (data.type !== "FeatureCollection") {
+          throw new Error("Le fichier n'est pas un GeoJSON FeatureCollection valide.");
+        }
+        parsed = data;
+      } else {
+        throw new Error(
+          "Format non reconnu. Utilise l'export Shape (.zip) ou KML de ton portail cantonal.",
+        );
       }
-      const valid = data.features.filter(
+
+      const features = Array.isArray(parsed?.features) ? (parsed.features as GeoFeature[]) : [];
+      const valid = features.filter(
         (f) =>
           f.type === "Feature" &&
           f.geometry &&
           (f.geometry.type === "Polygon" || f.geometry.type === "MultiPolygon"),
       );
       if (valid.length === 0) {
-        throw new Error("Aucune parcelle Polygon/MultiPolygon trouvée.");
+        throw new Error("Aucune parcelle Polygon/MultiPolygon trouvée dans le fichier.");
       }
       setFeatures(valid);
       setEdits({});
@@ -70,7 +98,7 @@ export default function ImportPage() {
       setParseError(
         err instanceof Error
           ? err.message
-          : "Impossible de lire le fichier. Vérifie que c'est un GeoJSON.",
+          : "Impossible de lire le fichier. Vérifie le format (Shape .zip, KML ou GeoJSON).",
       );
       setFeatures([]);
     }
@@ -127,8 +155,9 @@ export default function ImportPage() {
         <h1 className="mb-2 text-2xl font-bold">Importer mes parcelles depuis un fichier</h1>
         <p className="mb-6 text-sm text-foreground/70">
           Exporte ton parcellaire depuis ton portail cantonal (Acorda VD/GE/NE/JU, GELAN BE/FR/SO,
-          Agriportal TI…) au format GeoJSON, puis dépose le fichier ici. Toutes tes parcelles
-          arriveront avec leurs limites officielles, surfaces et numéros cadastraux.
+          Agriportal TI…) au format <strong>Shape (.zip)</strong>, <strong>KML</strong> ou{" "}
+          <strong>GeoJSON</strong>, puis dépose le fichier ici. Toutes tes parcelles arriveront avec
+          leurs limites officielles, surfaces et numéros cadastraux.
         </p>
 
         {features.length === 0 && !result && <UploadZone onFile={onFile} error={parseError} />}
@@ -283,13 +312,16 @@ function UploadZone({ onFile, error }: { onFile: (f: File) => void; error: strin
       >
         <FileUp className="h-12 w-12 text-foreground/40" />
         <div>
-          <div className="font-semibold">Glisse-dépose ton fichier GeoJSON ici</div>
+          <div className="font-semibold">
+            Glisse-dépose ton fichier <span className="whitespace-nowrap">Shape (.zip)</span>, KML
+            ou GeoJSON
+          </div>
           <div className="mt-1 text-sm text-foreground/60">ou clique pour parcourir</div>
         </div>
         <input
           id="geojson-file"
           type="file"
-          accept=".geojson,.json,application/geo+json,application/json"
+          accept=".kml,.zip,.geojson,.json,application/vnd.google-earth.kml+xml,application/zip,application/geo+json,application/json"
           className="hidden"
           onChange={(e) => {
             const f = e.target.files?.[0];
@@ -304,17 +336,22 @@ function UploadZone({ onFile, error }: { onFile: (f: File) => void; error: strin
         <strong className="text-foreground">Comment exporter ?</strong>
         <ul className="mt-2 list-disc space-y-1 pl-5">
           <li>
-            <strong>Acorda</strong> (VD/GE/NE/JU) : Mes données → Parcellaire → Exporter en GeoJSON
+            <strong>Acorda</strong> (VD/GE/NE/JU) : Mes données → Parcellaire → Exporter au format{" "}
+            <strong>Shape</strong> (livré en .zip) ou <strong>KML</strong>. Le PDF n'est pas un
+            export de données — c'est juste un plan imprimable, il ne peut pas être importé.
           </li>
           <li>
-            <strong>GELAN</strong> (BE/FR/SO) : équivalent dans la section Parcellaire
+            <strong>GELAN</strong> (BE/FR/SO) : équivalent dans la section Parcellaire (Shape, KML
+            ou GeoJSON)
           </li>
           <li>
             <strong>Agriportal</strong> (TI) : selon le canton
           </li>
         </ul>
         <p className="mt-2 text-xs text-foreground/50">
-          Le fichier doit contenir des géométries Polygon ou MultiPolygon en WGS84 (EPSG:4326).
+          Le fichier doit contenir des géométries Polygon ou MultiPolygon. Les Shapefiles sont
+          reprojetés automatiquement en WGS84 (EPSG:4326) ; les GeoJSON/KML doivent déjà être en
+          WGS84.
         </p>
       </div>
     </>
