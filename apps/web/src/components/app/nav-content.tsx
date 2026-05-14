@@ -14,7 +14,6 @@ import {
   MapPin,
   Sprout,
   Tractor,
-  Timer,
   UserCircle,
   Users,
 } from "lucide-react";
@@ -39,8 +38,11 @@ const NAVIGATION: NavLink[] = [
   { href: "/activites", label: "Carnet des champs", icon: Sprout },
   { href: "/travaux", label: "Travaux", icon: Tractor },
   { href: "/planning", label: "Planning", icon: CalendarDays },
-  { href: "/presences", label: "Présences", icon: Timer },
   { href: "/mes-heures", label: "Mes heures", icon: Clock },
+  // Entrée "Présences" retirée 2026-05-14 — la création de présence
+  // se fait désormais via /mes-heures (Fabien : "abolir l'onglet
+  // présences au niveau de Mes heures"). La page /presences reste
+  // accessible par URL pour rétrocompat des liens existants.
   // Cheptel + SRPA cachés tant que Fabien ne travaille pas dessus (2026-05-09)
   // — réactiver en remettant `/animaux` et `/srpa` quand le module sera repris.
 ];

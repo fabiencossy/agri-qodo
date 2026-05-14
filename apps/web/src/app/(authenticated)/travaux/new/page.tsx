@@ -535,21 +535,39 @@ export default function NewTravailPage() {
                     : "erreur inconnue"
                   : null
               }
-              onValidate={() => validateTravail.mutate(existingTravail.data!.id)}
-              validating={validateTravail.isPending}
-              onCancel={() => cancelTravail.mutate(existingTravail.data!.id)}
-              cancelling={cancelTravail.isPending}
             />
           )}
 
-          {/* ----- Sticky bottom bar mobile ----- */}
+          {/* ----- Sticky bottom bar — tous les boutons sur une seule
+              ligne (Fabien 2026-05-14 v5). En mode édition :
+              [Annuler ce travail] [Valider] [Mettre à jour]. En mode
+              création : juste [Sauvegarder]. ----- */}
           <div className="fixed inset-x-0 bottom-0 z-10 border-t border-border bg-background/95 px-4 py-3 backdrop-blur sm:static sm:border-0 sm:bg-transparent sm:p-0 sm:pt-2">
-            <div className="mx-auto flex max-w-3xl justify-end gap-2">
-              <Link href="/travaux">
-                <Button type="button" variant="ghost">
-                  Annuler
+            <div className="mx-auto flex max-w-3xl flex-wrap items-center justify-end gap-2">
+              {isEditMode &&
+                existingTravail.data &&
+                (existingTravail.data.statut === "DRAFT" ||
+                  existingTravail.data.statut === "VALIDATED") && (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => cancelTravail.mutate(existingTravail.data!.id)}
+                    disabled={cancelTravail.isPending}
+                  >
+                    <XCircle className="mr-1 h-4 w-4" />
+                    {cancelTravail.isPending ? "Annulation…" : "Annuler ce travail"}
+                  </Button>
+                )}
+              {isEditMode && existingTravail.data && existingTravail.data.statut === "DRAFT" && (
+                <Button
+                  type="button"
+                  onClick={() => validateTravail.mutate(existingTravail.data!.id)}
+                  disabled={validateTravail.isPending}
+                >
+                  <CheckCircle2 className="mr-1 h-4 w-4" />
+                  {validateTravail.isPending ? "Validation…" : "Valider"}
                 </Button>
-              </Link>
+              )}
               <Button type="submit" disabled={create.isPending} className="h-11 px-6">
                 <Save className="mr-1 h-4 w-4" />
                 {create.isPending || update.isPending
@@ -677,10 +695,6 @@ function EditActionsBlock({
   onPush,
   pushing,
   pushError,
-  onValidate,
-  validating,
-  onCancel,
-  cancelling,
 }: {
   travail: NonNullable<ReturnType<typeof useTravail>["data"]>;
   odooConnected: boolean;
@@ -688,10 +702,6 @@ function EditActionsBlock({
   onPush: () => void;
   pushing: boolean;
   pushError: string | null;
-  onValidate: () => void;
-  validating: boolean;
-  onCancel: () => void;
-  cancelling: boolean;
 }) {
   const total = totalTravailCHF(travail);
   const showOdooBanner = odooConnected && travail.statut !== "CANCELLED" && !travail.interne;
@@ -782,20 +792,10 @@ function EditActionsBlock({
         </div>
       )}
 
-      <div className="flex flex-wrap items-center gap-2">
-        {travail.statut === "DRAFT" && (
-          <Button type="button" onClick={onValidate} disabled={validating}>
-            <CheckCircle2 className="mr-1 h-4 w-4" />
-            {validating ? "Validation…" : "Valider"}
-          </Button>
-        )}
-        {(travail.statut === "DRAFT" || travail.statut === "VALIDATED") && (
-          <Button type="button" variant="secondary" onClick={onCancel} disabled={cancelling}>
-            <XCircle className="mr-1 h-4 w-4" />
-            {cancelling ? "Annulation…" : "Annuler ce travail"}
-          </Button>
-        )}
-      </div>
+      {/* Les boutons Valider / Annuler ce travail sont désormais
+          fusionnés dans la sticky bar du formulaire avec "Mettre à
+          jour" — Fabien 2026-05-14 v5 (image 21) : tous les boutons
+          d'action sur une seule ligne. */}
     </div>
   );
 }
