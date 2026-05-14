@@ -812,8 +812,17 @@ export class InterventionsService {
   async remove(id: string) {
     const { tenantId } = this.tenantContext.get();
     return this.prisma.$transaction(async (tx) => {
+      // Fabien 2026-05-14 (image 30) : un utilisateur recevait HTTP 404
+      // sur la suppression alors qu'il voyait bien l'intervention dans
+      // sa liste — la liste filtre par OR(ownerTenantId, authorTenantId)
+      // tandis que remove() ne filtrait que par ownerTenantId. Cas
+      // typique : une intervention saisie via le compte démo public.
+      // On aligne le filtre de suppression sur celui de la liste.
       const existing = await tx.intervention.findFirst({
-        where: { id, ownerTenantId: tenantId },
+        where: {
+          id,
+          OR: [{ ownerTenantId: tenantId }, { authorTenantId: tenantId }],
+        },
         select: { id: true, cultureId: true },
       });
       if (!existing) {
