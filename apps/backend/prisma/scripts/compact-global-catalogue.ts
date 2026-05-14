@@ -23,7 +23,7 @@
  * Usage :
  *   pnpm tsx prisma/scripts/compact-global-catalogue.ts
  */
-import { PrismaClient, type ProduitCategorie } from "@prisma/client";
+import { type MaterielCategorie, PrismaClient, type ProduitCategorie } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
@@ -93,7 +93,19 @@ const QUOTAS: Record<ProduitCategorie, number> = {
   AUTRE: 0,
 };
 
-const QUOTA_MATERIELS = 20;
+// Matériels (prestations) — quota PAR catégorie pour couvrir tous les
+// types d'opérations du carnet des champs (Fabien 2026-05-14 image 64 :
+// "y a tjs pas les prestation de type semis").
+const QUOTAS_MATERIELS: Record<MaterielCategorie, number> = {
+  TRAVAIL_DU_SOL: 5,
+  SEMIS: 8, // élargi pour inclure semis céréales/maïs/colza + plantations
+  FERTILISATION: 5,
+  PROTECTION: 3,
+  RECOLTE: 6,
+  IRRIGATION: 2,
+  TRANSPORT: 2,
+  AUTRE: 0,
+};
 
 async function main() {
   console.log("=== Compaction du catalogue global ===\n");
@@ -167,14 +179,24 @@ async function main() {
   }
   console.log(`\nAutres catégories : ${pActivated} ré-activés, ${pDeactivated} désactivés.\n`);
 
-  // ---- PRESTATIONS (matériels) ----
-  const matToKeep = await prisma.materiel.findMany({
-    where: { tenantId: null },
-    orderBy: { libelle: "asc" },
-    take: QUOTA_MATERIELS,
-    select: { id: true },
-  });
-  const matKeepIds = new Set(matToKeep.map((m) => m.id));
+  // ---- PRESTATIONS (matériels) — quota PAR catégorie ----
+  console.log("Prestations (matériels) par catégorie :");
+  const matKeepIds = new Set<string>();
+  for (const [categorie, quota] of Object.entries(QUOTAS_MATERIELS)) {
+    const cat = categorie as MaterielCategorie;
+    if (quota <= 0) continue;
+    const top = await prisma.materiel.findMany({
+      where: { tenantId: null, categorie: cat },
+      orderBy: { libelle: "asc" },
+      take: quota,
+      select: { id: true },
+    });
+    for (const m of top) matKeepIds.add(m.id);
+    const dispo = await prisma.materiel.count({
+      where: { tenantId: null, categorie: cat },
+    });
+    console.log(`  ${cat.padEnd(18)} : ${top.length}/${quota} (${dispo} dispos)`);
+  }
   let mAct = 0;
   let mDeact = 0;
   const allMat = await prisma.materiel.findMany({
@@ -191,7 +213,7 @@ async function main() {
       mDeact++;
     }
   }
-  console.log(`Prestations : ${mAct} ré-activées, ${mDeact} désactivées.\n`);
+  console.log(`  ${mAct} ré-activées, ${mDeact} désactivées.\n`);
 
   // ---- DÉSACTIVATION DES PERSO HORS TOP ----
   const activeGlobals = await prisma.produit.findMany({
