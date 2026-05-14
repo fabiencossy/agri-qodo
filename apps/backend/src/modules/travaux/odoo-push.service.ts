@@ -1005,14 +1005,17 @@ export class OdooPushService {
   }
 
   /**
-   * Push best-effort d'une intervention cas A (parcelle perso) vers
-   * Odoo en tant que `project.task`. Pas de facturation (≠ cas B qui
-   * fait sale.order). Sert juste à tracer l'activité côté Odoo pour
-   * les rapports d'exploitation.
+   * Push best-effort d'une intervention carnet vers Odoo.
    *
-   * Le projet container est créé/réutilisé une fois par tenant
-   * ("Agri Qodo — Carnet des champs"). Idempotent : si l'intervention
-   * a déjà un `odooTaskId`, on skip.
+   * Décision Fabien 2026-05-14 :
+   * - Une `project.task` unique par parcelle (stockée sur
+   *   Parcelle.odooTaskId), créée à la première intervention.
+   * - Toutes les interventions sur cette parcelle posteront leurs
+   *   heures via `account.analytic.line` (timesheet sur la tâche) et
+   *   leur résumé via `message_post` dans le chatter de la tâche.
+   * - Idempotence des heures via `Intervention.odooAnalyticLineId`
+   *   (write au lieu de create si déjà renseigné). Le chatter reste
+   *   en append-only — chaque save laisse une trace.
    */
   async tryPushInterventionTask(interventionId: string): Promise<{ taskId: number } | null> {
     const { tenantId } = this.tenantContext.get();
@@ -1020,51 +1023,171 @@ export class OdooPushService {
       const intervention = await this.prisma.intervention.findFirst({
         where: { id: interventionId, ownerTenantId: tenantId },
         include: {
-          parcelle: { select: { nom: true } },
+          parcelle: { select: { id: true, nom: true, odooTaskId: true } },
           materielRef: { select: { libelle: true } },
           produitRef: { select: { libelle: true } },
+          assignedTo: { select: { odooEmployeeId: true } },
         },
       });
       if (!intervention) return null;
-      if (intervention.odooTaskId) return { taskId: intervention.odooTaskId };
 
       const client = await this.odooClientManager.forTenant(tenantId);
       const projectId = await this.ensureCarnetProject(client, tenantId);
 
-      const titreType = intervention.type.replace(/_/g, " ").toLowerCase();
-      const titre = `${titreType.charAt(0).toUpperCase()}${titreType.slice(1)} — ${intervention.parcelle.nom}`;
-      const descriptionLines = [
-        `Date : ${intervention.dateOperation.toISOString().slice(0, 10)}`,
-        intervention.materielRef ? `Matériel : ${intervention.materielRef.libelle}` : null,
-        intervention.produitRef
-          ? `Produit : ${intervention.produitRef.libelle}${intervention.quantite ? ` — ${intervention.quantite} ${intervention.unite ?? ""}` : ""}`
-          : null,
-        intervention.surfaceHa ? `Surface : ${Number(intervention.surfaceHa).toFixed(2)} ha` : null,
-        intervention.notes ? `Notes : ${intervention.notes}` : null,
-      ].filter(Boolean);
+      // 1. Assurer la project.task de la parcelle (création unique).
+      const taskId = await this.ensureParcelleTask(
+        client,
+        intervention.parcelle.id,
+        intervention.parcelle.nom,
+        intervention.parcelle.odooTaskId,
+        projectId,
+      );
 
-      const taskId = await client.create("project.task", {
-        name: titre,
-        project_id: projectId,
-        description: descriptionLines.join("\n"),
-        date_deadline: intervention.dateOperation.toISOString().slice(0, 10),
-      });
+      // 2. Push heures via account.analytic.line (timesheet) si saisies.
+      if (intervention.dureeMinutes && intervention.dureeMinutes > 0) {
+        await this.upsertInterventionTimesheet(client, intervention, taskId);
+      }
 
-      await this.prisma.intervention.update({
-        where: { id: interventionId },
-        data: { odooTaskId: taskId, odooTaskPushedAt: new Date() },
+      // 3. Toujours poster un résumé dans le chatter de la tâche
+      //    (append-only — on accepte les doublons si l'utilisateur re-save).
+      const summary = this.buildInterventionChatterMessage(intervention);
+      await client.callKw("project.task", "message_post", [[taskId]], {
+        body: summary,
+        message_type: "comment",
       });
 
       this.logger.log(
-        `project.task #${taskId} créé pour intervention ${interventionId} (cas A, projet ${projectId})`,
+        `Intervention ${interventionId} poussée sur project.task #${taskId} (parcelle ${intervention.parcelle.id})`,
       );
       return { taskId };
     } catch (err) {
       this.logger.warn(
-        `Push project.task échoué pour intervention ${interventionId} : ${err instanceof Error ? err.message : err}`,
+        `Push intervention ${interventionId} échoué : ${err instanceof Error ? err.message : err}`,
       );
       return null;
     }
+  }
+
+  /**
+   * Trouve ou crée la `project.task` Odoo de la parcelle dans le
+   * projet Carnet configuré. Stocke `odooTaskId` sur la parcelle pour
+   * réutilisation par toutes ses interventions.
+   */
+  private async ensureParcelleTask(
+    client: OdooClient,
+    parcelleId: string,
+    parcelleNom: string,
+    existingTaskId: number | null,
+    projectId: number,
+  ): Promise<number> {
+    if (existingTaskId) {
+      // Vérification soft : si la tâche n'existe plus côté Odoo (purgée
+      // manuellement), on en recrée une. Sinon on l'utilise.
+      const found = await client.searchRead<{ id: number }>(
+        "project.task",
+        [["id", "=", existingTaskId]],
+        { fields: ["id"], limit: 1 },
+      );
+      if (found.length > 0) return existingTaskId;
+    }
+
+    const taskId = await client.create("project.task", {
+      name: parcelleNom,
+      project_id: projectId,
+    });
+    await this.prisma.parcelle.update({
+      where: { id: parcelleId },
+      data: { odooTaskId: taskId, odooTaskPushedAt: new Date() },
+    });
+    this.logger.log(`project.task #${taskId} créée pour parcelle ${parcelleId} (${parcelleNom})`);
+    return taskId;
+  }
+
+  /**
+   * Crée ou met à jour la timesheet (`account.analytic.line`) liée à
+   * l'intervention sur la tâche de la parcelle. Idempotent via
+   * `Intervention.odooAnalyticLineId`.
+   */
+  private async upsertInterventionTimesheet(
+    client: OdooClient,
+    intervention: {
+      id: string;
+      dateOperation: Date;
+      dureeMinutes: number | null;
+      notes: string | null;
+      type: string;
+      odooAnalyticLineId: number | null;
+      assignedTo: { odooEmployeeId: number | null } | null;
+    },
+    taskId: number,
+  ): Promise<void> {
+    const unitAmount = (intervention.dureeMinutes ?? 0) / 60;
+    if (unitAmount <= 0) return;
+    const titreType = intervention.type.replace(/_/g, " ").toLowerCase();
+    const values: Record<string, unknown> = {
+      task_id: taskId,
+      date: intervention.dateOperation.toISOString().slice(0, 10),
+      unit_amount: unitAmount,
+      name: `${titreType.charAt(0).toUpperCase()}${titreType.slice(1)}${
+        intervention.notes ? ` — ${intervention.notes}` : ""
+      }`,
+    };
+    if (intervention.assignedTo?.odooEmployeeId) {
+      values.employee_id = intervention.assignedTo.odooEmployeeId;
+    }
+
+    if (intervention.odooAnalyticLineId) {
+      await client.write("account.analytic.line", [intervention.odooAnalyticLineId], values);
+      return;
+    }
+    const lineId = await client.create("account.analytic.line", values);
+    await this.prisma.intervention.update({
+      where: { id: intervention.id },
+      data: { odooAnalyticLineId: lineId },
+    });
+  }
+
+  /**
+   * Construit le message HTML posté dans le chatter de la tâche
+   * parcelle à chaque save d'intervention. Format compact et lisible.
+   */
+  private buildInterventionChatterMessage(intervention: {
+    type: string;
+    dateOperation: Date;
+    materielRef: { libelle: string } | null;
+    produitRef: { libelle: string } | null;
+    quantite: { toString(): string } | null;
+    unite: string | null;
+    surfaceHa: { toString(): string } | null;
+    dureeMinutes: number | null;
+    notes: string | null;
+  }): string {
+    const titreType = intervention.type.replace(/_/g, " ").toLowerCase();
+    const titre = `${titreType.charAt(0).toUpperCase()}${titreType.slice(1)}`;
+    const date = intervention.dateOperation.toISOString().slice(0, 10);
+    const escape = (s: string): string =>
+      s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    const lines: string[] = [`<strong>${escape(titre)}</strong> · ${escape(date)}`];
+    if (intervention.produitRef) {
+      const qte = intervention.quantite ? ` — ${intervention.quantite}` : "";
+      const unite = intervention.unite ? ` ${escape(intervention.unite)}` : "";
+      lines.push(`Produit : ${escape(intervention.produitRef.libelle)}${qte}${unite}`);
+    }
+    if (intervention.materielRef) {
+      lines.push(`Matériel : ${escape(intervention.materielRef.libelle)}`);
+    }
+    if (intervention.surfaceHa) {
+      lines.push(`Surface : ${Number(intervention.surfaceHa).toFixed(2)} ha`);
+    }
+    if (intervention.dureeMinutes && intervention.dureeMinutes > 0) {
+      const h = Math.floor(intervention.dureeMinutes / 60);
+      const m = intervention.dureeMinutes % 60;
+      lines.push(`Durée : ${h}h${String(m).padStart(2, "0")}`);
+    }
+    if (intervention.notes) {
+      lines.push(`Notes : ${escape(intervention.notes)}`);
+    }
+    return lines.join("<br/>");
   }
 
   /**
@@ -1081,11 +1204,18 @@ export class OdooPushService {
     // ne pas casser les tenants pré-Sprint B.
     const tenant = await this.prisma.exploitation.findUnique({
       where: { id: tenantId },
-      select: { odooProjectIdCarnetInterne: true },
+      select: {
+        odooProjectIdCarnetTiers: true,
+        odooProjectIdCarnetInterne: true,
+      },
     });
-    if (tenant?.odooProjectIdCarnetInterne) {
-      this.carnetProjectCache.set(tenantId, tenant.odooProjectIdCarnetInterne);
-      return tenant.odooProjectIdCarnetInterne;
+    // Fabien 2026-05-14 : "Carnet des champs" est un seul concept côté
+    // UI. Le frontend écrit la même valeur dans les deux champs ; on
+    // prend l'un ou l'autre selon ce qui est renseigné.
+    const configured = tenant?.odooProjectIdCarnetTiers ?? tenant?.odooProjectIdCarnetInterne;
+    if (configured) {
+      this.carnetProjectCache.set(tenantId, configured);
+      return configured;
     }
 
     const projectName = "Agri Qodo — Carnet des champs";
