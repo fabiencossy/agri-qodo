@@ -108,6 +108,11 @@ export class TravauxService {
     await this.assertPartenaire(dto.partenaireId, tenantId);
     await this.assertProjet(dto.projetId, tenantId);
     await this.assertLignesValid(dto.lignesProduit, dto.lignesHeure, tenantId);
+    // Anti-chevauchement (Fabien 2026-05-14) : un même employé ne peut
+    // pas avoir deux plages d'heures qui se chevauchent. Vérifie aussi
+    // les chevauchements internes au DTO lui-même (2 lignes du même
+    // user avec plages qui se croisent).
+    await this.assertNoLignesHeureOverlap(dto.lignesHeure);
 
     // Sprint 2 fusion-interventions — Planning. Un travail créé sans
     // contenu (pas de lignes) avec une datePrevue est considéré comme
@@ -201,6 +206,12 @@ export class TravauxService {
     if (dto.partenaireId) await this.assertPartenaire(dto.partenaireId, tenantId);
     if (dto.projetId) await this.assertProjet(dto.projetId, tenantId);
     await this.assertLignesValid(dto.lignesProduit, dto.lignesHeure, tenantId);
+    // Anti-chevauchement à l'update : si les lignesHeure sont remplacées,
+    // on revalide en excluant les lignes du Travail courant (qui vont
+    // être deleteMany juste après).
+    if (dto.lignesHeure !== undefined) {
+      await this.assertNoLignesHeureOverlap(dto.lignesHeure, id);
+    }
 
     return this.prisma
       .$transaction(async (tx) => {
@@ -505,6 +516,103 @@ export class TravauxService {
           ...(l.notes ? { notes: l.notes } : {}),
         },
       });
+    }
+  }
+
+  /**
+   * Vérifie qu'aucune ligne d'heures saisie ne chevauche une autre plage
+   * du même employé — qu'elle vienne d'une Intervention (carnet des
+   * champs) ou d'une LigneTravailHeure d'un autre Travail.
+   *
+   * Vérifie aussi les chevauchements INTERNES entre les lignes du DTO
+   * (cas où l'utilisateur met 2 lignes du même user avec plages qui
+   * se croisent dans le même formulaire).
+   *
+   * Lève ConflictException avec un message explicite (statusCode 409
+   * remonté côté UI dans le bandeau d'erreur).
+   *
+   * Skip les lignes sans userId+heureDebut+heureFin (saisie durée seule
+   * = pas de plage à vérifier).
+   */
+  private async assertNoLignesHeureOverlap(
+    lignes: CreateLigneHeureDto[] | undefined,
+    excludeTravailId?: string,
+  ): Promise<void> {
+    if (!lignes || lignes.length === 0) return;
+    const withRange = lignes
+      .map((l) => {
+        if (!l.userId || !l.heureDebut || !l.heureFin) return null;
+        const debut = new Date(l.heureDebut);
+        const fin = new Date(l.heureFin);
+        if (Number.isNaN(debut.getTime()) || Number.isNaN(fin.getTime()) || fin <= debut) {
+          return null;
+        }
+        return { userId: l.userId, debut, fin };
+      })
+      .filter((x): x is { userId: string; debut: Date; fin: Date } => x !== null);
+
+    // 1) Chevauchements internes au DTO.
+    for (let i = 0; i < withRange.length; i++) {
+      for (let j = i + 1; j < withRange.length; j++) {
+        const a = withRange[i];
+        const b = withRange[j];
+        if (!a || !b) continue;
+        if (a.userId !== b.userId) continue;
+        if (a.debut < b.fin && b.debut < a.fin) {
+          throw new ConflictException(
+            `Chevauchement d'heures dans la saisie : deux lignes pour le même employé se chevauchent (${a.debut.toISOString().slice(11, 16)}–${a.fin.toISOString().slice(11, 16)} et ${b.debut.toISOString().slice(11, 16)}–${b.fin.toISOString().slice(11, 16)}).`,
+          );
+        }
+      }
+    }
+
+    // 2) Chevauchements externes (autres saisies en base).
+    for (const r of withRange) {
+      // Vérifie les Interventions du même user.
+      const conflictIntervention = await this.prisma.intervention.findFirst({
+        where: {
+          assignedToUserId: r.userId,
+          heureDebut: { lt: r.fin, not: null },
+          heureFin: { gt: r.debut, not: null },
+        },
+        select: {
+          id: true,
+          type: true,
+          heureDebut: true,
+          heureFin: true,
+          parcelle: { select: { nom: true } },
+        },
+      });
+      if (conflictIntervention) {
+        const hd = conflictIntervention.heureDebut?.toISOString().slice(11, 16) ?? "—";
+        const hf = conflictIntervention.heureFin?.toISOString().slice(11, 16) ?? "—";
+        throw new ConflictException(
+          `Chevauchement d'heures : une intervention "${conflictIntervention.type}" sur ${conflictIntervention.parcelle.nom} occupe déjà ${hd}–${hf} pour cet employé.`,
+        );
+      }
+      // Vérifie les LigneTravailHeure existantes (en excluant celles
+      // du Travail courant si on est en update).
+      const conflictLigne = await this.prisma.ligneTravailHeure.findFirst({
+        where: {
+          userId: r.userId,
+          heureDebut: { lt: r.fin, not: null },
+          heureFin: { gt: r.debut, not: null },
+          ...(excludeTravailId ? { travailId: { not: excludeTravailId } } : {}),
+        },
+        select: {
+          id: true,
+          heureDebut: true,
+          heureFin: true,
+          travail: { select: { titre: true } },
+        },
+      });
+      if (conflictLigne) {
+        const hd = conflictLigne.heureDebut?.toISOString().slice(11, 16) ?? "—";
+        const hf = conflictLigne.heureFin?.toISOString().slice(11, 16) ?? "—";
+        throw new ConflictException(
+          `Chevauchement d'heures : le travail "${conflictLigne.travail.titre}" occupe déjà ${hd}–${hf} pour cet employé.`,
+        );
+      }
     }
   }
 

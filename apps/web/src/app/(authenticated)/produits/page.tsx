@@ -157,8 +157,11 @@ export default function ProduitsPage() {
           "Les produits déjà liés à Odoo seront mis à jour, ceux qui n'existent plus côté " +
           "Odoo seront recréés.",
       )
-    )
+    ) {
+      console.log("[Push tout] Annulé par l'utilisateur");
       return;
+    }
+    console.log("[Push tout] Démarrage…");
     setPushAllResult(null);
     setPushAllError(null);
     // Promise.allSettled au lieu de Promise.all : si une des deux requêtes
@@ -190,6 +193,12 @@ export default function ProduitsPage() {
     setPushAllResult({ produits: produitsResult, materiels: materielsResult });
     if (errors.length > 0) {
       setPushAllError(errors.join(" | "));
+      console.error("[Push tout] Terminé avec erreurs :", errors);
+    } else {
+      console.log("[Push tout] Terminé sans erreur :", {
+        produits: produitsResult,
+        materiels: materielsResult,
+      });
     }
   };
 
