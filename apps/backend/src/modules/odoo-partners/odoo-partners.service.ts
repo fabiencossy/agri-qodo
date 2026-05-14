@@ -170,6 +170,69 @@ export class OdooPartnersService {
   }
 
   /**
+   * Diagnostic : pourquoi la liste des `project.project` est vide ?
+   * Distingue Odoo non configuré / erreur XML-RPC (droits, module
+   * absent…) / aucun projet actif côté Odoo. Alimente le bandeau
+   * d'aide dans /parametres/exploitation quand le sélecteur projets
+   * est vide (décision Fabien 2026-05-14).
+   */
+  async diagnoseProjects(tenantId: string): Promise<{
+    configured: boolean;
+    error: string | null;
+    count: number;
+    countActifs: number;
+    sample: Array<{ odooId: number; name: string; active: boolean }>;
+  }> {
+    const client = await this.odoo.forTenant(tenantId).catch(() => null);
+    if (!client) {
+      return {
+        configured: false,
+        error: null,
+        count: 0,
+        countActifs: 0,
+        sample: [],
+      };
+    }
+    try {
+      // active_test:false → inclut aussi les projets archivés, pour
+      // distinguer "aucun projet" vs "tous archivés" dans le diagnostic.
+      type Row = { id: number; name: string; active: boolean };
+      const rows: Row[] = await client.callKw<Row[]>(
+        "project.project",
+        "search_read",
+        [[], ["id", "name", "active"]],
+        {
+          context: { active_test: false },
+          limit: 20,
+          order: "name asc",
+        },
+      );
+      const actifs = rows.filter((r: Row) => r.active);
+      return {
+        configured: true,
+        error: null,
+        count: rows.length,
+        countActifs: actifs.length,
+        sample: rows.map((r: Row) => ({
+          odooId: r.id,
+          name: r.name,
+          active: r.active,
+        })),
+      };
+    } catch (e) {
+      const msg = (e as Error).message ?? "erreur inconnue";
+      this.log.warn(`Échec diagnostic project.project Odoo : ${msg}`);
+      return {
+        configured: true,
+        error: msg,
+        count: 0,
+        countActifs: 0,
+        sample: [],
+      };
+    }
+  }
+
+  /**
    * Liste les `hr.employee` Odoo actifs du tenant. Vide si Odoo non
    * configuré ou si le module hr n'est pas installé. Alimente le select
    * "Employé Odoo" sur /utilisateurs (mapping User.odooEmployeeId pour
