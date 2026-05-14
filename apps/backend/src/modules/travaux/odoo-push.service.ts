@@ -956,6 +956,41 @@ export class OdooPushService {
    * log l'échec et renvoie null. Le Travail reste DRAFT sans
    * odooSaleOrderId, l'utilisateur peut re-pousser manuellement.
    */
+  /**
+   * Best-effort unlink des records Odoo associés à un Travail supprimé
+   * localement (Fabien 2026-05-14). Ne throw jamais — la suppression
+   * locale est déjà commitée, on ne veut pas la faire échouer si Odoo
+   * est down ou si le record a déjà été supprimé manuellement.
+   */
+  async tryUnlinkTravailOdoo(
+    tenantId: string,
+    ids: {
+      odooSaleOrderId: number | null;
+      odooTaskId: number | null;
+      odooFsmTaskId: number | null;
+    },
+  ): Promise<void> {
+    const client = await this.odooClientManager.forTenant(tenantId).catch(() => null);
+    if (!client) return;
+    const tryUnlink = async (model: string, id: number | null) => {
+      if (!id) return;
+      try {
+        await client.unlink(model, [id]);
+        this.logger.log(`Unlink Odoo OK : ${model} #${id}`);
+      } catch (err) {
+        this.logger.warn(
+          `Unlink Odoo échoué (${model} #${id}) : ${err instanceof Error ? err.message : err}`,
+        );
+      }
+    };
+    // Ordre : FSM task → project.task → sale.order. La fsm.task peut
+    // référencer le sale.order via sale_order_id, donc on la supprime
+    // en premier pour éviter les FK chains.
+    await tryUnlink("industry.fsm.task", ids.odooFsmTaskId);
+    await tryUnlink("project.task", ids.odooTaskId);
+    await tryUnlink("sale.order", ids.odooSaleOrderId);
+  }
+
   async tryPushTravailQuotation(travailId: string): Promise<PushTravailResult | null> {
     try {
       return await this.pushTravail(travailId);

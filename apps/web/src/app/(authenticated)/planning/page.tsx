@@ -413,64 +413,62 @@ function PlanningCard({
 
   return (
     <li className="rounded-xl border border-border bg-background p-3">
-      <Link href={item.href} className="flex items-start gap-3">
-        <span className={`shrink-0 ${meta.color}`}>
-          <Icon className="h-5 w-5" />
-        </span>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-baseline justify-between gap-2">
+      <Link href={item.href} className="block">
+        {/* Ligne d'en-tête : icône + titre + heure (sur toute la largeur) */}
+        <div className="flex items-baseline justify-between gap-2">
+          <div className="flex min-w-0 items-baseline gap-2">
+            <span className={`shrink-0 self-center ${meta.color}`}>
+              <Icon className="h-5 w-5" />
+            </span>
             <span className="truncate text-sm font-semibold capitalize">{item.titre}</span>
-            {heureLabel && (
-              <span className="shrink-0 font-mono text-xs tabular-nums text-foreground/60">
-                {heureLabel}
-              </span>
-            )}
           </div>
-          {(item.client || item.parcelle || item.produit) && (
-            <div className="mt-1 space-y-0.5 text-xs text-foreground/70">
-              {item.client && (
-                <div className="flex items-center gap-1.5">
-                  <Building2 className="h-3 w-3 shrink-0 text-foreground/50" />
-                  <span className="truncate">{item.client}</span>
-                </div>
-              )}
-              {item.parcelle && (
-                <div className="flex items-center gap-1.5">
-                  <MapPin className="h-3 w-3 shrink-0 text-foreground/50" />
-                  <span className="truncate">{item.parcelle}</span>
-                </div>
-              )}
-              {item.produit && (
-                <div className="flex items-center gap-1.5">
-                  <Leaf className="h-3 w-3 shrink-0 text-foreground/50" />
-                  <span className="truncate">{item.produit}</span>
-                </div>
-              )}
-            </div>
-          )}
-          {item.assignedToLabel && (
-            <div className="mt-1.5">
-              <span className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-foreground/70">
-                <UserIcon className="h-3 w-3" />
-                {item.assignedToLabel}
-              </span>
-            </div>
-          )}
-          {/* Badge "Planifié" retiré (Fabien 2026-05-14 image 45) — sur
-              la page Planning, tous les items sont par définition
-              planifiés. Le statut Travail reste utile en revanche pour
-              distinguer DRAFT/VALIDATED/CANCELLED, mais on ne l'affiche
-              plus tant qu'on est en PLANIFIE. */}
-          {item.travailStatut && item.travailStatut !== "PLANIFIE" && (
-            <div className="mt-1.5">
-              <span
-                className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${STATUT_BADGE[item.travailStatut]}`}
-              >
-                {STATUT_LABEL[item.travailStatut]}
-              </span>
-            </div>
+          {heureLabel && (
+            <span className="shrink-0 font-mono text-xs tabular-nums text-foreground/60">
+              {heureLabel}
+            </span>
           )}
         </div>
+        {/* Infos détaillées : pleine largeur sous l'en-tête
+            (Fabien 2026-05-14 image 49). */}
+        {(item.client || item.parcelle || item.produit) && (
+          <div className="mt-1 space-y-0.5 text-xs text-foreground/70">
+            {item.client && (
+              <div className="flex items-center gap-1.5">
+                <Building2 className="h-3 w-3 shrink-0 text-foreground/50" />
+                <span className="truncate">{item.client}</span>
+              </div>
+            )}
+            {item.parcelle && (
+              <div className="flex items-center gap-1.5">
+                <MapPin className="h-3 w-3 shrink-0 text-foreground/50" />
+                <span className="truncate">{item.parcelle}</span>
+              </div>
+            )}
+            {item.produit && (
+              <div className="flex items-center gap-1.5">
+                <Leaf className="h-3 w-3 shrink-0 text-foreground/50" />
+                <span className="truncate">{item.produit}</span>
+              </div>
+            )}
+          </div>
+        )}
+        {item.assignedToLabel && (
+          <div className="mt-1.5">
+            <span className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-foreground/70">
+              <UserIcon className="h-3 w-3" />
+              {item.assignedToLabel}
+            </span>
+          </div>
+        )}
+        {item.travailStatut && item.travailStatut !== "PLANIFIE" && (
+          <div className="mt-1.5">
+            <span
+              className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${STATUT_BADGE[item.travailStatut]}`}
+            >
+              {STATUT_LABEL[item.travailStatut]}
+            </span>
+          </div>
+        )}
       </Link>
       {peutMarquerTermine && (
         <div className="mt-3 flex justify-end border-t border-border pt-3">
