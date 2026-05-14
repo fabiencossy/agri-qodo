@@ -16,6 +16,7 @@ import {
   Tractor,
   UserCircle,
   Users,
+  UsersRound,
 } from "lucide-react";
 import Link from "next/link";
 import type { Route } from "next";
@@ -37,6 +38,7 @@ const NAVIGATION: NavLink[] = [
   { href: "/planning", label: "Planning", icon: CalendarDays },
   { href: "/activites", label: "Carnet des champs", icon: Sprout },
   { href: "/travaux", label: "Travaux", icon: Tractor },
+  { href: "/clients", label: "Clients", icon: UsersRound },
   { href: "/parcelles", label: "Parcelles", icon: MapPin },
   { href: "/mes-heures", label: "Mes heures", icon: Clock },
   // Entrée "Présences" retirée 2026-05-14 — la création de présence
