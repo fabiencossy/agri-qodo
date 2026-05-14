@@ -656,6 +656,12 @@ export class OdooSyncService {
         .catch(() => undefined);
     }
 
+    // Fabien 2026-05-14 : libère l'odooProductId si un AUTRE produit
+    // du tenant l'a déjà — héritage de syncs précédentes qui ont laissé
+    // des perso doublons. Sans ça, l'update échoue sur la contrainte
+    // unique (tenant_id, odoo_product_id).
+    await this.releaseOdooProductIdConflict(tenantId, odooId, produit.id);
+
     if (produit.tenantId === null) {
       // Globaux : on duplique en perso pour pouvoir poser l'odooProductId
       // sans contaminer le catalogue partagé.
@@ -688,5 +694,34 @@ export class OdooSyncService {
     }
 
     return odooId;
+  }
+
+  /**
+   * Si un autre produit du tenant a déjà cet `odooProductId` (héritage
+   * de syncs précédentes ou doublons UI), on lui retire pour libérer
+   * la contrainte unique avant d'attribuer l'id au produit cible.
+   */
+  private async releaseOdooProductIdConflict(
+    tenantId: string,
+    odooId: number,
+    excludeProduitId: string,
+  ): Promise<void> {
+    const conflict = await this.prisma.produit.findFirst({
+      where: {
+        tenantId,
+        odooProductId: odooId,
+        id: { not: excludeProduitId },
+      },
+      select: { id: true, libelle: true },
+    });
+    if (conflict) {
+      this.logger.log(
+        `Reset odooProductId=${odooId} sur produit ${conflict.id} (${conflict.libelle}) pour libérer le slot.`,
+      );
+      await this.prisma.produit.update({
+        where: { id: conflict.id },
+        data: { odooProductId: null, actif: false },
+      });
+    }
   }
 }

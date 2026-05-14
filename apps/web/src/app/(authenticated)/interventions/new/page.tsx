@@ -1006,8 +1006,13 @@ export default function NewInterventionPage() {
           )}
 
           {(createMutation.isError || updateMutation.isError) && (
-            <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
-              <strong>{isEditMode ? "Modification impossible" : "Saisie impossible"} :</strong>{" "}
+            <div
+              role="alert"
+              className="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm font-medium text-red-800"
+            >
+              <span className="mr-2 inline-block rounded bg-red-700 px-1.5 py-0.5 text-[11px] font-bold uppercase tracking-wider text-white">
+                Erreur
+              </span>
               {extractApiErrorMessage(createMutation.error ?? updateMutation.error) ??
                 "Vérifie les valeurs et réessaie."}
             </div>

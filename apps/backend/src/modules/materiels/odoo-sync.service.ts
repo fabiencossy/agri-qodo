@@ -585,6 +585,12 @@ export class MaterielsOdooSyncService {
         .catch(() => undefined);
     }
 
+    // Libère un éventuel doublon (Fabien 2026-05-14) : un autre
+    // matériel du tenant peut déjà avoir cet odooProductId suite à
+    // des syncs antérieures, ce qui ferait planter l'update sur la
+    // contrainte unique.
+    await this.releaseOdooProductIdConflict(tenantId, odooId, materiel.id);
+
     // Si le matériel est global (tenantId null), on ne peut pas y stocker
     // l'odooProductId tenant-specific. On crée alors une copie tenant
     // avec le mapping. Sinon on update direct.
@@ -612,5 +618,29 @@ export class MaterielsOdooSyncService {
     }
 
     return odooId;
+  }
+
+  private async releaseOdooProductIdConflict(
+    tenantId: string,
+    odooId: number,
+    excludeMaterielId: string,
+  ): Promise<void> {
+    const conflict = await this.prisma.materiel.findFirst({
+      where: {
+        tenantId,
+        odooProductId: odooId,
+        id: { not: excludeMaterielId },
+      },
+      select: { id: true, libelle: true },
+    });
+    if (conflict) {
+      this.logger.log(
+        `Reset odooProductId=${odooId} sur matériel ${conflict.id} (${conflict.libelle}) pour libérer le slot.`,
+      );
+      await this.prisma.materiel.update({
+        where: { id: conflict.id },
+        data: { odooProductId: null, actif: false },
+      });
+    }
   }
 }

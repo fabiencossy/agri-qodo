@@ -29,7 +29,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Breadcrumb } from "@/components/app/breadcrumb";
 import { BigActionButton } from "@/components/activites/big-action-button";
 import { EditActionsMenu } from "@/components/activites/edit-actions-menu";
@@ -44,6 +44,7 @@ import { Input } from "@/components/ui/input";
 import { ParcelleSearchSelect } from "@/components/ui/parcelle-search-select";
 import { useParcelle } from "@/lib/parcelles";
 import { PartenaireSelect } from "@/components/ui/partenaire-select";
+import { extractApiErrorMessage } from "@/lib/api-client";
 import { useCurrentUser } from "@/lib/auth";
 import { useProduits } from "@/lib/produits";
 import { useTenantDetail } from "@/lib/tenants";
@@ -161,6 +162,14 @@ export default function NewTravailPage() {
   // Multi-produits : tableau de lignes empilables.
   const [produitsLignes, setProduitsLignes] = useState<ProduitLigne[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const errorRef = useRef<HTMLDivElement | null>(null);
+  // Scroll auto vers le bandeau d'erreur dès qu'il apparaît, pour que
+  // l'utilisateur ne le rate pas même sur formulaire long.
+  useEffect(() => {
+    if (error && errorRef.current) {
+      errorRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [error]);
   // Modaux plein écran "Ajouter du temps" / "Ajouter des produits"
   // (décision Fabien 2026-05-14 : sortir ces saisies du formulaire principal).
   const [showTempsSheet, setShowTempsSheet] = useState(false);
@@ -286,7 +295,7 @@ export default function NewTravailPage() {
       const created = await create.mutateAsync(payload);
       router.push(`/planning?from=${created.id}` as never);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Échec de la planification.");
+      setError(extractApiErrorMessage(err) ?? "Échec de la planification.");
     }
   }
 
@@ -365,7 +374,7 @@ export default function NewTravailPage() {
         router.push(`/travaux/new?edit=${created.id}` as never);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Erreur inconnue");
+      setError(extractApiErrorMessage(err) ?? "Erreur inconnue");
     }
   };
 
@@ -583,7 +592,18 @@ export default function NewTravailPage() {
             />
           </Field>
 
-          {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+          {error && (
+            <div
+              ref={errorRef}
+              role="alert"
+              className="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm font-medium text-red-800"
+            >
+              <span className="mr-2 inline-block rounded bg-red-700 px-1.5 py-0.5 text-[11px] font-bold uppercase tracking-wider text-white">
+                Erreur
+              </span>
+              {error}
+            </div>
+          )}
 
           {/* ----- Bloc édition : statut + total + push Odoo + actions
               (Valider / Annuler) ----- */}
