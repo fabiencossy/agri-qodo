@@ -901,7 +901,12 @@ export default function NewInterventionPage() {
                 onClick={() => setShowTempsSheet(true)}
               />
               {heures.dureeMinutes > 0 && (
-                <div className="rounded-xl border border-border bg-background px-3 py-2 text-xs">
+                <button
+                  type="button"
+                  onClick={() => setShowTempsSheet(true)}
+                  aria-label="Modifier le temps saisi"
+                  className="block w-full rounded-xl border border-border bg-background px-3 py-2 text-left text-xs transition-colors hover:border-green hover:bg-green/5"
+                >
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-foreground/60">Durée effective</span>
                     <span className="font-mono font-semibold">
@@ -923,7 +928,7 @@ export default function NewInterventionPage() {
                       <span className="font-mono">{heures.dureePauseMinutes} min</span>
                     </div>
                   )}
-                </div>
+                </button>
               )}
             </div>
           )}
