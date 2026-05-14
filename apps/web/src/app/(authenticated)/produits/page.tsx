@@ -88,6 +88,7 @@ export default function ProduitsPage() {
     produits: PushAllProduitsResult | null;
     materiels: PushAllMaterielsResult | null;
   } | null>(null);
+  const [pushAllError, setPushAllError] = useState<string | null>(null);
   const [editing, setEditing] = useState<CatalogueItemForEdit | null>(null);
 
   const produits = useProduits();
@@ -159,14 +160,36 @@ export default function ProduitsPage() {
     )
       return;
     setPushAllResult(null);
-    try {
-      const [p, m] = await Promise.all([
-        pushAllProduits.mutateAsync(),
-        pushAllMateriels.mutateAsync(),
-      ]);
-      setPushAllResult({ produits: p, materiels: m });
-    } catch (err) {
-      alert(`Erreur push vers Odoo : ${err instanceof Error ? err.message : String(err)}`);
+    setPushAllError(null);
+    // Promise.allSettled au lieu de Promise.all : si une des deux requêtes
+    // échoue, on récupère quand même le résultat de l'autre + tous les
+    // détails d'erreur pour l'afficher (avant : erreur silencieuse).
+    const [pRes, mRes] = await Promise.allSettled([
+      pushAllProduits.mutateAsync(),
+      pushAllMateriels.mutateAsync(),
+    ]);
+    const errors: string[] = [];
+    let produitsResult: PushAllProduitsResult | null = null;
+    let materielsResult: PushAllMaterielsResult | null = null;
+    if (pRes.status === "fulfilled") {
+      produitsResult = pRes.value;
+    } else {
+      console.error("Push produits échoué :", pRes.reason);
+      errors.push(
+        `Produits : ${pRes.reason instanceof Error ? pRes.reason.message : String(pRes.reason)}`,
+      );
+    }
+    if (mRes.status === "fulfilled") {
+      materielsResult = mRes.value;
+    } else {
+      console.error("Push matériels échoué :", mRes.reason);
+      errors.push(
+        `Prestations : ${mRes.reason instanceof Error ? mRes.reason.message : String(mRes.reason)}`,
+      );
+    }
+    setPushAllResult({ produits: produitsResult, materiels: materielsResult });
+    if (errors.length > 0) {
+      setPushAllError(errors.join(" | "));
     }
   };
 
@@ -548,7 +571,27 @@ export default function ProduitsPage() {
           </div>
         )}
 
-        {pushAllResult && (
+        {(pushAllProduits.isPending || pushAllMateriels.isPending) && (
+          <div className="mb-4 flex items-center gap-3 rounded-xl border border-blue-300 bg-blue-50 p-4 text-sm">
+            <RefreshCw className="h-5 w-5 flex-shrink-0 animate-spin text-blue-700" />
+            <div className="flex-1">
+              <p className="font-medium text-blue-900">Push Odoo en cours…</p>
+              <p className="mt-0.5 text-xs text-blue-800/80">
+                Création/mise à jour des produits et prestations côté Odoo. Cela peut prendre
+                plusieurs minutes — ne ferme pas l&apos;onglet.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {pushAllError && (
+          <div className="mb-4 rounded-xl border border-red-300 bg-red-50 p-4 text-sm">
+            <p className="font-semibold text-red-900">Push Odoo échoué :</p>
+            <p className="mt-1 text-xs text-red-800/90">{pushAllError}</p>
+          </div>
+        )}
+
+        {pushAllResult && !pushAllError && (
           <div className="mb-4 rounded-xl border border-green/30 bg-green/5 p-4 text-sm">
             <p className="font-medium text-green-dark">
               ✓ Push Odoo terminé : {pushAllResult.produits?.pushed ?? 0} produits ·{" "}
