@@ -437,9 +437,9 @@ export default function NewInterventionPage() {
           ...buildHeuresPayload(values.dateOperation),
           ...(assignedToUserId ? { assignedToUserId } : {}),
         },
-        {
-          onSuccess: () => router.push("/activites"),
-        },
+        // En mode édition, on reste sur le formulaire (champs tjs
+        // éditables — décision Fabien 2026-05-14). react-query refetch
+        // tout seul pour refléter les nouvelles valeurs.
       );
       return;
     }
@@ -469,7 +469,9 @@ export default function NewInterventionPage() {
         ...(assignedToUserId ? { assignedToUserId } : {}),
       },
       {
-        onSuccess: () => router.push("/interventions"),
+        // Après création, on reste sur le formulaire en mode édition
+        // pour continuer à modifier (décision Fabien 2026-05-14).
+        onSuccess: (created) => router.push(`/interventions/new?edit=${created.id}` as never),
       },
     );
   };
