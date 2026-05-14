@@ -139,34 +139,25 @@ export function ProduitsSheet({
           />
         </div>
 
-        {/* Chips filtres catégories */}
-        <div className="flex flex-wrap gap-1.5">
-          <button
-            type="button"
-            onClick={() => setFiltreCat(null)}
-            className={`rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${
-              filtreCat === null
-                ? "border-green bg-green text-white"
-                : "border-border bg-background text-foreground/60 hover:text-foreground"
-            }`}
-          >
-            Toutes
-          </button>
-          {CATEGORIES_ORDER.map((c) => (
-            <button
-              key={c}
-              type="button"
-              onClick={() => setFiltreCat(filtreCat === c ? null : c)}
-              className={`rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${
-                filtreCat === c
-                  ? "border-green bg-green text-white"
-                  : "border-border bg-background text-foreground/60 hover:text-foreground"
-              }`}
-            >
-              {CATEGORIE_LABEL[c]}
-            </button>
-          ))}
-        </div>
+        {/* Dropdown catégories — trop de catégories pour des chips
+            (Fabien 2026-05-14, image 38/39/52). */}
+        <select
+          value={filtreCat ?? ""}
+          onChange={(e) => setFiltreCat((e.target.value || null) as ProduitCategorie | null)}
+          className="h-11 w-full rounded-lg border border-border bg-background px-3 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green"
+          aria-label="Filtrer par catégorie"
+        >
+          <option value="">Toutes les catégories ({allProduits.data?.length ?? 0})</option>
+          {CATEGORIES_ORDER.map((c) => {
+            const count = (allProduits.data ?? []).filter((p) => p.categorie === c).length;
+            return (
+              <option key={c} value={c}>
+                {CATEGORIE_LABEL[c]}
+                {count > 0 ? ` (${count})` : ""}
+              </option>
+            );
+          })}
+        </select>
 
         {/* Bandeau Odoo (sync catalogue) */}
         {odoo.connected && (

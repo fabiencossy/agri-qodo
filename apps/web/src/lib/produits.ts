@@ -8,9 +8,15 @@ export type ProduitCategorie =
   | "ENGRAIS_MINERAL"
   | "ENGRAIS_ORGANIQUE"
   | "PHYTO"
+  | "PRESTATION"
+  | "TRAVAIL_SOL"
+  | "RECOLTE"
+  | "IRRIGATION"
+  | "CARBURANT"
+  | "PIECES_MATERIEL"
   | "AUTRE";
 
-export type ProduitUnite = "KG" | "L" | "T" | "M3" | "DOSE";
+export type ProduitUnite = "KG" | "L" | "T" | "M3" | "DOSE" | "HA" | "UNITE" | "HEURE";
 
 export interface Produit {
   id: string;
@@ -132,6 +138,12 @@ export const CATEGORIE_LABEL: Record<ProduitCategorie, string> = {
   ENGRAIS_MINERAL: "Engrais minéraux",
   ENGRAIS_ORGANIQUE: "Engrais organiques",
   PHYTO: "Produits phytosanitaires",
+  PRESTATION: "Prestations (bottelage, ensilage…)",
+  TRAVAIL_SOL: "Travaux du sol",
+  RECOLTE: "Récolte (foin, paille…)",
+  IRRIGATION: "Irrigation",
+  CARBURANT: "Carburants & lubrifiants",
+  PIECES_MATERIEL: "Pièces de matériel",
   AUTRE: "Autres",
 };
 
@@ -141,6 +153,9 @@ export const UNITE_LABEL: Record<ProduitUnite, string> = {
   T: "t",
   M3: "m³",
   DOSE: "doses",
+  HA: "ha",
+  UNITE: "u.",
+  HEURE: "h",
 };
 
 export const CATEGORIES_ORDER: ProduitCategorie[] = [
@@ -148,5 +163,11 @@ export const CATEGORIES_ORDER: ProduitCategorie[] = [
   "ENGRAIS_MINERAL",
   "ENGRAIS_ORGANIQUE",
   "PHYTO",
+  "PRESTATION",
+  "TRAVAIL_SOL",
+  "RECOLTE",
+  "IRRIGATION",
+  "CARBURANT",
+  "PIECES_MATERIEL",
   "AUTRE",
 ];

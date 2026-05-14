@@ -164,6 +164,22 @@ enum ProduitCategorie {
   ENGRAIS_MINERAL
   ENGRAIS_ORGANIQUE
   PHYTO
+  /// Prestations de services agricoles (bottelage, endainage,
+  /// ensilage, pressage, fauchage, semis à façon…). Type Odoo
+  /// product = "service". Fabien 2026-05-14.
+  PRESTATION
+  /// Travaux du sol (labour, hersage, déchaumage, sous-solage…)
+  /// — facturables à façon ou consommables liés (socs, dents, etc.).
+  TRAVAIL_SOL
+  /// Récolte / produits récoltés (foin, ensilage, paille, balles…)
+  /// — output côté agriculteur.
+  RECOLTE
+  /// Irrigation : tuyaux, asperseurs, location de pompe, etc.
+  IRRIGATION
+  /// Carburants & lubrifiants (diesel, GNR, huiles).
+  CARBURANT
+  /// Pièces de matériel agricole (consommables maintenance).
+  PIECES_MATERIEL
   AUTRE
 }
 
@@ -173,6 +189,9 @@ enum ProduitUnite {
   T // tonne — fumier, compost
   M3 // mètre cube — lisier dans certaines régions
   DOSE // doses (semences calibrées, certains phytos)
+  HA // hectare — prestations à façon (fauchage, labour, ensilage…)
+  UNITE // unité dénombrable (balle de foin, botte, pièce, heure…)
+  HEURE // heure de prestation/machine
 }
 
 // Matériel = prestation/opération facturable rendue sur le terrain

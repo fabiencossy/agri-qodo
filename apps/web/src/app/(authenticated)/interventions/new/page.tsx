@@ -2,7 +2,7 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import area from "@turf/area";
-import { CalendarDays, Clock } from "lucide-react";
+import { CalendarDays, Clock, Navigation } from "lucide-react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -362,10 +362,14 @@ export default function NewInterventionPage() {
       return;
     }
     const dateOp = watch("dateOperation") || today();
+    // Fabien 2026-05-14 (image 56) : on respecte le type d'opération
+    // déjà sélectionné dans le formulaire (le bouton "Type d'opération"
+    // est maintenant au-dessus de "Planifier"). Avant : on forçait AUTRE.
+    const selectedType = watch("type") || "AUTRE";
     try {
       await createMutation.mutateAsync({
         parcelleId,
-        type: "AUTRE",
+        type: selectedType,
         dateOperation: dateOp,
         datePrevue: dateOp,
         ...(assignedToUserId ? { assignedToUserId } : {}),
@@ -559,35 +563,42 @@ export default function NewInterventionPage() {
           </Field>
 
           <Field label="Parcelle" error={errors.parcelleId?.message}>
-            <Controller
-              control={control}
-              name="parcelleId"
-              render={({ field: { value, onChange } }) => (
-                <ParcelleSearchSelect
-                  value={value ?? ""}
-                  onChange={(id) => onChange(id)}
-                  required
-                  disabled={noParcelles}
+            <div className="flex gap-2">
+              <div className="min-w-0 flex-1">
+                <Controller
+                  control={control}
+                  name="parcelleId"
+                  render={({ field: { value, onChange } }) => (
+                    <ParcelleSearchSelect
+                      value={value ?? ""}
+                      onChange={(id) => onChange(id)}
+                      required
+                      disabled={noParcelles}
+                    />
+                  )}
                 />
+              </div>
+              {/* Bouton Itinéraire (Fabien 2026-05-14 image 53) : ouvre
+                  Google Maps en navigation vers le point centre de la
+                  parcelle. Visible uniquement si la parcelle a un point
+                  GPS (lat/lng). */}
+              {parcelleDetail.data?.lat != null && parcelleDetail.data?.lng != null && (
+                <a
+                  href={`https://www.google.com/maps/dir/?api=1&destination=${parcelleDetail.data.lat},${parcelleDetail.data.lng}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex h-11 shrink-0 items-center gap-1.5 rounded-lg border border-border bg-background px-3 text-sm font-medium text-foreground/80 transition-colors hover:border-green hover:text-green"
+                  title="Ouvrir Google Maps en navigation vers cette parcelle"
+                >
+                  <Navigation className="h-4 w-4" />
+                  <span className="hidden sm:inline">Itinéraire</span>
+                </a>
               )}
-            />
+            </div>
           </Field>
 
-          {/* Bouton Planifier inline (Sprint 2 fusion-interventions) :
-              soumet une pré-tâche sans heures/produits, type AUTRE par défaut.
-              Pas dispo en mode édition. */}
-          {!isEditMode && (
-            <button
-              type="button"
-              onClick={() => onSubmitPlanning()}
-              disabled={createMutation.isPending}
-              className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-green bg-background py-3 text-sm font-semibold text-green transition-colors hover:bg-green/10 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <CalendarDays className="h-4 w-4" />
-              Planifier (sans saisir les détails)
-            </button>
-          )}
-
+          {/* Type d'opération placé AVANT le bouton "Planifier" (Fabien
+              2026-05-14 image 54) — il fait partie de la planification. */}
           <Field label="Type d'opération" error={errors.type?.message}>
             <Controller
               control={control}
@@ -618,6 +629,21 @@ export default function NewInterventionPage() {
               )}
             />
           </Field>
+
+          {/* Bouton Planifier inline (Sprint 2 fusion-interventions) :
+              soumet une pré-tâche sans heures/produits. Pas dispo en
+              mode édition. */}
+          {!isEditMode && (
+            <button
+              type="button"
+              onClick={() => onSubmitPlanning()}
+              disabled={createMutation.isPending}
+              className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-green bg-background py-3 text-sm font-semibold text-green transition-colors hover:bg-green/10 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <CalendarDays className="h-4 w-4" />
+              Planifier (sans saisir les détails)
+            </button>
+          )}
 
           <Field
             label="Matériel utilisé"

@@ -19,6 +19,7 @@ import {
   CheckCircle2,
   Clock,
   ExternalLink,
+  Navigation,
   Package,
   Save,
   Send,
@@ -38,8 +39,10 @@ import { ProduitsSheet, type ProduitLigne } from "@/components/activites/produit
 import { TempsSheet } from "@/components/activites/temps-sheet";
 import { TypeSaisieHeader } from "@/components/activites/type-saisie-header";
 import { Button } from "@/components/ui/button";
+import { HhmmTimeInput } from "@/components/ui/hhmm-time-input";
 import { Input } from "@/components/ui/input";
 import { ParcelleSearchSelect } from "@/components/ui/parcelle-search-select";
+import { useParcelle } from "@/lib/parcelles";
 import { PartenaireSelect } from "@/components/ui/partenaire-select";
 import { useCurrentUser } from "@/lib/auth";
 import { useProduits } from "@/lib/produits";
@@ -165,6 +168,9 @@ export default function NewTravailPage() {
 
   const produitsQuery = useProduits();
   const produitsCatalogue = produitsQuery.data ?? [];
+  // Charge la parcelle sélectionnée pour disposer de son lat/lng et
+  // afficher le bouton "Itinéraire" (Fabien 2026-05-14 image 53).
+  const parcelleDetail = useParcelle(parcelleId || undefined);
 
   // Pré-remplissage en mode édition depuis le travail existant.
   const loadedRef = useState({ id: "" })[0];
@@ -425,13 +431,13 @@ export default function NewTravailPage() {
 
           <Field
             label="Heure prévue (optionnel)"
-            hint="Si renseignée, elle apparaît dans la carte du planning. Sinon le travail reste planifié dans la journée sans heure précise."
+            hint="Tape 7 = 7h00, 730 = 7h30, 1645 = 16h45. Si renseignée, elle apparaît dans la carte du planning ; sinon le travail reste planifié dans la journée sans heure précise."
           >
-            <Input
-              type="time"
+            <HhmmTimeInput
               value={heurePrevue}
-              onChange={(e) => setHeurePrevue(e.target.value)}
-              className="h-12 text-base"
+              onChange={setHeurePrevue}
+              placeholder="--:--"
+              className="h-12 w-full text-base"
             />
           </Field>
 
@@ -469,16 +475,33 @@ export default function NewTravailPage() {
           )}
 
           <Field label="Parcelle (optionnel)">
-            <ParcelleSearchSelect
-              value={parcelleId}
-              onChange={(id) => setParcelleId(id)}
-              placeholder="Choisir une parcelle…"
-              {...(partenaireId
-                ? { filtreTenantId: partenaireId }
-                : odooPartnerId
-                  ? { filtreOdooPartnerId: odooPartnerId }
-                  : {})}
-            />
+            <div className="flex gap-2">
+              <div className="min-w-0 flex-1">
+                <ParcelleSearchSelect
+                  value={parcelleId}
+                  onChange={(id) => setParcelleId(id)}
+                  placeholder="Choisir une parcelle…"
+                  {...(partenaireId
+                    ? { filtreTenantId: partenaireId }
+                    : odooPartnerId
+                      ? { filtreOdooPartnerId: odooPartnerId }
+                      : {})}
+                />
+              </div>
+              {/* Bouton Itinéraire (Fabien 2026-05-14 image 53). */}
+              {parcelleDetail.data?.lat != null && parcelleDetail.data?.lng != null && (
+                <a
+                  href={`https://www.google.com/maps/dir/?api=1&destination=${parcelleDetail.data.lat},${parcelleDetail.data.lng}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex h-11 shrink-0 items-center gap-1.5 rounded-lg border border-border bg-background px-3 text-sm font-medium text-foreground/80 transition-colors hover:border-green hover:text-green"
+                  title="Ouvrir Google Maps en navigation vers cette parcelle"
+                >
+                  <Navigation className="h-4 w-4" />
+                  <span className="hidden sm:inline">Itinéraire</span>
+                </a>
+              )}
+            </div>
           </Field>
 
           {/* Bouton Planifier (Sprint 2 fusion-interventions) : soumet
