@@ -82,16 +82,8 @@ function mapCategorie(
     return ProduitCategorie.PHYTO;
   }
 
-  // 3) Semences (avant engrais — certains "engrais de couverture" sont
-  // en fait des semences de couverts végétaux).
-  if (
-    /semence|semis|seed|plantule|plant|bouture|tubercule|graine de|graines de/.test(haystack) &&
-    !haystack.includes("plant.")
-  ) {
-    return ProduitCategorie.SEMENCE;
-  }
-
-  // 4) Engrais organiques : fumier, compost, lisier, digestat.
+  // 3) Engrais organiques (avant SEMENCE car "tourteau de soja" matche
+  // soja en sous-chaîne — on veut l'engrais).
   if (
     /organi|compost|fumier|lisier|digestat|guano|sang séché|sang seche|corne broyée|corne broyee|tourteau|vinasse|amendement organique|matière organique|matiere organique/.test(
       haystack,
@@ -100,13 +92,30 @@ function mapCategorie(
     return ProduitCategorie.ENGRAIS_ORGANIQUE;
   }
 
-  // 5) Engrais minéraux : NPK + nutriments + amendements minéraux.
+  // 4) Engrais minéraux (avant SEMENCE pour éviter "Engrais blé" =
+  // SEMENCE par erreur).
   if (
-    /engrais|fertili|npk|nitrate|ammonitrate|ammoniac|urée|uree|potass|phosphat|chaux|magnési|magnesi|sulfat|kainit|patentkali|soufre|soufré|soufre|micro-?nutriment|oligo-?élément|oligo-?element|amendement minéral|amendement mineral|n34|26-?14|18-?46/.test(
+    /engrais|fertili|npk|nitrate|ammonitrate|ammoniac|urée|uree|potass|phosphat|chaux|magnési|magnesi|sulfat|kainit|patentkali|soufre|soufré|micro-?nutriment|oligo-?élément|oligo-?element|amendement minéral|amendement mineral|n34|26-?14|18-?46/.test(
       haystack,
     )
   ) {
     return ProduitCategorie.ENGRAIS_MINERAL;
+  }
+
+  // 5) Semences — Fabien 2026-05-14 image 60 : les noms côté Odoo sont
+  // "Blé Arnold", "Maïs DKC...", "Colza ES Aquarel", pas "Semence de blé".
+  // On reconnaît aussi les espèces courantes en agriculture CH.
+  //
+  // \b utilisé pour éviter les sous-chaînes accidentelles (ex "blés-tournants"
+  // → ne matche pas "blé" sans frontière). Liste exhaustive pour le bassin
+  // céréalier suisse (cultures Suisse-Bilanz + cultures fourragères).
+  if (
+    /semence|semis|\bseed\b|plantule|bouture|tubercule|graine de|graines de/.test(haystack) ||
+    /\b(blé|ble|froment|orge|avoine|seigle|triticale|épeautre|epeautre|sarrasin|millet|sorgho|riz|quinoa|amarante|chanvre|kamut|engrain|engrain\b|maïs|mais|tournesol|colza|soja|lin|moutarde brassica|pois|féverole|feverole|fève|feve|lupin|lentille|haricot|pois chiche|betterave sucrière|betterave sucriere|pomme de terre|patate douce|luzerne|trèfle|trefle|dactyle|fétuque|fetuque|ray-?grass|raigrass|fléole|fleole|brome|phacélie|phacelie|vesce|radis fourrager|moutarde fourragère|moutarde fourragere|sarrasin|niger|cameline|sorgho fourrager|millet perlé|millet perle|seigle fourrager|prairie multiflore|trèfle violet|trefle violet|trèfle blanc|trefle blanc|trèfle incarnat|trefle incarnat|trèfle d'alexandrie|trefle d'alexandrie|navette|mélange|melange)\b/.test(
+      haystack,
+    )
+  ) {
+    return ProduitCategorie.SEMENCE;
   }
 
   // 6) Récolte (foin, paille, balles vendues).
