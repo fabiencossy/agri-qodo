@@ -20,6 +20,14 @@ import {
 // En dev local : pointe directement sur le backend Nest sur localhost:3001.
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 
+/**
+ * Préfixe d'URL pour construire des URLs absolues (ex : `<img src=…>`
+ * vers un endpoint qui sert du binaire). En relatif côté Vercel.
+ */
+export function getApiBaseUrl(): string {
+  return API_URL;
+}
+
 export class AuthError extends Error {
   constructor(message = "Authentification expirée") {
     super(message);
@@ -97,9 +105,12 @@ async function refreshTokens(): Promise<AuthTokens> {
 export async function api<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const { method = "GET", body, skipAuth = false } = options;
 
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-  };
+  // Pour FormData (upload multipart), on laisse le browser positionner
+  // Content-Type avec son boundary — sinon le backend ne parse pas.
+  const isFormData = typeof FormData !== "undefined" && body instanceof FormData;
+
+  const headers: Record<string, string> = {};
+  if (!isFormData) headers["Content-Type"] = "application/json";
 
   if (!skipAuth) {
     const tokens = getStoredTokens();
@@ -110,7 +121,7 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
 
   const url = `${API_URL}${path}`;
   const init: RequestInit = { method, headers };
-  if (body != null) init.body = JSON.stringify(body);
+  if (body != null) init.body = isFormData ? (body as FormData) : JSON.stringify(body);
 
   let res = await fetch(url, init);
 

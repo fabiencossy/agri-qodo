@@ -11,6 +11,7 @@ import { Controller, useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import { Breadcrumb } from "@/components/app/breadcrumb";
 import { BigActionButton } from "@/components/activites/big-action-button";
+import { PhotosField } from "@/components/activites/photos-field";
 import { TypeSaisieHeader } from "@/components/activites/type-saisie-header";
 import { EditActionsMenu } from "@/components/activites/edit-actions-menu";
 import { type HeuresSimplesValue } from "@/components/activites/heures-simples-input";
@@ -911,6 +912,14 @@ export default function NewInterventionPage() {
               className="min-h-24 w-full rounded-lg border border-border bg-background px-3 py-2 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green"
               placeholder="Conditions météo, observations…"
               {...register("notes")}
+            />
+          </Field>
+
+          <Field label="Photos (optionnel)">
+            <PhotosField
+              parent={
+                isEditMode && editId ? { kind: "intervention", id: editId } : { kind: "none" }
+              }
             />
           </Field>
 

@@ -20,6 +20,7 @@ import { OdooSyncModule } from "./modules/odoo-sync/odoo-sync.module";
 import { ParcellesModule } from "./modules/parcelles/parcelles.module";
 import { PartnerLinksModule } from "./modules/partner-links/partner-links.module";
 import { PerModule } from "./modules/per/per.module";
+import { PhotosModule } from "./modules/photos/photos.module";
 import { PlanFumureModule } from "./modules/plan-fumure/plan-fumure.module";
 import { PresencesModule } from "./modules/presences/presences.module";
 import { ProduitsModule } from "./modules/produits/produits.module";
@@ -85,6 +86,7 @@ import { VeilleModule } from "./modules/veille/veille.module";
     OdooConfigModule,
     OdooPartnersModule,
     OdooSyncModule,
+    PhotosModule,
     TravauxModule,
     PresencesModule,
     VeilleModule,

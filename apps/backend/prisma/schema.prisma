@@ -254,6 +254,7 @@ model Exploitation {
   presences             Presence[]
   editHistory           EditHistory[]
   projets               Projet[]
+  photos                Photo[]
 
   // ----- Settings tenant (cf §C2) — par défaut configuration "classique"
   // (intervention liée à une parcelle, pas de projet par défaut). L'OWNER
@@ -405,6 +406,7 @@ model User {
   // doit réaliser un travail planifié à l'avance.
   travauxAssignes         Travail[]                @relation("TravailAssignedUser")
   interventionsAssignees  Intervention[]           @relation("InterventionAssignedUser")
+  photosUploaded          Photo[]
 
   // Email partagé : un comptable / conseiller peut avoir un compte sur
   // plusieurs exploitations. L'unicité est sur (email, tenantId).
@@ -680,6 +682,7 @@ model Intervention {
   culture       Culture?     @relation(fields: [cultureId], references: [id], onDelete: SetNull)
   linkedTravail Travail?     @relation("InterventionTravailLink", fields: [linkedTravailId], references: [id], onDelete: SetNull)
   planApport    PlanApport? // 1-1 si réalisé depuis un plan
+  photos        Photo[]
 
   @@index([ownerTenantId])
   @@index([authorTenantId])
@@ -1036,6 +1039,7 @@ model Travail {
   lignesProduit LigneTravailProduit[]
   lignesHeure   LigneTravailHeure[]
   presences     Presence[]
+  photos        Photo[]
 
   // Cas B : Intervention saisie chez le client à laquelle ce Travail
   // a été automatiquement rattaché (1-1). Permet de re-pousser le
@@ -1211,4 +1215,40 @@ model EditHistory {
   @@index([tenantId, entityType, entityId])
   @@index([tenantId, editedAt])
   @@map("edit_history")
+}
+
+// ====================================================================
+// Photos attachées aux interventions (carnet) ou aux travaux (tiers).
+// Stockage : push direct en `ir.attachment` Odoo (décision Fabien
+// 2026-05-14). Cette table garde uniquement les métadonnées + l'ID
+// Odoo pour servir le binaire en proxy (GET /api/photos/:id/binary).
+// ====================================================================
+
+model Photo {
+  id               String   @id @default(uuid())
+  tenantId         String   @map("tenant_id")
+  /// Une photo est attachée soit à une intervention (carnet), soit à
+  /// un travail (tiers). Exactement un des deux est renseigné (check
+  /// applicatif côté service).
+  interventionId   String?  @map("intervention_id")
+  travailId        String?  @map("travail_id")
+  uploadedByUserId String?  @map("uploaded_by_user_id")
+  /// Nom original côté client (info uniquement, l'affichage utilise l'ID).
+  originalName     String   @map("original_name")
+  mimeType         String   @map("mime_type")
+  sizeBytes        Int      @map("size_bytes")
+  /// `ir.attachment.id` côté Odoo — source de vérité pour le binaire.
+  /// Null transitoire si push Odoo a échoué (best-effort, retry possible).
+  odooAttachmentId Int?     @map("odoo_attachment_id")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  tenant       Exploitation  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  intervention Intervention? @relation(fields: [interventionId], references: [id], onDelete: Cascade)
+  travail      Travail?      @relation(fields: [travailId], references: [id], onDelete: Cascade)
+  uploadedBy   User?         @relation(fields: [uploadedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([interventionId])
+  @@index([travailId])
+  @@map("photos")
 }
