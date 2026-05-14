@@ -501,6 +501,14 @@ model Parcelle {
   // Prisma ne supporte pas PostGIS nativement, on utilise Unsupported.
   geom                 Unsupported("geometry(MultiPolygon, 4326)")?
   notes                String?
+  /// `project.task` Odoo unique par parcelle dans le projet Carnet
+  /// configuré (Exploitation.odooProjectIdCarnetTiers). Toutes les
+  /// interventions sur cette parcelle posteront leurs heures
+  /// (account.analytic.line) et leur résumé (mail.message) sur cette
+  /// tâche. Null si Odoo non configuré ou push pas encore tenté.
+  /// Décision Fabien 2026-05-14.
+  odooTaskId           Int?                                         @map("odoo_task_id")
+  odooTaskPushedAt     DateTime?                                    @map("odoo_task_pushed_at")
   createdAt            DateTime                                     @default(now()) @map("created_at")
   updatedAt            DateTime                                     @updatedAt @map("updated_at")
 
@@ -606,12 +614,18 @@ model Intervention {
   // le prestataire pour porter le sale.order Odoo. Permet de re-pousser /
   // annuler / modifier en cascade. Null en cas A (parcelle perso).
   linkedTravailId     String?                                 @unique @map("linked_travail_id")
-  // Cas A (parcelle perso) : project.task Odoo créé automatiquement pour
-  // tracer l'intervention sans facturation. Null si Odoo non configuré
-  // ou push échoué (best-effort). En cas B, c'est `linkedTravail.odooSaleOrderId`
-  // qui prend le relais (vraie commande facturable).
+  // [Legacy avant 2026-05-14] L'intervention créait sa propre `project.task`
+  // côté Odoo. Désormais, la tâche est portée par `Parcelle.odooTaskId`
+  // (une tâche par parcelle, toutes les interventions postent dessus via
+  // account.analytic.line + message_post). Les valeurs déjà en base
+  // restent pour traçabilité ; aucune nouvelle intervention ne renseignera
+  // ces champs.
   odooTaskId          Int?                                    @map("odoo_task_id")
   odooTaskPushedAt    DateTime?                               @map("odoo_task_pushed_at")
+  /// Idempotence du push timesheet (account.analytic.line) — si renseigné
+  /// au moment du save, on `write` au lieu de `create` pour éviter les
+  /// doublons d'heures sur la tâche de la parcelle.
+  odooAnalyticLineId  Int?                                    @map("odoo_analytic_line_id")
   // Rendement à l'hectare (optionnel) — typiquement saisi sur RECOLTE :
   // 80 q/ha de blé, 12 t/ha de maïs, 45 t/ha pommes de terre. L'unité
   // suit `unite` (kg, t, q, dose…). Sert aux statistiques agronomiques
