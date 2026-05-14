@@ -666,7 +666,7 @@ async function seedDemoTenant(): Promise<void> {
             create: t.heures.map((h) => ({
               userId: h.userId,
               dureeMinutes: h.dureeMinutes,
-              ...(h.taux ? { tauxHoraireCHF: h.taux } : {}),
+              ...("taux" in h && typeof h.taux === "number" ? { tauxHoraireCHF: h.taux } : {}),
             })),
           },
         },
