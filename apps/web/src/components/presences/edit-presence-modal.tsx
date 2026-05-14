@@ -9,6 +9,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { HhmmTimeInput } from "@/components/ui/hhmm-time-input";
 import { Input } from "@/components/ui/input";
+import { extractApiErrorMessage } from "@/lib/api-client";
 import { type Presence, useUpdatePresence } from "@/lib/presences";
 
 interface EditPresenceModalProps {
@@ -83,7 +84,11 @@ export function EditPresenceModal({ presence, onClose }: EditPresenceModalProps)
       },
       {
         onSuccess: () => onClose(),
-        onError: () => setError("Modification impossible. Réessaie."),
+        onError: (err) =>
+          setError(
+            extractApiErrorMessage(err) ??
+              "Modification impossible. Vérifie tes heures et réessaie.",
+          ),
       },
     );
   };
