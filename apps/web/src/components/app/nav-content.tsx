@@ -38,7 +38,6 @@ const NAVIGATION: NavLink[] = [
   { href: "/planning", label: "Planning", icon: CalendarDays },
   { href: "/activites", label: "Carnet des champs", icon: Sprout },
   { href: "/travaux", label: "Travaux", icon: Tractor },
-  { href: "/clients", label: "Clients", icon: UsersRound },
   { href: "/parcelles", label: "Parcelles", icon: MapPin },
   { href: "/mes-heures", label: "Mes heures", icon: Clock },
   // Entrée "Présences" retirée 2026-05-14 — la création de présence
@@ -58,6 +57,7 @@ const PILOTAGE: NavLink[] = [
 ];
 
 const ADMINISTRATION: NavLink[] = [
+  { href: "/clients", label: "Clients", icon: UsersRound },
   { href: "/utilisateurs", label: "Utilisateurs", icon: Users },
   { href: "/partenaires", label: "Partenaires", icon: Handshake },
   { href: "/parametres", label: "Paramètres", icon: Cog },

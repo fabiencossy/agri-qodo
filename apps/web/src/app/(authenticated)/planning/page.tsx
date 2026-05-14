@@ -10,11 +10,14 @@
  * permet (OWNER → VALIDATED direct, EMPLOYE → PENDING_REVIEW).
  */
 import {
+  Building2,
   CalendarDays,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  Leaf,
   Loader2,
+  MapPin,
   Plus,
   Sprout,
   Tractor,
@@ -44,7 +47,12 @@ interface PlanningItem {
   id: string;
   datePrevue: Date;
   titre: string;
-  sousTitre: string;
+  /** "Chez Y" pour les travaux tiers, null sinon. */
+  client: string | null;
+  /** Nom de la parcelle si renseignée. */
+  parcelle: string | null;
+  /** Produit (semence/engrais/phyto) pour les interventions du carnet. */
+  produit: string | null;
   assignedToUserId: string | null;
   assignedToLabel: string | null;
   href: Route;
@@ -103,8 +111,10 @@ export default function PlanningPage() {
         kind: "CARNET" as const,
         id: iv.id,
         datePrevue: new Date(iv.datePrevue!),
-        titre: iv.type,
-        sousTitre: `${iv.parcelle.nom}${iv.produit ? ` · ${iv.produit}` : ""}`,
+        titre: iv.type.replace(/_/g, " "),
+        client: null,
+        parcelle: iv.parcelle?.nom ?? null,
+        produit: iv.produitRef?.libelle ?? iv.produit ?? null,
         assignedToUserId: iv.assignedToUserId,
         assignedToLabel: iv.assignedToUserId ? (usersById.get(iv.assignedToUserId) ?? null) : null,
         href: `/interventions/new?edit=${iv.id}` as Route,
@@ -118,7 +128,9 @@ export default function PlanningPage() {
         id: t.id,
         datePrevue: new Date(t.datePrevue!),
         titre: t.titre,
-        sousTitre: t.partenaire?.nom ?? (t.interne ? "Interne" : "—"),
+        client: t.partenaire?.nom ?? t.odooPartnerName ?? (t.interne ? "Interne" : null),
+        parcelle: t.parcelle?.nom ?? null,
+        produit: null,
         assignedToUserId: t.assignedToUserId,
         assignedToLabel: t.assignedToUserId ? (usersById.get(t.assignedToUserId) ?? null) : null,
         href: `/travaux/new?edit=${t.id}` as Route,
@@ -391,10 +403,13 @@ function PlanningCard({
   const meta = KIND_META[item.kind];
   const Icon = meta.Icon;
   const peutMarquerTermine = item.travailStatut === "PLANIFIE" || item.travailStatut === "DRAFT";
-  const heureLabel = item.datePrevue.toLocaleTimeString("fr-CH", {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  // Affiche l'heure prévue seulement si elle a été saisie (≠ minuit
+  // local). Sinon on n'affiche rien — la date sert juste à grouper
+  // l'item dans le bon jour. Fabien 2026-05-14 image 46.
+  const hasHeurePrevue = item.datePrevue.getHours() !== 0 || item.datePrevue.getMinutes() !== 0;
+  const heureLabel = hasHeurePrevue
+    ? item.datePrevue.toLocaleTimeString("fr-CH", { hour: "2-digit", minute: "2-digit" })
+    : null;
 
   return (
     <li className="rounded-xl border border-border bg-background p-3">
@@ -404,27 +419,57 @@ function PlanningCard({
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline justify-between gap-2">
-            <span className="truncate text-sm font-semibold">{item.titre}</span>
-            <span className="shrink-0 font-mono text-xs tabular-nums text-foreground/60">
-              {heureLabel}
-            </span>
+            <span className="truncate text-sm font-semibold capitalize">{item.titre}</span>
+            {heureLabel && (
+              <span className="shrink-0 font-mono text-xs tabular-nums text-foreground/60">
+                {heureLabel}
+              </span>
+            )}
           </div>
-          <p className="mt-0.5 truncate text-xs text-foreground/70">{item.sousTitre}</p>
-          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-            {item.assignedToLabel && (
+          {(item.client || item.parcelle || item.produit) && (
+            <div className="mt-1 space-y-0.5 text-xs text-foreground/70">
+              {item.client && (
+                <div className="flex items-center gap-1.5">
+                  <Building2 className="h-3 w-3 shrink-0 text-foreground/50" />
+                  <span className="truncate">{item.client}</span>
+                </div>
+              )}
+              {item.parcelle && (
+                <div className="flex items-center gap-1.5">
+                  <MapPin className="h-3 w-3 shrink-0 text-foreground/50" />
+                  <span className="truncate">{item.parcelle}</span>
+                </div>
+              )}
+              {item.produit && (
+                <div className="flex items-center gap-1.5">
+                  <Leaf className="h-3 w-3 shrink-0 text-foreground/50" />
+                  <span className="truncate">{item.produit}</span>
+                </div>
+              )}
+            </div>
+          )}
+          {item.assignedToLabel && (
+            <div className="mt-1.5">
               <span className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-foreground/70">
                 <UserIcon className="h-3 w-3" />
                 {item.assignedToLabel}
               </span>
-            )}
-            {item.travailStatut && (
+            </div>
+          )}
+          {/* Badge "Planifié" retiré (Fabien 2026-05-14 image 45) — sur
+              la page Planning, tous les items sont par définition
+              planifiés. Le statut Travail reste utile en revanche pour
+              distinguer DRAFT/VALIDATED/CANCELLED, mais on ne l'affiche
+              plus tant qu'on est en PLANIFIE. */}
+          {item.travailStatut && item.travailStatut !== "PLANIFIE" && (
+            <div className="mt-1.5">
               <span
                 className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${STATUT_BADGE[item.travailStatut]}`}
               >
                 {STATUT_LABEL[item.travailStatut]}
               </span>
-            )}
-          </div>
+            </div>
+          )}
         </div>
       </Link>
       {peutMarquerTermine && (

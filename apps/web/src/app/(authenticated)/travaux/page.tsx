@@ -80,6 +80,14 @@ function buildFilters(): FilterOption<TravailItem>[] {
     },
     { key: "tiers", label: "Pour tiers", predicate: (it) => it.kind === "TIERS" },
     { key: "interne", label: "Internes", predicate: (it) => it.kind === "INTERNE" },
+    // À valider : un employé a marqué le travail "terminé" → statut
+    // PENDING_REVIEW. Le OWNER doit cliquer Valider pour passer en
+    // VALIDATED (Fabien 2026-05-14 image 48).
+    {
+      key: "a-valider",
+      label: "À valider",
+      predicate: (it) => it.travail.statut === "PENDING_REVIEW",
+    },
   ];
 }
 
