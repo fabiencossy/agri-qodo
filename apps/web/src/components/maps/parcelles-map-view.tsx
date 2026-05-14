@@ -51,9 +51,23 @@ export default function ParcellesMapView({ parcelles }: { parcelles: ParcelleMap
           fillOpacity: 0.35,
         },
       });
-      layer.bindTooltip(`<strong>${p.nom}</strong><br/>${formatSurface(p.surfaceM2)} · ${p.zone}`, {
-        sticky: true,
-      });
+      layer.bindTooltip(
+        `<strong>${escapeHtml(p.nom)}</strong><br/>${formatSurface(p.surfaceM2)} · ${escapeHtml(p.zone)}`,
+        {
+          sticky: true,
+        },
+      );
+      const popupHtml = `
+        <div class="parcelle-popup">
+          <div class="parcelle-popup__title">${escapeHtml(p.nom)}</div>
+          <div class="parcelle-popup__meta">${formatSurface(p.surfaceM2)} · ${escapeHtml(p.zone)}</div>
+          <div class="parcelle-popup__actions">
+            <a href="/parcelles/${encodeURIComponent(p.id)}" class="parcelle-popup__btn parcelle-popup__btn--ghost">Modifier</a>
+            <a href="/interventions/new?parcelleId=${encodeURIComponent(p.id)}" class="parcelle-popup__btn parcelle-popup__btn--primary">Créer intervention</a>
+          </div>
+        </div>
+      `;
+      layer.bindPopup(popupHtml, { closeButton: true, autoPan: true });
       layer.addTo(group);
     });
 
@@ -82,6 +96,15 @@ function formatSurface(m2: string): string {
   if (value >= 10000) return `${(value / 10000).toFixed(2)} ha`;
   if (value >= 100) return `${(value / 100).toFixed(2)} a`;
   return `${value.toFixed(0)} m²`;
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 function darken(hex: string): string {
