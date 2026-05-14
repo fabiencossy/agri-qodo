@@ -13,7 +13,18 @@
  * - Total CHF estimé en bas (caché si interne).
  * - Sticky bottom action bar mobile (Save + Annuler).
  */
-import { ArrowLeft, CalendarDays, Plus, Save, Tractor, Trash2 } from "lucide-react";
+import {
+  ArrowLeft,
+  CalendarDays,
+  CheckCircle2,
+  ExternalLink,
+  Plus,
+  Save,
+  Send,
+  Tractor,
+  Trash2,
+  XCircle,
+} from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -34,14 +45,23 @@ import { useParcelle } from "@/lib/parcelles";
 import { useProjets } from "@/lib/projets";
 import { useProduits } from "@/lib/produits";
 import { useTenantDetail } from "@/lib/tenants";
+import { useOdooConnected } from "@/lib/odoo-config";
 import {
   type CreateLigneHeureInput,
   type CreateLigneProduitInput,
+  formatCHF,
+  type PushTravailResult,
+  STATUT_BADGE,
+  STATUT_LABEL,
+  totalTravailCHF,
+  useCancelTravail,
   useCompleteTravail,
   useCreateTravail,
   useDeleteTravail,
+  usePushTravailOdoo,
   useTravail,
   useUpdateTravail,
+  useValidateTravail,
 } from "@/lib/travaux";
 import { useUsers } from "@/lib/users";
 
@@ -75,6 +95,11 @@ export default function NewTravailPage() {
   const update = useUpdateTravail();
   const completeTravail = useCompleteTravail();
   const deleteTravail = useDeleteTravail();
+  const validateTravail = useValidateTravail();
+  const cancelTravail = useCancelTravail();
+  const pushOdoo = usePushTravailOdoo();
+  const odoo = useOdooConnected();
+  const [pushResult, setPushResult] = useState<PushTravailResult | null>(null);
   const me = useCurrentUser();
   const users = useUsers();
   const projets = useProjets({ type: "TRAVAUX_TIERS" });
@@ -322,11 +347,12 @@ export default function NewTravailPage() {
     };
     try {
       if (isEditMode && editId) {
-        const updated = await update.mutateAsync({ id: editId, ...payload });
-        router.push(`/travaux/${updated.id}` as never);
+        await update.mutateAsync({ id: editId, ...payload });
+        // Reste sur le formulaire en mode édition (champs toujours
+        // éditables — décision Fabien 2026-05-14).
       } else {
         const created = await create.mutateAsync(payload);
-        router.push(`/travaux/${created.id}` as never);
+        router.push(`/travaux/new?edit=${created.id}` as never);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erreur inconnue");
@@ -564,6 +590,33 @@ export default function NewTravailPage() {
 
           {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
 
+          {/* ----- Bloc édition : statut + total + push Odoo + actions
+              (Valider / Annuler) ----- */}
+          {isEditMode && existingTravail.data && (
+            <EditActionsBlock
+              travail={existingTravail.data}
+              odooConnected={odoo.connected}
+              pushResult={pushResult}
+              onPush={() =>
+                pushOdoo.mutate(existingTravail.data!.id, {
+                  onSuccess: (r) => setPushResult(r),
+                })
+              }
+              pushing={pushOdoo.isPending}
+              pushError={
+                pushOdoo.isError
+                  ? pushOdoo.error instanceof Error
+                    ? pushOdoo.error.message
+                    : "erreur inconnue"
+                  : null
+              }
+              onValidate={() => validateTravail.mutate(existingTravail.data!.id)}
+              validating={validateTravail.isPending}
+              onCancel={() => cancelTravail.mutate(existingTravail.data!.id)}
+              cancelling={cancelTravail.isPending}
+            />
+          )}
+
           {/* ----- Sticky bottom bar mobile ----- */}
           <div className="fixed inset-x-0 bottom-0 z-10 border-t border-border bg-background/95 px-4 py-3 backdrop-blur sm:static sm:border-0 sm:bg-transparent sm:p-0 sm:pt-2">
             <div className="mx-auto flex max-w-3xl justify-end gap-2">
@@ -612,6 +665,141 @@ function Field({
       </div>
       {children}
       {hint && <span className="mt-1 block text-xs text-foreground/50">{hint}</span>}
+    </div>
+  );
+}
+
+/**
+ * Bloc affiché en mode édition : statut, total HT, bandeau Push Odoo et
+ * boutons Valider / Annuler. Reprend les sections de l'ancienne page
+ * détail `/travaux/[id]` qui est maintenant une redirection.
+ */
+function EditActionsBlock({
+  travail,
+  odooConnected,
+  pushResult,
+  onPush,
+  pushing,
+  pushError,
+  onValidate,
+  validating,
+  onCancel,
+  cancelling,
+}: {
+  travail: NonNullable<ReturnType<typeof useTravail>["data"]>;
+  odooConnected: boolean;
+  pushResult: PushTravailResult | null;
+  onPush: () => void;
+  pushing: boolean;
+  pushError: string | null;
+  onValidate: () => void;
+  validating: boolean;
+  onCancel: () => void;
+  cancelling: boolean;
+}) {
+  const total = totalTravailCHF(travail);
+  const showOdooBanner = odooConnected && travail.statut !== "CANCELLED" && !travail.interne;
+  const hasOdooLink = !!(travail.odooSaleOrderId || travail.odooTaskId);
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className={`rounded px-2 py-0.5 text-xs font-medium ${STATUT_BADGE[travail.statut]}`}>
+          {STATUT_LABEL[travail.statut]}
+        </span>
+        {travail.interne && (
+          <span className="rounded bg-foreground/10 px-2 py-0.5 text-xs font-medium uppercase tracking-wide">
+            Interne
+          </span>
+        )}
+      </div>
+
+      {total > 0 && (
+        <div className="rounded-2xl border-2 border-green bg-green/5 p-4 text-right">
+          <p className="text-sm text-foreground/60">Total HT</p>
+          <p className="font-mono text-2xl font-bold text-green-dark">{formatCHF(total)}</p>
+        </div>
+      )}
+
+      {showOdooBanner && (
+        <div className="rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 sm:px-5">
+          {hasOdooLink ? (
+            <div className="flex flex-wrap items-center gap-3">
+              <CheckCircle2 className="h-5 w-5 flex-shrink-0 text-amber-700" />
+              <div className="flex-1 text-sm">
+                <p className="font-semibold text-amber-900">
+                  {travail.odooSaleOrderId
+                    ? `Devis Odoo créé · sale.order #${travail.odooSaleOrderId}`
+                    : `Tâche Odoo créée · project.task #${travail.odooTaskId}`}
+                </p>
+                <p className="text-xs text-foreground/70">
+                  {travail.odooSaleOrderId
+                    ? "Pour re-pousser, annule d'abord le devis dans Odoo."
+                    : "La tâche contient le détail des heures et des employés."}
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-wrap items-center gap-3">
+              <Send className="h-5 w-5 flex-shrink-0 text-amber-700" />
+              <div className="flex-1 text-sm">
+                <p className="font-semibold text-amber-900">Push Odoo en attente</p>
+                <p className="text-xs text-foreground/70">
+                  Le push se déclenche automatiquement au save quand le travail a au moins une ligne
+                  (heure ou produit). Si rien n'est arrivé après quelques secondes, clique
+                  "Réessayer".
+                </p>
+              </div>
+              <Button type="button" onClick={onPush} disabled={pushing} size="sm" variant="ghost">
+                <Send className="mr-1 h-4 w-4" />
+                {pushing ? "Envoi…" : "Réessayer"}
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {pushResult && (
+        <div className="rounded-xl border border-green/30 bg-green/5 p-4 text-sm">
+          <p className="font-medium text-green-dark">
+            {pushResult.odooKind === "project_task"
+              ? `✓ Tâche Odoo créée : project.task #${pushResult.odooTaskId} (${pushResult.linesCount} ligne${pushResult.linesCount > 1 ? "s" : ""} d'heures)`
+              : `✓ Devis créé : sale.order #${pushResult.odooSaleOrderId} (${pushResult.linesCount} lignes${pushResult.partnerCreated ? ", nouveau client créé" : ""}${pushResult.productsCreated > 0 ? `, ${pushResult.productsCreated} produit${pushResult.productsCreated > 1 ? "s" : ""} créé${pushResult.productsCreated > 1 ? "s" : ""}` : ""})`}
+          </p>
+          {pushResult.odooUrl && (
+            <a
+              href={pushResult.odooUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-green-dark underline"
+            >
+              Ouvrir dans Odoo
+              <ExternalLink className="h-3 w-3" />
+            </a>
+          )}
+        </div>
+      )}
+
+      {pushError && (
+        <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+          Push Odoo échoué : {pushError}
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-center gap-2">
+        {travail.statut === "DRAFT" && (
+          <Button type="button" onClick={onValidate} disabled={validating}>
+            <CheckCircle2 className="mr-1 h-4 w-4" />
+            {validating ? "Validation…" : "Valider"}
+          </Button>
+        )}
+        {(travail.statut === "DRAFT" || travail.statut === "VALIDATED") && (
+          <Button type="button" variant="secondary" onClick={onCancel} disabled={cancelling}>
+            <XCircle className="mr-1 h-4 w-4" />
+            {cancelling ? "Annulation…" : "Annuler ce travail"}
+          </Button>
+        )}
+      </div>
     </div>
   );
 }

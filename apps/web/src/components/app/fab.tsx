@@ -1,6 +1,16 @@
 "use client";
 
-import { Beef, ClipboardList, Clock, type LucideIcon, MapPin, Plus, Sprout, X } from "lucide-react";
+import {
+  Beef,
+  ClipboardList,
+  Clock,
+  type LucideIcon,
+  MapPin,
+  Plus,
+  Sprout,
+  Tractor,
+  X,
+} from "lucide-react";
 import Link from "next/link";
 import type { Route } from "next";
 import { useEffect, useState } from "react";
@@ -12,13 +22,13 @@ interface SecondaryAction {
 }
 
 /**
- * FAB porte unique (PRD fusion v0.2 §3.1).
+ * FAB — bottom-sheet avec 2 boutons primaires :
+ *   - Carnet des champs → /interventions/new
+ *   - Travail (tiers/interne) → /travaux/new
+ *   + 4 boutons secondaires compacts : Pointage, Parcelle, SRPA, Cheptel.
  *
- * Click + → bottom-sheet avec :
- *   - 1 bouton primaire dominant : Nouvelle activité → /interventions/new
- *     (le choix Carnet / Tiers / Interne se fait via les onglets en haut
- *     de la page de saisie)
- *   - 4 boutons secondaires compacts : Pointage, Parcelle, SRPA, Cheptel
+ * Décision Fabien 2026-05-14 : remplacer le bouton unique "Nouvelle activité"
+ * par 2 entrées explicites (cf. séparation Carnet vs Travaux).
  */
 const SECONDARY_ACTIONS: SecondaryAction[] = [
   { href: "/presences", label: "Pointage", icon: Clock },
@@ -87,22 +97,39 @@ export function Fab() {
               </button>
             </div>
 
-            {/* Action primaire dominante */}
-            <Link
-              href="/interventions/new"
-              onClick={() => setOpen(false)}
-              className="flex items-center gap-3 rounded-2xl border-2 border-green bg-green/5 p-4 transition-all hover:bg-green/10 hover:shadow-md active:scale-[0.99]"
-            >
-              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-green text-white shadow-sm">
-                <Sprout className="h-6 w-6" />
-              </span>
-              <span className="block">
-                <span className="block text-base font-bold">Nouvelle activité</span>
-                <span className="mt-0.5 block text-xs text-foreground/70">
-                  Carnet, travail pour tiers ou interne — tu choisis sur la page suivante.
+            {/* Actions primaires : Carnet et Travail séparés */}
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <Link
+                href="/interventions/new"
+                onClick={() => setOpen(false)}
+                className="flex items-center gap-3 rounded-2xl border-2 border-green bg-green/5 p-4 transition-all hover:bg-green/10 hover:shadow-md active:scale-[0.99]"
+              >
+                <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-green text-white shadow-sm">
+                  <Sprout className="h-6 w-6" />
                 </span>
-              </span>
-            </Link>
+                <span className="block">
+                  <span className="block text-base font-bold">Carnet</span>
+                  <span className="mt-0.5 block text-xs text-foreground/70">
+                    Intervention sur mes parcelles.
+                  </span>
+                </span>
+              </Link>
+              <Link
+                href="/travaux/new"
+                onClick={() => setOpen(false)}
+                className="flex items-center gap-3 rounded-2xl border-2 border-amber-500 bg-amber-50 p-4 transition-all hover:bg-amber-100 hover:shadow-md active:scale-[0.99]"
+              >
+                <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-amber-600 text-white shadow-sm">
+                  <Tractor className="h-6 w-6" />
+                </span>
+                <span className="block">
+                  <span className="block text-base font-bold">Travail</span>
+                  <span className="mt-0.5 block text-xs text-foreground/70">
+                    Pour tiers ou interne.
+                  </span>
+                </span>
+              </Link>
+            </div>
 
             <p className="mb-2 mt-4 text-[11px] font-semibold uppercase tracking-wider text-foreground/50">
               Autres saisies
