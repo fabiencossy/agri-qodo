@@ -84,7 +84,9 @@ export default function PlanningPage() {
   const completeTravail = useCompleteTravail();
 
   // Filtre par employé assigné (null = tous, "me" = moi).
-  const [filtreEmploye, setFiltreEmploye] = useState<string | "all" | "me">("me");
+  // Décision Fabien 2026-05-14 : par défaut on affiche toute l'équipe
+  // (avant : "me"). L'utilisateur bascule sur "Mes assignations" si besoin.
+  const [filtreEmploye, setFiltreEmploye] = useState<string | "all" | "me">("all");
   // Décalage de jours par rapport à aujourd'hui pour la navigation.
   const [jourOffset, setJourOffset] = useState(0);
 
@@ -170,14 +172,14 @@ export default function PlanningPage() {
         {/* Filtres employé */}
         <div className="mb-3 flex flex-wrap gap-1.5">
           <FiltreChip
+            actif={filtreEmploye === "all"}
+            onClick={() => setFiltreEmploye("all")}
+            label="Toute l'équipe"
+          />
+          <FiltreChip
             actif={filtreEmploye === "me"}
             onClick={() => setFiltreEmploye("me")}
             label="Mes assignations"
-          />
-          <FiltreChip
-            actif={filtreEmploye === "all"}
-            onClick={() => setFiltreEmploye("all")}
-            label="Tout l'équipe"
           />
           {(users.data ?? [])
             .filter((u) => u.id !== me.data?.id)
