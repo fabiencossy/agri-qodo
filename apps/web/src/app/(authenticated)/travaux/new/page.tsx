@@ -44,7 +44,6 @@ import { PartenaireSelect } from "@/components/ui/partenaire-select";
 import { useCurrentUser } from "@/lib/auth";
 import { useProduits } from "@/lib/produits";
 import { useTenantDetail } from "@/lib/tenants";
-import { useOdooConnected } from "@/lib/odoo-config";
 import {
   type CreateLigneHeureInput,
   type CreateLigneProduitInput,
@@ -97,7 +96,6 @@ export default function NewTravailPage() {
   const validateTravail = useValidateTravail();
   const cancelTravail = useCancelTravail();
   const pushOdoo = usePushTravailOdoo();
-  const odoo = useOdooConnected();
   const [pushResult, setPushResult] = useState<PushTravailResult | null>(null);
   const me = useCurrentUser();
   const users = useUsers();
@@ -532,7 +530,6 @@ export default function NewTravailPage() {
           {isEditMode && existingTravail.data && (
             <EditActionsBlock
               travail={existingTravail.data}
-              odooConnected={odoo.connected}
               pushResult={pushResult}
               onPush={() =>
                 pushOdoo.mutate(existingTravail.data!.id, {
@@ -730,22 +727,18 @@ function Field({
  */
 function EditActionsBlock({
   travail,
-  odooConnected,
   pushResult,
   onPush,
   pushing,
   pushError,
 }: {
   travail: NonNullable<ReturnType<typeof useTravail>["data"]>;
-  odooConnected: boolean;
   pushResult: PushTravailResult | null;
   onPush: () => void;
   pushing: boolean;
   pushError: string | null;
 }) {
   const total = totalTravailCHF(travail);
-  const showOdooBanner = odooConnected && travail.statut !== "CANCELLED" && !travail.interne;
-  const hasOdooLink = !!(travail.odooSaleOrderId || travail.odooTaskId);
 
   return (
     <div className="space-y-3">
@@ -767,43 +760,10 @@ function EditActionsBlock({
         </div>
       )}
 
-      {showOdooBanner && (
-        <div className="rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 sm:px-5">
-          {hasOdooLink ? (
-            <div className="flex flex-wrap items-center gap-3">
-              <CheckCircle2 className="h-5 w-5 flex-shrink-0 text-amber-700" />
-              <div className="flex-1 text-sm">
-                <p className="font-semibold text-amber-900">
-                  {travail.odooSaleOrderId
-                    ? `Devis Odoo créé · sale.order #${travail.odooSaleOrderId}`
-                    : `Tâche Odoo créée · project.task #${travail.odooTaskId}`}
-                </p>
-                <p className="text-xs text-foreground/70">
-                  {travail.odooSaleOrderId
-                    ? "Pour re-pousser, annule d'abord le devis dans Odoo."
-                    : "La tâche contient le détail des heures et des employés."}
-                </p>
-              </div>
-            </div>
-          ) : (
-            <div className="flex flex-wrap items-center gap-3">
-              <Send className="h-5 w-5 flex-shrink-0 text-amber-700" />
-              <div className="flex-1 text-sm">
-                <p className="font-semibold text-amber-900">Push Odoo en attente</p>
-                <p className="text-xs text-foreground/70">
-                  Le push se déclenche automatiquement au save quand le travail a au moins une ligne
-                  (heure ou produit). Si rien n'est arrivé après quelques secondes, clique
-                  "Réessayer".
-                </p>
-              </div>
-              <Button type="button" onClick={onPush} disabled={pushing} size="sm" variant="ghost">
-                <Send className="mr-1 h-4 w-4" />
-                {pushing ? "Envoi…" : "Réessayer"}
-              </Button>
-            </div>
-          )}
-        </div>
-      )}
+      {/* Bandeau "Push Odoo en attente" / "Devis créé" supprimé (Fabien
+          2026-05-14, image 31 : "je veux pas de bandrole sauf si ça
+          fonctionne pas"). Seul le bandeau rouge d'erreur ci-dessous
+          reste, avec un bouton Réessayer intégré. */}
 
       {pushResult && (
         <div className="rounded-xl border border-green/30 bg-green/5 p-4 text-sm">
@@ -828,20 +788,35 @@ function EditActionsBlock({
 
       {pushError && (
         <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
-          <p className="font-semibold">Push Odoo échoué</p>
-          <p className="mt-1 font-mono text-xs">{pushError}</p>
-          {/^.*\b(50[234])\b/.test(pushError) ? (
-            <p className="mt-2 text-xs text-red-700/80">
-              Ton instance Odoo est temporairement indisponible (erreur passerelle). Vérifie qu'elle
-              est bien démarrée puis clique sur « Réessayer » ci-dessus. Le backend retente
-              automatiquement 2 fois avant de remonter cette erreur.
-            </p>
-          ) : (
-            <p className="mt-2 text-xs text-red-700/80">
-              Clique sur « Réessayer » ci-dessus. Si l'erreur persiste, vérifie la config Odoo dans
-              Paramètres → Odoo.
-            </p>
-          )}
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <p className="font-semibold">Push Odoo échoué</p>
+              <p className="mt-1 font-mono text-xs">{pushError}</p>
+              {/^.*\b(50[234])\b/.test(pushError) ? (
+                <p className="mt-2 text-xs text-red-700/80">
+                  Ton instance Odoo est temporairement indisponible (erreur passerelle). Vérifie
+                  qu'elle est bien démarrée puis clique sur « Réessayer ». Le backend retente
+                  automatiquement 2 fois avant de remonter cette erreur.
+                </p>
+              ) : (
+                <p className="mt-2 text-xs text-red-700/80">
+                  Clique sur « Réessayer ». Si l'erreur persiste, vérifie la config Odoo dans
+                  Paramètres → Odoo.
+                </p>
+              )}
+            </div>
+            <Button
+              type="button"
+              onClick={onPush}
+              disabled={pushing}
+              size="sm"
+              variant="ghost"
+              className="shrink-0"
+            >
+              <Send className="mr-1 h-4 w-4" />
+              {pushing ? "Envoi…" : "Réessayer"}
+            </Button>
+          </div>
         </div>
       )}
 

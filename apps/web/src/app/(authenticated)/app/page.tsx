@@ -1,9 +1,7 @@
 "use client";
 
 import {
-  Beef,
   CalendarDays,
-  ClipboardList,
   Clock,
   type LucideIcon,
   MapPin,
@@ -15,7 +13,6 @@ import {
 import Link from "next/link";
 import type { Route } from "next";
 import { useCurrentTenant, useCurrentUser } from "@/lib/auth";
-import { useUgb } from "@/lib/animaux";
 import { useInterventions } from "@/lib/interventions";
 import { useParcelles } from "@/lib/parcelles";
 import { useTenantDetail } from "@/lib/tenants";
@@ -63,7 +60,6 @@ export default function HomePage() {
   const me = useCurrentUser();
   const parcelles = useParcelles();
   const interventions = useInterventions();
-  const ugb = useUgb();
   const travaux = useTravaux();
   const tenantDetail = useTenantDetail();
   const heuresWeek = useMesHeures({
@@ -79,7 +75,6 @@ export default function HomePage() {
   const nbInterventions7j =
     interventions.data?.filter((iv) => nbDays(new Date(iv.dateOperation), new Date()) <= 7)
       .length ?? 0;
-  const totalUgb = ugb.data?.total ?? 0;
   const nbTravaux30j = travaux.data?.filter((t) => new Date(t.date) >= startOfMonth()).length ?? 0;
   const minutesSemaine = heuresWeek.data?.reduce((s, l) => s + l.dureeMinutes, 0) ?? 0;
 
@@ -218,14 +213,8 @@ export default function HomePage() {
             sub={nbInterventions7j === 0 ? "Rien saisi cette semaine" : `derniers 7 jours`}
             color="bg-green-50 text-green-700"
           />
-          <StatCard
-            href="/animaux"
-            icon={Beef}
-            label="UGB total"
-            value={totalUgb.toFixed(1)}
-            sub="Annexe 1 OPD-CH-2026"
-            color="bg-amber-50 text-amber-700"
-          />
+          {/* Cards "UGB total" et "SRPA" retirées 2026-05-14 (image 32) :
+              modules cheptel / pâturage pas d'actualité pour l'instant. */}
           <StatCard
             href="/travaux"
             icon={Tractor}
@@ -241,14 +230,6 @@ export default function HomePage() {
             value={minutesSemaine > 0 ? formatDuree(minutesSemaine) : "0h"}
             sub="lundi → dimanche"
             color="bg-indigo-50 text-indigo-700"
-          />
-          <StatCard
-            href="/srpa"
-            icon={ClipboardList}
-            label="SRPA"
-            value="Voir"
-            sub="Journal pâturage"
-            color="bg-sky-50 text-sky-700"
           />
         </div>
       </section>

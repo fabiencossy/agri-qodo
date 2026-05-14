@@ -85,31 +85,37 @@ export function PhotosField({
         onChange={(e) => void handleFiles(e.target.files)}
       />
 
-      <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
-        {list.map((p) => (
-          <PhotoThumb
-            key={p.id}
-            photo={p}
-            onClick={() => setPreview(p)}
-            onDelete={() => void handleDelete(p.id)}
-          />
-        ))}
-        <button
-          type="button"
-          onClick={() => fileInputRef.current?.click()}
-          disabled={upload.isPending}
-          className="flex aspect-square flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-border bg-muted/20 text-foreground/60 transition-colors hover:border-green hover:bg-green/5 hover:text-green disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {upload.isPending ? (
-            <Loader2 className="h-6 w-6 animate-spin" />
-          ) : (
-            <>
-              <Plus className="h-6 w-6" />
-              <span className="text-xs font-medium">Ajouter</span>
-            </>
-          )}
-        </button>
-      </div>
+      {list.length > 0 && (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          {list.map((p) => (
+            <PhotoThumb
+              key={p.id}
+              photo={p}
+              onClick={() => setPreview(p)}
+              onDelete={() => void handleDelete(p.id)}
+            />
+          ))}
+        </div>
+      )}
+      {/* Bouton "+ Ajouter" pleine largeur (Fabien 2026-05-14, image 31). */}
+      <button
+        type="button"
+        onClick={() => fileInputRef.current?.click()}
+        disabled={upload.isPending}
+        className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-border bg-muted/20 px-4 py-4 text-sm font-medium text-foreground/60 transition-colors hover:border-green hover:bg-green/5 hover:text-green disabled:cursor-not-allowed disabled:opacity-60"
+      >
+        {upload.isPending ? (
+          <>
+            <Loader2 className="h-5 w-5 animate-spin" />
+            Upload en cours…
+          </>
+        ) : (
+          <>
+            <Plus className="h-5 w-5" />
+            Ajouter une photo
+          </>
+        )}
+      </button>
 
       {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p>}
 

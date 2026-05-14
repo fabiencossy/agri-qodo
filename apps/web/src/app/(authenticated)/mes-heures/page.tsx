@@ -377,49 +377,45 @@ function SemaineView({
 }
 
 function SaisieRow({ ligne: l }: { ligne: MesHeuresLigne }) {
+  // Toute la zone est cliquable (Fabien 2026-05-14, image 33 :
+  // "je préfère des grosses zones pour cliquer sur les cartes plutôt
+  // qu'un petit bouton").
   return (
-    <li className="px-4 py-3">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-            <Link
-              href={`/travaux/${l.travail.id}` as never}
-              className="font-medium hover:underline"
-            >
-              {l.travail.titre}
-            </Link>
-            {l.travail.partenaire && (
-              <span className="text-xs text-foreground/60">· {l.travail.partenaire.nom}</span>
-            )}
-            {l.travail.parcelle && (
-              <span className="text-xs text-foreground/60">· {l.travail.parcelle.nom}</span>
-            )}
-            <span
-              className={`rounded px-2 py-0.5 text-[10px] font-medium ${STATUT_BADGE[l.travail.statut]}`}
-            >
-              {STATUT_LABEL[l.travail.statut]}
-            </span>
+    <li>
+      <Link
+        href={`/travaux/${l.travail.id}` as never}
+        className="block px-4 py-3 transition-colors hover:bg-muted/40"
+      >
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+              <span className="font-medium">{l.travail.titre}</span>
+              {l.travail.partenaire && (
+                <span className="text-xs text-foreground/60">· {l.travail.partenaire.nom}</span>
+              )}
+              {l.travail.parcelle && (
+                <span className="text-xs text-foreground/60">· {l.travail.parcelle.nom}</span>
+              )}
+              <span
+                className={`rounded px-2 py-0.5 text-[10px] font-medium ${STATUT_BADGE[l.travail.statut]}`}
+              >
+                {STATUT_LABEL[l.travail.statut]}
+              </span>
+            </div>
+            {l.notes && <p className="mt-0.5 text-xs italic text-foreground/60">{l.notes}</p>}
           </div>
-          {l.notes && <p className="mt-0.5 text-xs italic text-foreground/60">{l.notes}</p>}
-        </div>
-        <div className="flex shrink-0 flex-col items-end gap-1">
-          <span className="font-mono text-base font-bold tabular-nums">
-            {formatDuree(l.dureeMinutes)}
-          </span>
-          {l.tauxHoraireCHF && (
-            <span className="font-mono text-xs text-foreground/60">
-              {formatCHF((l.dureeMinutes / 60) * Number(l.tauxHoraireCHF))}
+          <div className="flex shrink-0 flex-col items-end gap-1">
+            <span className="font-mono text-base font-bold tabular-nums">
+              {formatDuree(l.dureeMinutes)}
             </span>
-          )}
-          <Link
-            href={`/travaux/${l.travail.id}` as never}
-            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-green hover:bg-green/10"
-          >
-            <ArrowRight className="h-3 w-3" />
-            Modifier
-          </Link>
+            {l.tauxHoraireCHF && (
+              <span className="font-mono text-xs text-foreground/60">
+                {formatCHF((l.dureeMinutes / 60) * Number(l.tauxHoraireCHF))}
+              </span>
+            )}
+          </div>
         </div>
-      </div>
+      </Link>
     </li>
   );
 }
@@ -465,35 +461,39 @@ function ListeView({
             </div>
             <ul className="divide-y divide-border">
               {items.map((l) => (
-                <li key={l.id} className="flex flex-wrap items-center gap-3 px-4 py-3 text-sm">
-                  <span className="flex-1">
-                    <Link
-                      href={`/travaux/${l.travail.id}` as never}
-                      className="font-medium hover:underline"
-                    >
-                      {l.travail.titre}
-                    </Link>
-                    {l.travail.partenaire && (
-                      <span className="ml-2 text-foreground/60">· {l.travail.partenaire.nom}</span>
-                    )}
-                    {l.notes && (
-                      <p className="mt-0.5 truncate text-xs text-foreground/50">{l.notes}</p>
-                    )}
-                  </span>
-                  <span
-                    className={`hidden rounded px-2 py-0.5 text-xs font-medium md:inline-block ${STATUT_BADGE[l.travail.statut]}`}
+                <li key={l.id}>
+                  <Link
+                    href={`/travaux/${l.travail.id}` as never}
+                    className="flex flex-wrap items-center gap-3 px-4 py-3 text-sm transition-colors hover:bg-muted/40"
                   >
-                    {STATUT_LABEL[l.travail.statut]}
-                  </span>
-                  <span className="font-mono text-sm tabular-nums">
-                    {formatDuree(l.dureeMinutes)}
-                  </span>
-                  {l.tauxHoraireCHF && (
-                    <span className="hidden font-mono text-xs text-foreground/60 sm:inline">
-                      {formatCHF((l.dureeMinutes / 60) * Number(l.tauxHoraireCHF))}
+                    <span className="flex-1">
+                      <span className="font-medium">{l.travail.titre}</span>
+                      {l.travail.partenaire && (
+                        <span className="ml-2 text-foreground/60">
+                          · {l.travail.partenaire.nom}
+                        </span>
+                      )}
+                      {l.notes && (
+                        <span className="mt-0.5 block truncate text-xs text-foreground/50">
+                          {l.notes}
+                        </span>
+                      )}
                     </span>
-                  )}
-                  <ArrowRight className="h-3.5 w-3.5 text-foreground/30" />
+                    <span
+                      className={`hidden rounded px-2 py-0.5 text-xs font-medium md:inline-block ${STATUT_BADGE[l.travail.statut]}`}
+                    >
+                      {STATUT_LABEL[l.travail.statut]}
+                    </span>
+                    <span className="font-mono text-sm tabular-nums">
+                      {formatDuree(l.dureeMinutes)}
+                    </span>
+                    {l.tauxHoraireCHF && (
+                      <span className="hidden font-mono text-xs text-foreground/60 sm:inline">
+                        {formatCHF((l.dureeMinutes / 60) * Number(l.tauxHoraireCHF))}
+                      </span>
+                    )}
+                    <ArrowRight className="h-3.5 w-3.5 text-foreground/30" />
+                  </Link>
                 </li>
               ))}
             </ul>
