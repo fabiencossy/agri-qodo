@@ -60,6 +60,33 @@ export class OdooWebhookSetupService {
     const token = await this.webhooks.ensureToken(tenantId);
     const client = await this.odooClientManager.forTenant(tenantId);
 
+    // Vérifie que le module base.automation est installé (sinon le
+    // create plus loin retourne 404 sans contexte). Fabien 2026-05-14 :
+    // "404 vérifie que utilisateur a les droits sur base.automation"
+    // — en réalité c'est plus souvent le module non installé.
+    try {
+      const baseAuto = await client.searchRead<{ id: number }>(
+        "ir.module.module",
+        [
+          ["name", "=", "base_automation"],
+          ["state", "=", "installed"],
+        ],
+        { fields: ["id"], limit: 1 },
+      );
+      if (baseAuto.length === 0) {
+        throw new Error(
+          "Le module 'Automated Actions' (base_automation) n'est pas installé sur ton Odoo. " +
+            "Va dans Odoo → Apps → cherche 'Automated Actions' → installe-le, puis ré-essaie.",
+        );
+      }
+    } catch (err) {
+      if (err instanceof Error && err.message.includes("Automated Actions")) throw err;
+      throw new Error(
+        "Impossible de vérifier l'installation du module base_automation côté Odoo : " +
+          (err instanceof Error ? err.message : String(err)),
+      );
+    }
+
     // Trouve le modèle product.product côté Odoo (id requis par
     // base.automation.model_id).
     const productModel = await client.searchRead<{ id: number }>(

@@ -14,12 +14,13 @@
 
 import { Clock, Pencil, Play, Square, Trash2 } from "lucide-react";
 import { useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Breadcrumb } from "@/components/app/breadcrumb";
 import { PageHeader } from "@/components/app/page-header";
 import { EditPresenceModal } from "@/components/presences/edit-presence-modal";
 import { HhmmTimeInput } from "@/components/ui/hhmm-time-input";
 import { Input } from "@/components/ui/input";
+import { extractApiErrorMessage } from "@/lib/api-client";
 import {
   formatDuree,
   type Presence,
@@ -81,6 +82,15 @@ export default function PresencesPage() {
 
   // Présence en cours d'édition (modal). Null = modal fermée.
   const [editing, setEditing] = useState<Presence | null>(null);
+  // Fabien 2026-05-14 : clockIn/clockOut/delete sans gestion d'erreur =
+  // silence absolu quand ça échoue. On affiche un bandeau visible.
+  const [error, setError] = useState<string | null>(null);
+  const errorRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (error && errorRef.current) {
+      errorRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [error]);
 
   // Quand une présence ouvre, on synchronise les champs avec ses valeurs
   // pour permettre l'édition de l'heure de fin avant le clock-out.
@@ -111,18 +121,38 @@ export default function PresencesPage() {
     .reduce((sum, p) => sum + (p.dureeMinutes ?? 0), 0);
 
   const handleClockIn = () => {
+    setError(null);
     const dateDebut = combineDateTime(date, heureDebut);
-    clockIn.mutate({
-      type: "CHANTIER",
-      ...(dateDebut ? { dateDebut } : {}),
-    });
+    clockIn.mutate(
+      {
+        type: "CHANTIER",
+        ...(dateDebut ? { dateDebut } : {}),
+      },
+      {
+        onError: (err) =>
+          setError(
+            extractApiErrorMessage(err) ??
+              "Impossible d'enregistrer le début. Vérifie tes heures et réessaie.",
+          ),
+      },
+    );
   };
 
   const handleClockOut = () => {
+    setError(null);
     const dateFin = combineDateTime(date, heureFin);
-    clockOut.mutate({
-      ...(dateFin ? { dateFin } : {}),
-    });
+    clockOut.mutate(
+      {
+        ...(dateFin ? { dateFin } : {}),
+      },
+      {
+        onError: (err) =>
+          setError(
+            extractApiErrorMessage(err) ??
+              "Impossible d'enregistrer la fin. Vérifie tes heures et réessaie.",
+          ),
+      },
+    );
   };
 
   const isOpen = !!current.data;
@@ -136,6 +166,19 @@ export default function PresencesPage() {
           icon={Clock}
           subtitle="Un clic Play, un clic Stop. Tape 720 pour 7h20, 7 pour 7h pile."
         />
+
+        {error && (
+          <div
+            ref={errorRef}
+            role="alert"
+            className="mb-4 rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm font-medium text-red-800"
+          >
+            <span className="mr-2 inline-block rounded bg-red-700 px-1.5 py-0.5 text-[11px] font-bold uppercase tracking-wider text-white">
+              Erreur
+            </span>
+            {error}
+          </div>
+        )}
 
         {current.isLoading ? (
           <div className="rounded-3xl border-2 border-dashed border-border p-10 text-center text-foreground/50">
