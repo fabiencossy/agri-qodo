@@ -1,6 +1,6 @@
 "use client";
 
-import { Package, Plus, RefreshCw, Trash2, Wrench, X } from "lucide-react";
+import { Package, Plus, RefreshCw, Trash2, Upload, Wrench, X, Zap, ZapOff } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Breadcrumb } from "@/components/app/breadcrumb";
 import { PageHeader } from "@/components/app/page-header";
@@ -16,19 +16,28 @@ import {
   MATERIEL_CATEGORIE_LABEL,
   MATERIEL_UNITE_LABEL,
   type Materiel,
+  type PushAllMaterielsResult,
   useDeleteMateriel,
   useMateriels,
+  usePushAllMaterielsOdoo,
   usePushMaterielOdoo,
   useSyncMaterielsOdoo,
 } from "@/lib/materiels";
 import { useOdooConnected } from "@/lib/odoo-config";
 import {
+  useDisableOdooWebhook,
+  useEnableOdooWebhook,
+  useOdooWebhookStatus,
+} from "@/lib/odoo-webhooks";
+import {
   CATEGORIE_LABEL,
   type Produit,
+  type PushAllProduitsResult,
   type SyncOdooProduitsResult,
   UNITE_LABEL,
   useDeleteProduit,
   useProduits,
+  usePushAllProduitsOdoo,
   usePushProduitOdoo,
   useSyncProduitsOdoo,
 } from "@/lib/produits";
@@ -75,6 +84,11 @@ export default function ProduitsPage() {
   const [dialogMateriel, setDialogMateriel] = useState(false);
   const [chooseTypeOpen, setChooseTypeOpen] = useState(false);
   const [syncResult, setSyncResult] = useState<SyncOdooProduitsResult | null>(null);
+  const [pushAllResult, setPushAllResult] = useState<{
+    produits: PushAllProduitsResult | null;
+    materiels: PushAllMaterielsResult | null;
+  } | null>(null);
+  const [pushAllError, setPushAllError] = useState<string | null>(null);
   const [editing, setEditing] = useState<CatalogueItemForEdit | null>(null);
 
   const produits = useProduits();
@@ -85,9 +99,47 @@ export default function ProduitsPage() {
   const pushMateriel = usePushMaterielOdoo();
   const syncProduitsOdoo = useSyncProduitsOdoo();
   const syncMaterielsOdoo = useSyncMaterielsOdoo();
+  const pushAllProduits = usePushAllProduitsOdoo();
+  const pushAllMateriels = usePushAllMaterielsOdoo();
+  const webhookStatus = useOdooWebhookStatus();
+  const enableWebhook = useEnableOdooWebhook();
+  const disableWebhook = useDisableOdooWebhook();
   const me = useCurrentUser();
   const odoo = useOdooConnected();
   const isAdmin = me.data?.role === "OWNER" || me.data?.role === "COMPTABLE";
+
+  const handleToggleWebhook = async () => {
+    if (webhookStatus.data?.enabled) {
+      if (
+        !confirm(
+          "Désactiver la sync temps réel ? Les changements Odoo arriveront avec un délai (cron 6h).",
+        )
+      )
+        return;
+      try {
+        await disableWebhook.mutateAsync();
+      } catch (err) {
+        alert(`Erreur : ${err instanceof Error ? err.message : String(err)}`);
+      }
+    } else {
+      if (
+        !confirm(
+          "Activer la sync temps réel ?\n\nAgri Qodo va configurer automatiquement les automatisations Odoo (3 base.automation + 1 ir.actions.server) pour qu'Odoo notifie Agri Qodo à chaque création/modification/suppression de produit.",
+        )
+      )
+        return;
+      try {
+        const r = await enableWebhook.mutateAsync();
+        alert(
+          `Sync temps réel activée !\n\nOdoo va maintenant POST sur :\n${r.publicUrl}\n\nToken : ${r.tokenPreview} (caché ensuite).`,
+        );
+      } catch (err) {
+        alert(
+          `Erreur lors de l'activation : ${err instanceof Error ? err.message : String(err)}\n\nVérifie que ton utilisateur Odoo a les droits sur base.automation (groupe "Administration / Settings").`,
+        );
+      }
+    }
+  };
 
   const handleSyncAllOdoo = () => {
     setSyncResult(null);
@@ -95,6 +147,59 @@ export default function ProduitsPage() {
       onSuccess: (r) => setSyncResult(r),
     });
     syncMaterielsOdoo.mutate(undefined);
+  };
+
+  const handlePushAllOdoo = async () => {
+    if (
+      !confirm(
+        "Pousser tout le catalogue (produits + prestations) vers Odoo ?\n\n" +
+          "Cette opération peut prendre plusieurs minutes selon la taille du catalogue. " +
+          "Les produits déjà liés à Odoo seront mis à jour, ceux qui n'existent plus côté " +
+          "Odoo seront recréés.",
+      )
+    ) {
+      console.log("[Push tout] Annulé par l'utilisateur");
+      return;
+    }
+    console.log("[Push tout] Démarrage…");
+    setPushAllResult(null);
+    setPushAllError(null);
+    // Promise.allSettled au lieu de Promise.all : si une des deux requêtes
+    // échoue, on récupère quand même le résultat de l'autre + tous les
+    // détails d'erreur pour l'afficher (avant : erreur silencieuse).
+    const [pRes, mRes] = await Promise.allSettled([
+      pushAllProduits.mutateAsync(),
+      pushAllMateriels.mutateAsync(),
+    ]);
+    const errors: string[] = [];
+    let produitsResult: PushAllProduitsResult | null = null;
+    let materielsResult: PushAllMaterielsResult | null = null;
+    if (pRes.status === "fulfilled") {
+      produitsResult = pRes.value;
+    } else {
+      console.error("Push produits échoué :", pRes.reason);
+      errors.push(
+        `Produits : ${pRes.reason instanceof Error ? pRes.reason.message : String(pRes.reason)}`,
+      );
+    }
+    if (mRes.status === "fulfilled") {
+      materielsResult = mRes.value;
+    } else {
+      console.error("Push matériels échoué :", mRes.reason);
+      errors.push(
+        `Prestations : ${mRes.reason instanceof Error ? mRes.reason.message : String(mRes.reason)}`,
+      );
+    }
+    setPushAllResult({ produits: produitsResult, materiels: materielsResult });
+    if (errors.length > 0) {
+      setPushAllError(errors.join(" | "));
+      console.error("[Push tout] Terminé avec erreurs :", errors);
+    } else {
+      console.log("[Push tout] Terminé sans erreur :", {
+        produits: produitsResult,
+        materiels: materielsResult,
+      });
+    }
   };
 
   // Liste combinée + dédup full. Stratégie pour chaque type :
@@ -398,25 +503,113 @@ export default function ProduitsPage() {
             <div className="flex-1 text-sm">
               <p className="font-semibold text-amber-900">Synchronisation Odoo</p>
               <p className="mt-0.5 text-xs text-foreground/70">
-                Importe tous les <code className="font-mono">product.product</code> (biens et
-                services) depuis ton instance Odoo.
+                Sync auto toutes les 6h. Synchroniser = importer depuis Odoo. Pousser tout = envoyer
+                le catalogue Agri Qodo vers Odoo (utile si Odoo a été vidé).
               </p>
             </div>
-            <Button
-              onClick={handleSyncAllOdoo}
-              disabled={syncProduitsOdoo.isPending || syncMaterielsOdoo.isPending}
-              size="sm"
-              className="bg-amber-600 hover:bg-amber-700"
-            >
-              <RefreshCw
-                className={`mr-1 h-4 w-4 ${
-                  syncProduitsOdoo.isPending || syncMaterielsOdoo.isPending ? "animate-spin" : ""
-                }`}
-              />
-              {syncProduitsOdoo.isPending || syncMaterielsOdoo.isPending
-                ? "Sync…"
-                : "Synchroniser tout"}
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                onClick={handleSyncAllOdoo}
+                disabled={
+                  syncProduitsOdoo.isPending ||
+                  syncMaterielsOdoo.isPending ||
+                  pushAllProduits.isPending ||
+                  pushAllMateriels.isPending
+                }
+                size="sm"
+                className="bg-amber-600 hover:bg-amber-700"
+              >
+                <RefreshCw
+                  className={`mr-1 h-4 w-4 ${
+                    syncProduitsOdoo.isPending || syncMaterielsOdoo.isPending ? "animate-spin" : ""
+                  }`}
+                />
+                {syncProduitsOdoo.isPending || syncMaterielsOdoo.isPending
+                  ? "Sync…"
+                  : "Synchroniser"}
+              </Button>
+              <Button
+                onClick={handlePushAllOdoo}
+                disabled={
+                  syncProduitsOdoo.isPending ||
+                  syncMaterielsOdoo.isPending ||
+                  pushAllProduits.isPending ||
+                  pushAllMateriels.isPending
+                }
+                size="sm"
+                variant="secondary"
+                className="border border-amber-700/40 bg-white text-amber-900 hover:bg-amber-100"
+                title="Pousse tout le catalogue Agri Qodo vers Odoo (utile après reset Odoo)."
+              >
+                <Upload
+                  className={`mr-1 h-4 w-4 ${
+                    pushAllProduits.isPending || pushAllMateriels.isPending ? "animate-pulse" : ""
+                  }`}
+                />
+                {pushAllProduits.isPending || pushAllMateriels.isPending ? "Push…" : "Pousser tout"}
+              </Button>
+              <Button
+                onClick={handleToggleWebhook}
+                disabled={enableWebhook.isPending || disableWebhook.isPending}
+                size="sm"
+                variant="secondary"
+                className={
+                  webhookStatus.data?.enabled
+                    ? "border border-green/40 bg-green/10 text-green-dark hover:bg-green/20"
+                    : "border border-amber-700/40 bg-white text-amber-900 hover:bg-amber-100"
+                }
+                title={
+                  webhookStatus.data?.enabled
+                    ? "Sync temps réel active — clique pour désactiver."
+                    : "Active la sync temps réel via webhooks Odoo."
+                }
+              >
+                {webhookStatus.data?.enabled ? (
+                  <>
+                    <Zap className="mr-1 h-4 w-4" />
+                    Temps réel actif
+                  </>
+                ) : (
+                  <>
+                    <ZapOff className="mr-1 h-4 w-4" />
+                    {enableWebhook.isPending ? "Activation…" : "Activer temps réel"}
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {(pushAllProduits.isPending || pushAllMateriels.isPending) && (
+          <div className="mb-4 flex items-center gap-3 rounded-xl border border-blue-300 bg-blue-50 p-4 text-sm">
+            <RefreshCw className="h-5 w-5 flex-shrink-0 animate-spin text-blue-700" />
+            <div className="flex-1">
+              <p className="font-medium text-blue-900">Push Odoo en cours…</p>
+              <p className="mt-0.5 text-xs text-blue-800/80">
+                Création/mise à jour des produits et prestations côté Odoo. Cela peut prendre
+                plusieurs minutes — ne ferme pas l&apos;onglet.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {pushAllError && (
+          <div className="mb-4 rounded-xl border border-red-300 bg-red-50 p-4 text-sm">
+            <p className="font-semibold text-red-900">Push Odoo échoué :</p>
+            <p className="mt-1 text-xs text-red-800/90">{pushAllError}</p>
+          </div>
+        )}
+
+        {pushAllResult && !pushAllError && (
+          <div className="mb-4 rounded-xl border border-green/30 bg-green/5 p-4 text-sm">
+            <p className="font-medium text-green-dark">
+              ✓ Push Odoo terminé : {pushAllResult.produits?.pushed ?? 0} produits ·{" "}
+              {pushAllResult.materiels?.pushed ?? 0} prestations
+              {(pushAllResult.produits?.errors.length ?? 0) +
+                (pushAllResult.materiels?.errors.length ?? 0) >
+                0 &&
+                ` (${(pushAllResult.produits?.errors.length ?? 0) + (pushAllResult.materiels?.errors.length ?? 0)} erreurs — voir logs serveur)`}
+            </p>
           </div>
         )}
 

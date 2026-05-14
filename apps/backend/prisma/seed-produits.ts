@@ -1804,6 +1804,152 @@ const PRODUITS: SeedProduit[] = [
     unite: ProduitUnite.DOSE,
     sourceCatalogue: SRC_AGRIDEA,
   },
+
+  // ==================================================================
+  // PRESTATIONS — Services de travaux à façon (Fabien 2026-05-14)
+  // Unités corrigées : UNITE (= balle) pour bottelage ; HA pour les
+  // prestations à l'hectare ; M3/T pour les épandages volumétriques.
+  // ==================================================================
+  {
+    code: "aq-prest-bottelage-balle-ronde-sec",
+    categorie: ProduitCategorie.PRESTATION,
+    libelle: "Bottelage balle ronde de sec",
+    unite: ProduitUnite.UNITE,
+    notes: "Prix à la balle. Inclut tracteur + presse + chauffeur.",
+    sourceCatalogue: "Agri Qodo — prestations standard",
+  },
+  {
+    code: "aq-prest-bottelage-balle-ronde-enrubannage",
+    categorie: ProduitCategorie.PRESTATION,
+    libelle: "Bottelage balle ronde enrubannée",
+    unite: ProduitUnite.UNITE,
+    notes: "Bottelage + enrubanneuse. Prix à la balle.",
+    sourceCatalogue: "Agri Qodo — prestations standard",
+  },
+  {
+    code: "aq-prest-bottelage-balle-carree",
+    categorie: ProduitCategorie.PRESTATION,
+    libelle: "Bottelage balle carrée (HD)",
+    unite: ProduitUnite.UNITE,
+    notes: "Petites balles haute densité. Prix à la balle.",
+    sourceCatalogue: "Agri Qodo — prestations standard",
+  },
+  {
+    code: "aq-prest-endainage",
+    categorie: ProduitCategorie.PRESTATION,
+    libelle: "Endainage (mise en andains)",
+    unite: ProduitUnite.HA,
+    notes: "Andaineur soleil/rotative. Facturation à l'hectare.",
+    sourceCatalogue: "Agri Qodo — prestations standard",
+  },
+  {
+    code: "aq-prest-fauchage",
+    categorie: ProduitCategorie.PRESTATION,
+    libelle: "Fauchage",
+    unite: ProduitUnite.HA,
+    notes: "Faucheuse à disques ou conditionneuse. À l'hectare.",
+    sourceCatalogue: "Agri Qodo — prestations standard",
+  },
+  {
+    code: "aq-prest-pirouettage",
+    categorie: ProduitCategorie.PRESTATION,
+    libelle: "Pirouettage (fanage)",
+    unite: ProduitUnite.HA,
+    notes: "Fanage de fourrage en andains. À l'hectare.",
+    sourceCatalogue: "Agri Qodo — prestations standard",
+  },
+  {
+    code: "aq-prest-ensilage-mais",
+    categorie: ProduitCategorie.PRESTATION,
+    libelle: "Ensilage de maïs (récolte ensileuse)",
+    unite: ProduitUnite.HA,
+    notes: "Ensileuse automotrice + remorques. À l'hectare.",
+    sourceCatalogue: "Agri Qodo — prestations standard",
+  },
+  {
+    code: "aq-prest-ensilage-herbe",
+    categorie: ProduitCategorie.PRESTATION,
+    libelle: "Ensilage d'herbe",
+    unite: ProduitUnite.HA,
+    notes: "Ensilage prairie. À l'hectare.",
+    sourceCatalogue: "Agri Qodo — prestations standard",
+  },
+  {
+    code: "aq-prest-moisson-cereales",
+    categorie: ProduitCategorie.PRESTATION,
+    libelle: "Moisson céréales",
+    unite: ProduitUnite.HA,
+    notes: "Moissonneuse-batteuse. À l'hectare.",
+    sourceCatalogue: "Agri Qodo — prestations standard",
+  },
+  {
+    code: "aq-prest-semis-direct",
+    categorie: ProduitCategorie.PRESTATION,
+    libelle: "Semis (à façon)",
+    unite: ProduitUnite.HA,
+    notes: "Semoir + tracteur. À l'hectare.",
+    sourceCatalogue: "Agri Qodo — prestations standard",
+  },
+  {
+    code: "aq-prest-epandage-lisier",
+    categorie: ProduitCategorie.PRESTATION,
+    libelle: "Épandage lisier",
+    unite: ProduitUnite.M3,
+    notes: "Tonne à lisier + pendillard ou enfouisseur. Au m³.",
+    sourceCatalogue: "Agri Qodo — prestations standard",
+  },
+  {
+    code: "aq-prest-epandage-fumier",
+    categorie: ProduitCategorie.PRESTATION,
+    libelle: "Épandage fumier",
+    unite: ProduitUnite.T,
+    notes: "Épandeur à fumier. À la tonne.",
+    sourceCatalogue: "Agri Qodo — prestations standard",
+  },
+  {
+    code: "aq-prest-main-oeuvre",
+    categorie: ProduitCategorie.PRESTATION,
+    libelle: "Main d'œuvre (heure)",
+    unite: ProduitUnite.HEURE,
+    notes: "Heure de main d'œuvre seule (sans machine).",
+    sourceCatalogue: "Agri Qodo — prestations standard",
+  },
+
+  // ==================================================================
+  // TRAVAUX DU SOL — Prestations à l'hectare
+  // ==================================================================
+  {
+    code: "aq-ts-labour",
+    categorie: ProduitCategorie.TRAVAIL_SOL,
+    libelle: "Labour",
+    unite: ProduitUnite.HA,
+    notes: "Charrue. À l'hectare.",
+    sourceCatalogue: "Agri Qodo — prestations standard",
+  },
+  {
+    code: "aq-ts-dechaumage",
+    categorie: ProduitCategorie.TRAVAIL_SOL,
+    libelle: "Déchaumage",
+    unite: ProduitUnite.HA,
+    notes: "Déchaumeur à disques ou à dents. À l'hectare.",
+    sourceCatalogue: "Agri Qodo — prestations standard",
+  },
+  {
+    code: "aq-ts-hersage",
+    categorie: ProduitCategorie.TRAVAIL_SOL,
+    libelle: "Hersage / herse rotative",
+    unite: ProduitUnite.HA,
+    notes: "Préparation lit de semence. À l'hectare.",
+    sourceCatalogue: "Agri Qodo — prestations standard",
+  },
+  {
+    code: "aq-ts-sous-solage",
+    categorie: ProduitCategorie.TRAVAIL_SOL,
+    libelle: "Sous-solage",
+    unite: ProduitUnite.HA,
+    notes: "Décompactage profond. À l'hectare.",
+    sourceCatalogue: "Agri Qodo — prestations standard",
+  },
 ];
 
 async function seed(): Promise<void> {

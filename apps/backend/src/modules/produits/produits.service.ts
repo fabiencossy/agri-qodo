@@ -169,6 +169,9 @@ export class ProduitsService {
         ...(dto.tauxTvaPercent !== undefined ? { tauxTvaPercent: dto.tauxTvaPercent } : {}),
         ...(dto.notes !== undefined ? { notes: dto.notes } : {}),
         ...(dto.actif !== undefined ? { actif: dto.actif } : {}),
+        ...(dto.excludeFromOdooSync !== undefined
+          ? { excludeFromOdooSync: dto.excludeFromOdooSync }
+          : {}),
       },
     });
 

@@ -149,32 +149,20 @@ export function ProduitFullscreenPicker({
                 />
               </div>
             </div>
-            <div className="mx-auto mt-2 flex max-w-3xl flex-wrap gap-1.5">
-              <button
-                type="button"
-                onClick={() => setFiltreCat(null)}
-                className={`rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${
-                  filtreCat === null
-                    ? "border-green bg-green text-white"
-                    : "border-border bg-background text-foreground/60 hover:text-foreground"
-                }`}
+            <div className="mx-auto mt-2 max-w-3xl">
+              <select
+                value={filtreCat ?? ""}
+                onChange={(e) => setFiltreCat((e.target.value || null) as ProduitCategorie | null)}
+                className="h-10 w-full rounded-lg border border-border bg-background px-3 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green"
+                aria-label="Filtrer par catégorie"
               >
-                Toutes
-              </button>
-              {CATEGORIES_ORDER.map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  onClick={() => setFiltreCat(filtreCat === c ? null : c)}
-                  className={`rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${
-                    filtreCat === c
-                      ? "border-green bg-green text-white"
-                      : "border-border bg-background text-foreground/60 hover:text-foreground"
-                  }`}
-                >
-                  {CATEGORIE_LABEL[c]}
-                </button>
-              ))}
+                <option value="">Toutes les catégories</option>
+                {CATEGORIES_ORDER.map((c) => (
+                  <option key={c} value={c}>
+                    {CATEGORIE_LABEL[c]}
+                  </option>
+                ))}
+              </select>
             </div>
           </header>
 

@@ -577,11 +577,16 @@ export class OdooPushService {
     // sans devoir re-saisir les produits à livrer/utiliser.
     let odooFsmTaskId: number | null = null;
     if (physicalLines.length > 0) {
+      // Fabien 2026-05-14 image 67 : si pas de datePrevue, prendre la
+      // date du jour (et non la `date` du travail qui peut être passée).
+      // Le champ Odoo `planned_date_begin` est un Datetime — on doit
+      // envoyer le format complet sinon Odoo l'ignore silencieusement.
+      const plannedDate = travail.datePrevue ?? travail.date ?? new Date();
       odooFsmTaskId = await this.tryCreateFsmTask(client, tenantId, {
         saleOrderId,
         partnerId,
         title: travail.titre,
-        date: travail.date,
+        date: plannedDate,
         physicalLines,
       });
     }
@@ -902,11 +907,18 @@ export class OdooPushService {
 
     try {
       const description = input.physicalLines.map((l) => `- ${l.name} × ${l.qty}`).join("\n");
+      // planned_date_begin/end sont des Datetime côté Odoo — il faut
+      // envoyer "YYYY-MM-DD HH:MM:SS", sinon Odoo ignore silencieusement
+      // (Fabien image 67 : "Date prévue" vide côté Odoo). On pose un
+      // créneau par défaut de 1h (8h00 → 9h00 UTC = 10h00 → 11h00 CET).
+      const beginIso = formatOdooDatetime(input.date, 8, 0);
+      const endIso = formatOdooDatetime(input.date, 9, 0);
       const taskId = await client.create(adapter.fsmTaskModel, {
         name: input.title,
         partner_id: input.partnerId,
         [adapter.fsmTaskSaleOrderField]: input.saleOrderId,
-        planned_date_begin: input.date.toISOString().slice(0, 10),
+        planned_date_begin: beginIso,
+        planned_date_end: endIso,
         description,
       });
       this.logger.log(
@@ -1278,4 +1290,21 @@ export class OdooPushService {
     this.carnetProjectCache.set(tenantId, created);
     return created;
   }
+}
+
+/**
+ * Format datetime accepté par Odoo : "YYYY-MM-DD HH:MM:SS" UTC.
+ * Pour les Datetime fields (planned_date_begin/end), envoyer juste
+ * "YYYY-MM-DD" est silencieusement ignoré. On compose un datetime UTC
+ * à l'heure indiquée (8h-9h UTC par défaut = 10h-11h heure suisse été).
+ */
+function formatOdooDatetime(date: Date, hourUtc: number, minuteUtc: number): string {
+  const d = new Date(date);
+  d.setUTCHours(hourUtc, minuteUtc, 0, 0);
+  const y = d.getUTCFullYear();
+  const mo = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const da = String(d.getUTCDate()).padStart(2, "0");
+  const h = String(d.getUTCHours()).padStart(2, "0");
+  const mi = String(d.getUTCMinutes()).padStart(2, "0");
+  return `${y}-${mo}-${da} ${h}:${mi}:00`;
 }

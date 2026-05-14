@@ -19,6 +19,7 @@ import {
   CheckCircle2,
   Clock,
   ExternalLink,
+  Navigation,
   Package,
   Save,
   Send,
@@ -28,7 +29,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Breadcrumb } from "@/components/app/breadcrumb";
 import { BigActionButton } from "@/components/activites/big-action-button";
 import { EditActionsMenu } from "@/components/activites/edit-actions-menu";
@@ -38,9 +39,12 @@ import { ProduitsSheet, type ProduitLigne } from "@/components/activites/produit
 import { TempsSheet } from "@/components/activites/temps-sheet";
 import { TypeSaisieHeader } from "@/components/activites/type-saisie-header";
 import { Button } from "@/components/ui/button";
+import { HhmmTimeInput } from "@/components/ui/hhmm-time-input";
 import { Input } from "@/components/ui/input";
 import { ParcelleSearchSelect } from "@/components/ui/parcelle-search-select";
+import { useParcelle } from "@/lib/parcelles";
 import { PartenaireSelect } from "@/components/ui/partenaire-select";
+import { extractApiErrorMessage } from "@/lib/api-client";
 import { useCurrentUser } from "@/lib/auth";
 import { useProduits } from "@/lib/produits";
 import { useTenantDetail } from "@/lib/tenants";
@@ -158,6 +162,14 @@ export default function NewTravailPage() {
   // Multi-produits : tableau de lignes empilables.
   const [produitsLignes, setProduitsLignes] = useState<ProduitLigne[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const errorRef = useRef<HTMLDivElement | null>(null);
+  // Scroll auto vers le bandeau d'erreur dès qu'il apparaît, pour que
+  // l'utilisateur ne le rate pas même sur formulaire long.
+  useEffect(() => {
+    if (error && errorRef.current) {
+      errorRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [error]);
   // Modaux plein écran "Ajouter du temps" / "Ajouter des produits"
   // (décision Fabien 2026-05-14 : sortir ces saisies du formulaire principal).
   const [showTempsSheet, setShowTempsSheet] = useState(false);
@@ -165,6 +177,9 @@ export default function NewTravailPage() {
 
   const produitsQuery = useProduits();
   const produitsCatalogue = produitsQuery.data ?? [];
+  // Charge la parcelle sélectionnée pour disposer de son lat/lng et
+  // afficher le bouton "Itinéraire" (Fabien 2026-05-14 image 53).
+  const parcelleDetail = useParcelle(parcelleId || undefined);
 
   // Pré-remplissage en mode édition depuis le travail existant.
   const loadedRef = useState({ id: "" })[0];
@@ -280,7 +295,7 @@ export default function NewTravailPage() {
       const created = await create.mutateAsync(payload);
       router.push(`/planning?from=${created.id}` as never);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Échec de la planification.");
+      setError(extractApiErrorMessage(err) ?? "Échec de la planification.");
     }
   }
 
@@ -359,7 +374,7 @@ export default function NewTravailPage() {
         router.push(`/travaux/new?edit=${created.id}` as never);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Erreur inconnue");
+      setError(extractApiErrorMessage(err) ?? "Erreur inconnue");
     }
   };
 
@@ -425,13 +440,13 @@ export default function NewTravailPage() {
 
           <Field
             label="Heure prévue (optionnel)"
-            hint="Si renseignée, elle apparaît dans la carte du planning. Sinon le travail reste planifié dans la journée sans heure précise."
+            hint="Tape 7 = 7h00, 730 = 7h30, 1645 = 16h45. Si renseignée, elle apparaît dans la carte du planning ; sinon le travail reste planifié dans la journée sans heure précise."
           >
-            <Input
-              type="time"
+            <HhmmTimeInput
               value={heurePrevue}
-              onChange={(e) => setHeurePrevue(e.target.value)}
-              className="h-12 text-base"
+              onChange={setHeurePrevue}
+              placeholder="--:--"
+              className="h-12 w-full text-base"
             />
           </Field>
 
@@ -469,16 +484,33 @@ export default function NewTravailPage() {
           )}
 
           <Field label="Parcelle (optionnel)">
-            <ParcelleSearchSelect
-              value={parcelleId}
-              onChange={(id) => setParcelleId(id)}
-              placeholder="Choisir une parcelle…"
-              {...(partenaireId
-                ? { filtreTenantId: partenaireId }
-                : odooPartnerId
-                  ? { filtreOdooPartnerId: odooPartnerId }
-                  : {})}
-            />
+            <div className="flex gap-2">
+              <div className="min-w-0 flex-1">
+                <ParcelleSearchSelect
+                  value={parcelleId}
+                  onChange={(id) => setParcelleId(id)}
+                  placeholder="Choisir une parcelle…"
+                  {...(partenaireId
+                    ? { filtreTenantId: partenaireId }
+                    : odooPartnerId
+                      ? { filtreOdooPartnerId: odooPartnerId }
+                      : {})}
+                />
+              </div>
+              {/* Bouton Itinéraire (Fabien 2026-05-14 image 53). */}
+              {parcelleDetail.data?.lat != null && parcelleDetail.data?.lng != null && (
+                <a
+                  href={`https://www.google.com/maps/dir/?api=1&destination=${parcelleDetail.data.lat},${parcelleDetail.data.lng}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex h-11 shrink-0 items-center gap-1.5 rounded-lg border border-border bg-background px-3 text-sm font-medium text-foreground/80 transition-colors hover:border-green hover:text-green"
+                  title="Ouvrir Google Maps en navigation vers cette parcelle"
+                >
+                  <Navigation className="h-4 w-4" />
+                  <span className="hidden sm:inline">Itinéraire</span>
+                </a>
+              )}
+            </div>
           </Field>
 
           {/* Bouton Planifier (Sprint 2 fusion-interventions) : soumet
@@ -560,7 +592,18 @@ export default function NewTravailPage() {
             />
           </Field>
 
-          {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+          {error && (
+            <div
+              ref={errorRef}
+              role="alert"
+              className="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm font-medium text-red-800"
+            >
+              <span className="mr-2 inline-block rounded bg-red-700 px-1.5 py-0.5 text-[11px] font-bold uppercase tracking-wider text-white">
+                Erreur
+              </span>
+              {error}
+            </div>
+          )}
 
           {/* ----- Bloc édition : statut + total + push Odoo + actions
               (Valider / Annuler) ----- */}

@@ -47,16 +47,110 @@ function mapUnite(uomLabel: string | undefined): ProduitUnite {
   return ProduitUnite.KG;
 }
 
-function mapCategorie(categLabel: string | undefined): ProduitCategorie {
-  if (!categLabel) return ProduitCategorie.AUTRE;
-  const c = categLabel.toLowerCase();
-  if (c.includes("semence") || c.includes("seed")) return ProduitCategorie.SEMENCE;
-  if (c.includes("phyto") || c.includes("herbicide") || c.includes("fongicide"))
+/**
+ * Devine la catégorie d'un produit à partir de son nom et de sa
+ * catégorie Odoo. Beaucoup de catalogues Odoo n'ont pas de catégorie
+ * pertinente — on s'appuie d'abord sur le nom (qui contient des termes
+ * agricoles français), puis on retombe sur la catégorie Odoo si rien
+ * n'a matché.
+ *
+ * Décision Fabien 2026-05-14 image 58 : trier 376+ produits en un coup.
+ */
+function mapCategorie(
+  produitLabel: string | undefined,
+  categLabel: string | undefined,
+): ProduitCategorie {
+  const haystack = `${produitLabel ?? ""} ${categLabel ?? ""}`.toLowerCase();
+  if (!haystack.trim()) return ProduitCategorie.AUTRE;
+
+  // 1) Prestations agricoles à façon — souvent en première ligne dans
+  // les factures aux clients (bottelage, fauchage, etc.).
+  if (
+    /bottel|botelage|fauch|endain|ensil|press|enrubann|moisson|battage|labour à façon|labour facon|prestation/.test(
+      haystack,
+    )
+  ) {
+    return ProduitCategorie.PRESTATION;
+  }
+
+  // 2) Phyto — herbicide / fongicide / insecticide / régulateur.
+  if (
+    /phyto|herbicid|fongicid|insecticid|acaricid|molluscicid|nématicid|nematicid|défoliant|defoliant|régulateur|regulateur|adjuvant/.test(
+      haystack,
+    )
+  ) {
     return ProduitCategorie.PHYTO;
-  if (c.includes("organi") || c.includes("compost") || c.includes("fumier") || c.includes("lisier"))
+  }
+
+  // 3) Engrais organiques (avant SEMENCE car "tourteau de soja" matche
+  // soja en sous-chaîne — on veut l'engrais).
+  if (
+    /organi|compost|fumier|lisier|digestat|guano|sang séché|sang seche|corne broyée|corne broyee|tourteau|vinasse|amendement organique|matière organique|matiere organique/.test(
+      haystack,
+    )
+  ) {
     return ProduitCategorie.ENGRAIS_ORGANIQUE;
-  if (c.includes("engrais") || c.includes("fertili") || c.includes("npk"))
+  }
+
+  // 4) Engrais minéraux (avant SEMENCE pour éviter "Engrais blé" =
+  // SEMENCE par erreur).
+  if (
+    /engrais|fertili|npk|nitrate|ammonitrate|ammoniac|urée|uree|potass|phosphat|chaux|magnési|magnesi|sulfat|kainit|patentkali|soufre|soufré|micro-?nutriment|oligo-?élément|oligo-?element|amendement minéral|amendement mineral|n34|26-?14|18-?46/.test(
+      haystack,
+    )
+  ) {
     return ProduitCategorie.ENGRAIS_MINERAL;
+  }
+
+  // 5) Semences — Fabien 2026-05-14 image 60 : les noms côté Odoo sont
+  // "Blé Arnold", "Maïs DKC...", "Colza ES Aquarel", pas "Semence de blé".
+  // On reconnaît aussi les espèces courantes en agriculture CH.
+  //
+  // \b utilisé pour éviter les sous-chaînes accidentelles (ex "blés-tournants"
+  // → ne matche pas "blé" sans frontière). Liste exhaustive pour le bassin
+  // céréalier suisse (cultures Suisse-Bilanz + cultures fourragères).
+  if (
+    /semence|semis|\bseed\b|plantule|bouture|tubercule|graine de|graines de/.test(haystack) ||
+    /\b(blé|ble|froment|orge|avoine|seigle|triticale|épeautre|epeautre|sarrasin|millet|sorgho|riz|quinoa|amarante|chanvre|kamut|engrain|engrain\b|maïs|mais|tournesol|colza|soja|lin|moutarde brassica|pois|féverole|feverole|fève|feve|lupin|lentille|haricot|pois chiche|betterave sucrière|betterave sucriere|pomme de terre|patate douce|luzerne|trèfle|trefle|dactyle|fétuque|fetuque|ray-?grass|raigrass|fléole|fleole|brome|phacélie|phacelie|vesce|radis fourrager|moutarde fourragère|moutarde fourragere|sarrasin|niger|cameline|sorgho fourrager|millet perlé|millet perle|seigle fourrager|prairie multiflore|trèfle violet|trefle violet|trèfle blanc|trefle blanc|trèfle incarnat|trefle incarnat|trèfle d'alexandrie|trefle d'alexandrie|navette|mélange|melange)\b/.test(
+      haystack,
+    )
+  ) {
+    return ProduitCategorie.SEMENCE;
+  }
+
+  // 6) Récolte (foin, paille, balles vendues).
+  if (/foin|paille|regain|botte|balle\b|round[- ]?bale|big[- ]?bale|enrubanné/.test(haystack)) {
+    return ProduitCategorie.RECOLTE;
+  }
+
+  // 7) Travail du sol (location / prestation outil).
+  if (
+    /labour|déchaumage|dechaumage|hersage|herse|charrue|fraise|griffon|décompactage|decompactage|sous-?solage|roulage/.test(
+      haystack,
+    )
+  ) {
+    return ProduitCategorie.TRAVAIL_SOL;
+  }
+
+  // 8) Irrigation.
+  if (/irrigation|arrosage|asperseur|goutte[- ]?à[- ]?goutte|enrouleur/.test(haystack)) {
+    return ProduitCategorie.IRRIGATION;
+  }
+
+  // 9) Carburants & lubrifiants.
+  if (/diesel|gasoil|essence|carburant|fioul|fuel|huile moteur|lubrifiant|graisse/.test(haystack)) {
+    return ProduitCategorie.CARBURANT;
+  }
+
+  // 10) Pièces matériel / consommables atelier.
+  if (
+    /pièce|piece|filtre|courroie|roulement|joint|boulon|écrou|ecrou|vis\b|soc|dent|cardan|pneu|chambre à air|chambre a air|outillage/.test(
+      haystack,
+    )
+  ) {
+    return ProduitCategorie.PIECES_MATERIEL;
+  }
+
   return ProduitCategorie.AUTRE;
 }
 
@@ -106,6 +200,10 @@ export class OdooSyncService {
       L: ["L", "Litre(s)", "Litre"],
       M3: ["m³", "m3", "Mètre(s) cube", "Mètre cube"],
       DOSE: ["Dose(s)", "Dose"],
+      // Étendu Fabien 2026-05-14 : prestations à façon, balles, heures.
+      HA: ["Hectare(s)", "Hectare", "ha"],
+      UNITE: ["Unité(s)", "Unité", "u"],
+      HEURE: ["Heure(s)", "Heure", "h"],
     };
     for (const name of candidates[unite]) {
       try {
@@ -210,6 +308,17 @@ export class OdooSyncService {
   async syncProduits(): Promise<SyncOdooProduitsResult> {
     this.assertAdmin();
     const { tenantId } = this.tenantContext.get();
+    return this.syncProduitsForTenant(tenantId);
+  }
+
+  /**
+   * Variante de `syncProduits()` réservée au scheduler interne : prend
+   * `tenantId` en paramètre, ne consulte pas le tenantContext et ne
+   * vérifie pas le rôle. À ne JAMAIS exposer via HTTP — c'est l'appelant
+   * (cron service) qui garantit qu'on tourne dans un contexte
+   * d'administration système.
+   */
+  async syncProduitsForTenant(tenantId: string): Promise<SyncOdooProduitsResult> {
     const client = await this.odooClientManager.forTenant(tenantId);
 
     let rows: OdooProductRow[];
@@ -252,7 +361,7 @@ export class OdooSyncService {
         const uniteLabel = row.uom_id ? row.uom_id[1] : undefined;
         const categLabel = row.categ_id ? row.categ_id[1] : undefined;
         const unite = mapUnite(uniteLabel);
-        const categorie = mapCategorie(categLabel);
+        const categorie = mapCategorie(row.name, categLabel);
 
         const data = {
           libelle: row.name.trim() || `Produit Odoo #${row.id}`,
@@ -266,10 +375,22 @@ export class OdooSyncService {
 
         const existing = await this.prisma.produit.findFirst({
           where: { tenantId, odooProductId: row.id },
-          select: { id: true },
+          select: { id: true, excludeFromOdooSync: true },
         });
 
         if (existing) {
+          // Fabien 2026-05-14 image 58 : si l'utilisateur a marqué ce
+          // produit "ne pas synchroniser", on conserve sa version locale
+          // (catégorie, libellé, prix manuels) et on remet juste à jour
+          // le timestamp pour tracer la tentative.
+          if (existing.excludeFromOdooSync) {
+            await this.prisma.produit.update({
+              where: { id: existing.id },
+              data: { odooSyncedAt: now, actif: row.active },
+            });
+            result.skipped++;
+            continue;
+          }
           await this.prisma.produit.update({
             where: { id: existing.id },
             data,
@@ -304,6 +425,73 @@ export class OdooSyncService {
   }
 
   /**
+   * Pousse en masse tous les produits visibles du tenant vers Odoo.
+   * Fabien 2026-05-14 image 59 + nouveau message : "j'ai supprimé tous
+   * les produits Odoo, je veux refaire une sync depuis Agricodo".
+   *
+   * Stratégie : on liste tous les produits visibles (globaux non-perso
+   * + perso du tenant), on appelle `ensureOdooProduct` pour chacun en
+   * best-effort. Un échec sur un produit ne bloque pas les autres.
+   * Pour les globaux, ensureOdooProduct fait fork-on-push (crée une
+   * copie perso et garde l'odooProductId dessus).
+   */
+  async pushAllProduits(): Promise<{
+    total: number;
+    pushed: number;
+    skipped: number;
+    errors: Array<{ produitId: string; libelle: string; raison: string }>;
+  }> {
+    this.assertAdmin();
+    const { tenantId } = this.tenantContext.get();
+
+    // On pousse uniquement les actifs (les inactifs encombrent Odoo).
+    // Pour les globaux, on n'en pousse qu'un par libellé (le perso
+    // mappé prend le pas s'il existe — sinon le global).
+    const all = await this.prisma.produit.findMany({
+      where: {
+        actif: true,
+        OR: [{ tenantId: null }, { tenantId }],
+      },
+      select: { id: true, libelle: true, tenantId: true, odooProductId: true },
+      orderBy: { libelle: "asc" },
+    });
+
+    // Dédup par libellé : si un perso existe pour ce libellé, on skip
+    // le global correspondant (ensureOdooProduct ferait fork→doublon).
+    const persoLibelles = new Set(
+      all.filter((p) => p.tenantId === tenantId).map((p) => p.libelle.toLowerCase().trim()),
+    );
+    const toPush = all.filter(
+      (p) => p.tenantId === tenantId || !persoLibelles.has(p.libelle.toLowerCase().trim()),
+    );
+
+    const result = {
+      total: toPush.length,
+      pushed: 0,
+      skipped: 0,
+      errors: [] as Array<{ produitId: string; libelle: string; raison: string }>,
+    };
+
+    for (const produit of toPush) {
+      try {
+        await this.ensureOdooProduct(produit.id);
+        result.pushed++;
+      } catch (err) {
+        result.errors.push({
+          produitId: produit.id,
+          libelle: produit.libelle,
+          raison: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    this.logger.log(
+      `Push all produits terminé pour tenant ${tenantId} : ${result.pushed}/${result.total} poussés (${result.errors.length} erreurs).`,
+    );
+    return result;
+  }
+
+  /**
    * Garantit qu'un produit a un product.product Odoo associé. Crée le
    * produit côté Odoo si `odooProductId` est null, sinon retourne
    * l'existant (idempotent). Sert au bouton "Pousser vers Odoo" sur
@@ -322,49 +510,77 @@ export class OdooSyncService {
     // prime au moment du push.
     if (produit.odooProductId) {
       const client = await this.odooClientManager.forTenant(tenantId);
-      const uomId = await this.resolveUomId(client, tenantId, produit.unite);
-      const taxesPayload = await this.buildTaxesPayload(client, tenantId, produit.tauxTvaPercent);
-      // default_code mis à false pour effacer la référence interne
-      // visible côté Odoo (demande Fabien 2026-05-06).
-      await client
-        .write("product.product", [produit.odooProductId], {
-          name: produit.libelle,
-          list_price: produit.prixVenteCHF ? Number(produit.prixVenteCHF) : 0,
-          default_code: false,
-          ...(uomId ? { uom_id: uomId } : {}),
-          ...(taxesPayload ?? {}),
-        })
-        .catch((err) =>
-          this.logger.warn(
-            `Sync push (prod #${produit.odooProductId}) échoué : ${err instanceof Error ? err.message : err}`,
-          ),
-        );
+
+      // Fabien 2026-05-14 : avant de write, on vérifie que le produit
+      // existe encore côté Odoo. Si l'admin a supprimé son catalogue
+      // Odoo manuellement, l'odooProductId local pointe dans le vide.
+      // On reset le lien local et on retombe sur la branche de création.
+      let stillExists = true;
       try {
-        const probe = await client.searchRead<{
-          id: number;
-          name?: string;
-          list_price?: number;
-        }>("product.product", [["id", "=", produit.odooProductId]], {
-          fields: ["id", "name", "list_price"],
-          limit: 1,
-        });
-        const o = probe[0];
-        if (o) {
-          await this.prisma.produit.update({
-            where: { id: produit.id },
-            data: {
-              ...(o.name ? { libelle: o.name } : {}),
-              ...(typeof o.list_price === "number"
-                ? { prixVenteCHF: o.list_price > 0 ? o.list_price : null }
-                : {}),
-              odooSyncedAt: new Date(),
-            },
-          });
-        }
+        const probe = await client.searchRead<{ id: number }>(
+          "product.product",
+          [["id", "=", produit.odooProductId]],
+          { fields: ["id"], limit: 1 },
+        );
+        stillExists = probe.length > 0;
       } catch {
-        // Lecture best-effort.
+        // Erreur de communication → on suppose qu'il existe et on
+        // tentera le write (qui échouera proprement si c'est cassé).
       }
-      return produit.odooProductId;
+
+      if (!stillExists) {
+        this.logger.log(
+          `Produit ${produit.id} : odooProductId #${produit.odooProductId} orphelin (supprimé côté Odoo) → reset local et re-création.`,
+        );
+        await this.prisma.produit.update({
+          where: { id: produit.id },
+          data: { odooProductId: null, odooSyncedAt: null },
+        });
+        produit.odooProductId = null;
+        // Tombe en bas dans la branche de création.
+      } else {
+        const uomId = await this.resolveUomId(client, tenantId, produit.unite);
+        const taxesPayload = await this.buildTaxesPayload(client, tenantId, produit.tauxTvaPercent);
+        await client
+          .write("product.product", [produit.odooProductId], {
+            name: produit.libelle,
+            list_price: produit.prixVenteCHF ? Number(produit.prixVenteCHF) : 0,
+            default_code: false,
+            ...(uomId ? { uom_id: uomId } : {}),
+            ...(taxesPayload ?? {}),
+          })
+          .catch((err) =>
+            this.logger.warn(
+              `Sync push (prod #${produit.odooProductId}) échoué : ${err instanceof Error ? err.message : err}`,
+            ),
+          );
+        try {
+          const probe = await client.searchRead<{
+            id: number;
+            name?: string;
+            list_price?: number;
+          }>("product.product", [["id", "=", produit.odooProductId]], {
+            fields: ["id", "name", "list_price"],
+            limit: 1,
+          });
+          const o = probe[0];
+          if (o) {
+            await this.prisma.produit.update({
+              where: { id: produit.id },
+              data: {
+                ...(o.name ? { libelle: o.name } : {}),
+                ...(typeof o.list_price === "number"
+                  ? { prixVenteCHF: o.list_price > 0 ? o.list_price : null }
+                  : {}),
+                odooSyncedAt: new Date(),
+              },
+            });
+          }
+        } catch {
+          // Lecture best-effort.
+        }
+        return produit.odooProductId;
+      }
     }
 
     // Dédup : si on a déjà un produit perso avec même libellé côté
@@ -440,6 +656,12 @@ export class OdooSyncService {
         .catch(() => undefined);
     }
 
+    // Fabien 2026-05-14 : libère l'odooProductId si un AUTRE produit
+    // du tenant l'a déjà — héritage de syncs précédentes qui ont laissé
+    // des perso doublons. Sans ça, l'update échoue sur la contrainte
+    // unique (tenant_id, odoo_product_id).
+    await this.releaseOdooProductIdConflict(tenantId, odooId, produit.id);
+
     if (produit.tenantId === null) {
       // Globaux : on duplique en perso pour pouvoir poser l'odooProductId
       // sans contaminer le catalogue partagé.
@@ -472,5 +694,34 @@ export class OdooSyncService {
     }
 
     return odooId;
+  }
+
+  /**
+   * Si un autre produit du tenant a déjà cet `odooProductId` (héritage
+   * de syncs précédentes ou doublons UI), on lui retire pour libérer
+   * la contrainte unique avant d'attribuer l'id au produit cible.
+   */
+  private async releaseOdooProductIdConflict(
+    tenantId: string,
+    odooId: number,
+    excludeProduitId: string,
+  ): Promise<void> {
+    const conflict = await this.prisma.produit.findFirst({
+      where: {
+        tenantId,
+        odooProductId: odooId,
+        id: { not: excludeProduitId },
+      },
+      select: { id: true, libelle: true },
+    });
+    if (conflict) {
+      this.logger.log(
+        `Reset odooProductId=${odooId} sur produit ${conflict.id} (${conflict.libelle}) pour libérer le slot.`,
+      );
+      await this.prisma.produit.update({
+        where: { id: conflict.id },
+        data: { odooProductId: null, actif: false },
+      });
+    }
   }
 }

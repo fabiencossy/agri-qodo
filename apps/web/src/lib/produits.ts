@@ -8,9 +8,15 @@ export type ProduitCategorie =
   | "ENGRAIS_MINERAL"
   | "ENGRAIS_ORGANIQUE"
   | "PHYTO"
+  | "PRESTATION"
+  | "TRAVAIL_SOL"
+  | "RECOLTE"
+  | "IRRIGATION"
+  | "CARBURANT"
+  | "PIECES_MATERIEL"
   | "AUTRE";
 
-export type ProduitUnite = "KG" | "L" | "T" | "M3" | "DOSE";
+export type ProduitUnite = "KG" | "L" | "T" | "M3" | "DOSE" | "HA" | "UNITE" | "HEURE";
 
 export interface Produit {
   id: string;
@@ -35,6 +41,8 @@ export interface Produit {
   odooProductId: number | null;
   /** ISO datetime de la dernière sync Odoo. */
   odooSyncedAt: string | null;
+  /** Si true, le produit est ignoré par les sync Odoo (modifs locales préservées). */
+  excludeFromOdooSync: boolean;
 }
 
 export interface CreateProduitInput {
@@ -50,6 +58,7 @@ export interface CreateProduitInput {
   prixVenteCHF?: number;
   tauxTvaPercent?: number;
   notes?: string;
+  excludeFromOdooSync?: boolean;
 }
 
 const KEY = ["produits"] as const;
@@ -127,11 +136,38 @@ export function usePushProduitOdoo() {
   });
 }
 
+export interface PushAllProduitsResult {
+  total: number;
+  pushed: number;
+  skipped: number;
+  errors: Array<{ produitId: string; libelle: string; raison: string }>;
+}
+
+/**
+ * Pousse tous les produits actifs visibles vers Odoo (Fabien
+ * 2026-05-14 image 59 : tout re-pousser après reset Odoo).
+ */
+export function usePushAllProduitsOdoo() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api<PushAllProduitsResult>("/api/produits/push-all-odoo", { method: "POST" }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: KEY });
+    },
+  });
+}
+
 export const CATEGORIE_LABEL: Record<ProduitCategorie, string> = {
   SEMENCE: "Semences",
   ENGRAIS_MINERAL: "Engrais minéraux",
   ENGRAIS_ORGANIQUE: "Engrais organiques",
   PHYTO: "Produits phytosanitaires",
+  PRESTATION: "Prestations (bottelage, ensilage…)",
+  TRAVAIL_SOL: "Travaux du sol",
+  RECOLTE: "Récolte (foin, paille…)",
+  IRRIGATION: "Irrigation",
+  CARBURANT: "Carburants & lubrifiants",
+  PIECES_MATERIEL: "Pièces de matériel",
   AUTRE: "Autres",
 };
 
@@ -141,6 +177,9 @@ export const UNITE_LABEL: Record<ProduitUnite, string> = {
   T: "t",
   M3: "m³",
   DOSE: "doses",
+  HA: "ha",
+  UNITE: "u.",
+  HEURE: "h",
 };
 
 export const CATEGORIES_ORDER: ProduitCategorie[] = [
@@ -148,5 +187,11 @@ export const CATEGORIES_ORDER: ProduitCategorie[] = [
   "ENGRAIS_MINERAL",
   "ENGRAIS_ORGANIQUE",
   "PHYTO",
+  "PRESTATION",
+  "TRAVAIL_SOL",
+  "RECOLTE",
+  "IRRIGATION",
+  "CARBURANT",
+  "PIECES_MATERIEL",
   "AUTRE",
 ];

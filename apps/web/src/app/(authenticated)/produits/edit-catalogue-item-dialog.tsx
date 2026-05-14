@@ -73,6 +73,8 @@ export function EditCatalogueItemDialog({
   const [tvaPreset, setTvaPreset] = useState("");
   const [tvaCustom, setTvaCustom] = useState("");
   const [notes, setNotes] = useState("");
+  // Fabien 2026-05-14 image 58 : préserve les modifs locales contre la sync.
+  const [excludeFromOdooSync, setExcludeFromOdooSync] = useState(false);
   const updateProduit = useUpdateProduit();
   const updateMateriel = useUpdateMateriel();
 
@@ -87,6 +89,7 @@ export function EditCatalogueItemDialog({
     if (item.kind === "bien") {
       setPrix(item.data.prixVenteCHF ? String(item.data.prixVenteCHF) : "");
       setUnite(item.data.unite);
+      setExcludeFromOdooSync(item.data.excludeFromOdooSync ?? false);
     } else {
       setPrix(item.data.prixUnitaireCHF ? String(item.data.prixUnitaireCHF) : "");
       setUnite(item.data.unite);
@@ -129,6 +132,7 @@ export function EditCatalogueItemDialog({
           ...(prix ? { prixVenteCHF: Number(prix) } : {}),
           ...(tva.tauxTvaPercent !== null ? { tauxTvaPercent: tva.tauxTvaPercent } : {}),
           ...(notes.trim() ? { notes: notes.trim() } : {}),
+          excludeFromOdooSync,
         });
       } else {
         await updateMateriel.mutateAsync({
@@ -291,6 +295,24 @@ export function EditCatalogueItemDialog({
               className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
             />
           </label>
+
+          {item.kind === "bien" && item.data.odooProductId != null && (
+            <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border bg-muted/30 px-3 py-2.5 text-sm">
+              <input
+                type="checkbox"
+                checked={excludeFromOdooSync}
+                onChange={(e) => setExcludeFromOdooSync(e.target.checked)}
+                className="mt-0.5 h-4 w-4 rounded border-border"
+              />
+              <span className="min-w-0 flex-1">
+                <span className="block font-medium">Ne pas synchroniser depuis Odoo</span>
+                <span className="mt-0.5 block text-xs text-foreground/60">
+                  Garde tes modifs locales (catégorie, libellé, prix) — les sync Odoo
+                  n&apos;écraseront plus ce produit.
+                </span>
+              </span>
+            </label>
+          )}
         </div>
 
         <div className="mt-5 flex gap-2">

@@ -73,6 +73,15 @@ export class MaterielsController {
     return this.odooSync.ensureOdooProduct(id).then((odooProductId) => ({ odooProductId }));
   }
 
+  @Post("push-all-odoo")
+  @ApiOperation({
+    summary:
+      "Pousse tous les matériels visibles vers Odoo en best-effort. Crée les manquants côté Odoo et met à jour ceux déjà liés. Retourne {total, pushed, errors}.",
+  })
+  pushAllOdoo() {
+    return this.odooSync.pushAllMateriels();
+  }
+
   @Patch(":id")
   @ApiOperation({
     summary: "Met à jour un matériel perso. Les matériels globaux sont read-only.",

@@ -2,7 +2,7 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import area from "@turf/area";
-import { CalendarDays, Clock } from "lucide-react";
+import { CalendarDays, Clock, Navigation } from "lucide-react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -189,6 +189,8 @@ export default function NewInterventionPage() {
   // existante est chargée. Garde-fou via une ref-like (loadedRef) pour
   // éviter de reset à chaque re-render.
   const [loadedId, setLoadedId] = useState<string>("");
+  // Erreur push Odoo après création/modif (Fabien 2026-05-14 image 55 #3).
+  const [pushError, setPushError] = useState<string | null>(null);
   useEffect(() => {
     if (!isEditMode || !existingIntervention.data) return;
     if (loadedId === existingIntervention.data.id) return;
@@ -362,10 +364,14 @@ export default function NewInterventionPage() {
       return;
     }
     const dateOp = watch("dateOperation") || today();
+    // Fabien 2026-05-14 (image 56) : on respecte le type d'opération
+    // déjà sélectionné dans le formulaire (le bouton "Type d'opération"
+    // est maintenant au-dessus de "Planifier"). Avant : on forçait AUTRE.
+    const selectedType = watch("type") || "AUTRE";
     try {
       await createMutation.mutateAsync({
         parcelleId,
-        type: "AUTRE",
+        type: selectedType,
         dateOperation: dateOp,
         datePrevue: dateOp,
         ...(assignedToUserId ? { assignedToUserId } : {}),
@@ -474,7 +480,17 @@ export default function NewInterventionPage() {
       {
         // Après création, on reste sur le formulaire en mode édition
         // pour continuer à modifier (décision Fabien 2026-05-14).
-        onSuccess: (created) => router.push(`/interventions/new?edit=${created.id}` as never),
+        onSuccess: (created) => {
+          // Si Odoo a échoué, on garde l'utilisateur sur la page pour
+          // qu'il voie le bandeau (pas de bandeau = silence = ok).
+          const lp = (created as { lastPushResult?: { ok: boolean; error?: string } | null })
+            .lastPushResult;
+          if (lp && !lp.ok) {
+            setPushError(lp.error ?? "Push Odoo échoué (raison inconnue).");
+            return;
+          }
+          router.push(`/interventions/new?edit=${created.id}` as never);
+        },
       },
     );
   };
@@ -559,35 +575,42 @@ export default function NewInterventionPage() {
           </Field>
 
           <Field label="Parcelle" error={errors.parcelleId?.message}>
-            <Controller
-              control={control}
-              name="parcelleId"
-              render={({ field: { value, onChange } }) => (
-                <ParcelleSearchSelect
-                  value={value ?? ""}
-                  onChange={(id) => onChange(id)}
-                  required
-                  disabled={noParcelles}
+            <div className="flex gap-2">
+              <div className="min-w-0 flex-1">
+                <Controller
+                  control={control}
+                  name="parcelleId"
+                  render={({ field: { value, onChange } }) => (
+                    <ParcelleSearchSelect
+                      value={value ?? ""}
+                      onChange={(id) => onChange(id)}
+                      required
+                      disabled={noParcelles}
+                    />
+                  )}
                 />
+              </div>
+              {/* Bouton Itinéraire (Fabien 2026-05-14 image 53) : ouvre
+                  Google Maps en navigation vers le point centre de la
+                  parcelle. Visible uniquement si la parcelle a un point
+                  GPS (lat/lng). */}
+              {parcelleDetail.data?.lat != null && parcelleDetail.data?.lng != null && (
+                <a
+                  href={`https://www.google.com/maps/dir/?api=1&destination=${parcelleDetail.data.lat},${parcelleDetail.data.lng}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex h-11 shrink-0 items-center gap-1.5 rounded-lg border border-border bg-background px-3 text-sm font-medium text-foreground/80 transition-colors hover:border-green hover:text-green"
+                  title="Ouvrir Google Maps en navigation vers cette parcelle"
+                >
+                  <Navigation className="h-4 w-4" />
+                  <span className="hidden sm:inline">Itinéraire</span>
+                </a>
               )}
-            />
+            </div>
           </Field>
 
-          {/* Bouton Planifier inline (Sprint 2 fusion-interventions) :
-              soumet une pré-tâche sans heures/produits, type AUTRE par défaut.
-              Pas dispo en mode édition. */}
-          {!isEditMode && (
-            <button
-              type="button"
-              onClick={() => onSubmitPlanning()}
-              disabled={createMutation.isPending}
-              className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-green bg-background py-3 text-sm font-semibold text-green transition-colors hover:bg-green/10 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <CalendarDays className="h-4 w-4" />
-              Planifier (sans saisir les détails)
-            </button>
-          )}
-
+          {/* Type d'opération placé AVANT le bouton "Planifier" (Fabien
+              2026-05-14 image 54) — il fait partie de la planification. */}
           <Field label="Type d'opération" error={errors.type?.message}>
             <Controller
               control={control}
@@ -618,6 +641,21 @@ export default function NewInterventionPage() {
               )}
             />
           </Field>
+
+          {/* Bouton Planifier inline (Sprint 2 fusion-interventions) :
+              soumet une pré-tâche sans heures/produits. Pas dispo en
+              mode édition. */}
+          {!isEditMode && (
+            <button
+              type="button"
+              onClick={() => onSubmitPlanning()}
+              disabled={createMutation.isPending}
+              className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-green bg-background py-3 text-sm font-semibold text-green transition-colors hover:bg-green/10 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <CalendarDays className="h-4 w-4" />
+              Planifier (sans saisir les détails)
+            </button>
+          )}
 
           <Field
             label="Matériel utilisé"
@@ -968,10 +1006,26 @@ export default function NewInterventionPage() {
           )}
 
           {(createMutation.isError || updateMutation.isError) && (
-            <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
-              <strong>{isEditMode ? "Modification impossible" : "Saisie impossible"} :</strong>{" "}
+            <div
+              role="alert"
+              className="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm font-medium text-red-800"
+            >
+              <span className="mr-2 inline-block rounded bg-red-700 px-1.5 py-0.5 text-[11px] font-bold uppercase tracking-wider text-white">
+                Erreur
+              </span>
               {extractApiErrorMessage(createMutation.error ?? updateMutation.error) ??
                 "Vérifie les valeurs et réessaie."}
+            </div>
+          )}
+
+          {pushError && (
+            <div className="rounded-lg border border-orange-300 bg-orange-50 px-3 py-2 text-sm text-orange-800">
+              <strong>Intervention enregistrée mais Odoo non synchronisé :</strong> {pushError}
+              <br />
+              <span className="text-xs">
+                La saisie est bien enregistrée localement. Tu peux ré-essayer en modifiant
+                l&apos;intervention, ou contacter l&apos;admin si le problème persiste.
+              </span>
             </div>
           )}
 

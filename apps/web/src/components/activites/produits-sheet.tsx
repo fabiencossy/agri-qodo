@@ -6,6 +6,7 @@ import { FullscreenSheet } from "@/components/activites/fullscreen-sheet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useOdooConnected } from "@/lib/odoo-config";
+import { dedupProduits } from "@/lib/produits-dedup";
 import {
   CATEGORIE_LABEL,
   CATEGORIES_ORDER,
@@ -67,10 +68,17 @@ export function ProduitsSheet({
     });
   };
 
+  // Dédup avant filtrage : un même libellé peut avoir 3 entrées en base
+  // (global + perso AUTRE + perso reclassé) suite à des syncs Odoo
+  // successives. La dédup garde la version la plus "complète".
+  const dedupedProduits = useMemo(
+    () => dedupProduits((allProduits.data ?? []).filter((p) => p.actif !== false)),
+    [allProduits.data],
+  );
+
   const filtered: Produit[] = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return (allProduits.data ?? [])
-      .filter((p) => p.actif !== false)
+    return dedupedProduits
       .filter((p) => (filtreCat ? p.categorie === filtreCat : true))
       .filter((p) =>
         !q
@@ -82,7 +90,7 @@ export function ProduitsSheet({
               .includes(q),
       )
       .sort((a, b) => a.libelle.localeCompare(b.libelle, "fr"));
-  }, [allProduits.data, query, filtreCat]);
+  }, [dedupedProduits, query, filtreCat]);
 
   const idxByProduit = useMemo(() => {
     const m = new Map<string, number>();
@@ -139,34 +147,27 @@ export function ProduitsSheet({
           />
         </div>
 
-        {/* Chips filtres catégories */}
-        <div className="flex flex-wrap gap-1.5">
-          <button
-            type="button"
-            onClick={() => setFiltreCat(null)}
-            className={`rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${
-              filtreCat === null
-                ? "border-green bg-green text-white"
-                : "border-border bg-background text-foreground/60 hover:text-foreground"
-            }`}
-          >
-            Toutes
-          </button>
-          {CATEGORIES_ORDER.map((c) => (
-            <button
-              key={c}
-              type="button"
-              onClick={() => setFiltreCat(filtreCat === c ? null : c)}
-              className={`rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${
-                filtreCat === c
-                  ? "border-green bg-green text-white"
-                  : "border-border bg-background text-foreground/60 hover:text-foreground"
-              }`}
-            >
-              {CATEGORIE_LABEL[c]}
-            </button>
-          ))}
-        </div>
+        {/* Dropdown catégories — n'affiche que celles qui ont des
+            produits après dédup (Fabien 2026-05-14 image 66 :
+            "Prestations vide" → on cache la catégorie au lieu de
+            l'afficher avec 0). */}
+        <select
+          value={filtreCat ?? ""}
+          onChange={(e) => setFiltreCat((e.target.value || null) as ProduitCategorie | null)}
+          className="h-11 w-full rounded-lg border border-border bg-background px-3 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green"
+          aria-label="Filtrer par catégorie"
+        >
+          <option value="">Toutes les catégories ({dedupedProduits.length})</option>
+          {CATEGORIES_ORDER.map((c) => {
+            const count = dedupedProduits.filter((p) => p.categorie === c).length;
+            if (count === 0) return null;
+            return (
+              <option key={c} value={c}>
+                {CATEGORIE_LABEL[c]} ({count})
+              </option>
+            );
+          })}
+        </select>
 
         {/* Bandeau Odoo (sync catalogue) */}
         {odoo.connected && (
