@@ -31,6 +31,7 @@ import { useEffect, useState } from "react";
 import { Breadcrumb } from "@/components/app/breadcrumb";
 import { BigActionButton } from "@/components/activites/big-action-button";
 import { EditActionsMenu } from "@/components/activites/edit-actions-menu";
+import { FullscreenSheet } from "@/components/activites/fullscreen-sheet";
 import { PhotosField } from "@/components/activites/photos-field";
 import { type HeuresSimplesValue } from "@/components/activites/heures-simples-input";
 import { ProduitsSheet, type ProduitLigne } from "@/components/activites/produits-sheet";
@@ -159,6 +160,9 @@ export default function NewTravailPage() {
   // (décision Fabien 2026-05-14 : sortir ces saisies du formulaire principal).
   const [showTempsSheet, setShowTempsSheet] = useState(false);
   const [showProduitsSheet, setShowProduitsSheet] = useState(false);
+  // uid de la ligne produit en cours d'édition rapide (quantité seule).
+  // Click sur une ligne du résumé → ouvre QuantiteEditSheet.
+  const [editingQuantiteUid, setEditingQuantiteUid] = useState<string | null>(null);
 
   const produitsQuery = useProduits();
   const produitsCatalogue = produitsQuery.data ?? [];
@@ -501,9 +505,15 @@ export default function NewTravailPage() {
                 onClick={() => setShowProduitsSheet(true)}
               />
             </div>
-            {heuresSimples.dureeMinutes > 0 && <TempsSummary value={heuresSimples} />}
+            {heuresSimples.dureeMinutes > 0 && (
+              <TempsSummary value={heuresSimples} onClick={() => setShowTempsSheet(true)} />
+            )}
             {produitsLignes.filter((l) => l.produitId).length > 0 && (
-              <ProduitsSummary lignes={produitsLignes} catalogue={produitsCatalogue} />
+              <ProduitsSummary
+                lignes={produitsLignes}
+                catalogue={produitsCatalogue}
+                onEditQuantite={(uid) => setEditingQuantiteUid(uid)}
+              />
             )}
           </div>
 
@@ -595,15 +605,43 @@ export default function NewTravailPage() {
           onClose={() => setShowProduitsSheet(false)}
         />
       )}
+      {editingQuantiteUid !== null &&
+        (() => {
+          const ligne = produitsLignes.find((l) => l.uid === editingQuantiteUid);
+          if (!ligne) return null;
+          const produit = produitsCatalogue.find((p) => p.id === ligne.produitId);
+          return (
+            <QuantiteEditSheet
+              libelle={produit?.libelle ?? "Produit"}
+              unite={produit?.unite ?? ""}
+              quantite={ligne.quantite}
+              onChange={(q) =>
+                setProduitsLignes((prev) =>
+                  prev.map((l) => (l.uid === editingQuantiteUid ? { ...l, quantite: q } : l)),
+                )
+              }
+              onRemove={() => {
+                setProduitsLignes((prev) => prev.filter((l) => l.uid !== editingQuantiteUid));
+                setEditingQuantiteUid(null);
+              }}
+              onClose={() => setEditingQuantiteUid(null)}
+            />
+          );
+        })()}
     </>
   );
 }
 
-function TempsSummary({ value }: { value: HeuresSimplesValue }) {
+function TempsSummary({ value, onClick }: { value: HeuresSimplesValue; onClick: () => void }) {
   const h = Math.floor(value.dureeMinutes / 60);
   const m = value.dureeMinutes % 60;
   return (
-    <div className="rounded-xl border border-border bg-background px-3 py-2 text-xs">
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label="Modifier le temps saisi"
+      className="block w-full rounded-xl border border-border bg-background px-3 py-2 text-left text-xs transition-colors hover:border-green hover:bg-green/5"
+    >
       <div className="flex items-center justify-between gap-2">
         <span className="text-foreground/60">Durée effective</span>
         <span className="font-mono font-semibold">
@@ -624,16 +662,18 @@ function TempsSummary({ value }: { value: HeuresSimplesValue }) {
           <span className="font-mono">{value.dureePauseMinutes} min</span>
         </div>
       )}
-    </div>
+    </button>
   );
 }
 
 function ProduitsSummary({
   lignes,
   catalogue,
+  onEditQuantite,
 }: {
   lignes: ProduitLigne[];
   catalogue: Array<{ id: string; libelle: string; unite: string }>;
+  onEditQuantite: (uid: string) => void;
 }) {
   const valides = lignes.filter((l) => l.produitId);
   return (
@@ -641,17 +681,79 @@ function ProduitsSummary({
       {valides.map((l) => {
         const produit = catalogue.find((p) => p.id === l.produitId);
         return (
-          <li key={l.uid} className="flex items-center justify-between gap-2 px-3 py-2">
-            <span className="min-w-0 flex-1 truncate font-medium">
-              {produit?.libelle ?? "Produit"}
-            </span>
-            <span className="shrink-0 font-mono text-foreground/70">
-              {l.quantite || "—"} {produit?.unite ?? ""}
-            </span>
+          <li key={l.uid}>
+            <button
+              type="button"
+              onClick={() => onEditQuantite(l.uid)}
+              aria-label={`Modifier la quantité de ${produit?.libelle ?? "ce produit"}`}
+              className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left transition-colors hover:bg-muted/40"
+            >
+              <span className="min-w-0 flex-1 truncate font-medium">
+                {produit?.libelle ?? "Produit"}
+              </span>
+              <span className="shrink-0 font-mono text-foreground/70">
+                {l.quantite || "—"} {produit?.unite ?? ""}
+              </span>
+            </button>
           </li>
         );
       })}
     </ul>
+  );
+}
+
+function QuantiteEditSheet({
+  libelle,
+  unite,
+  quantite,
+  onChange,
+  onRemove,
+  onClose,
+}: {
+  libelle: string;
+  unite: string;
+  quantite: string;
+  onChange: (q: string) => void;
+  onRemove: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <FullscreenSheet
+      title={libelle}
+      onClose={onClose}
+      footer={
+        <>
+          <Button type="button" variant="ghost" onClick={onRemove} className="text-red-700">
+            Retirer
+          </Button>
+          <Button type="button" onClick={onClose} className="h-11 px-6">
+            OK
+          </Button>
+        </>
+      }
+    >
+      <Field
+        label="Quantité"
+        hint="Modifie la quantité totale. Pour changer de produit, retire celui-ci puis ajoute le bon depuis « Ajouter des produits »."
+      >
+        <div className="grid grid-cols-[1fr_auto] gap-2">
+          <Input
+            type="number"
+            inputMode="decimal"
+            min="0"
+            step="0.01"
+            value={quantite}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder="Quantité totale"
+            className="h-12 text-base"
+            autoFocus
+          />
+          <span className="flex h-12 items-center justify-center rounded-lg border border-border bg-muted/30 px-3 text-sm font-medium text-foreground/70">
+            {unite}
+          </span>
+        </div>
+      </Field>
+    </FullscreenSheet>
   );
 }
 
