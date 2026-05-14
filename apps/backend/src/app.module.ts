@@ -8,6 +8,7 @@ import { TenantModule } from "./common/tenant/tenant.module";
 import { validateEnv } from "./config/env.schema";
 import { AnimauxModule } from "./modules/animaux/animaux.module";
 import { AuditModule } from "./modules/audit/audit.module";
+import { ClientsModule } from "./modules/clients/clients.module";
 import { AuthModule } from "./modules/auth/auth.module";
 import { HealthModule } from "./modules/health/health.module";
 import { InterventionsModule } from "./modules/interventions/interventions.module";
@@ -75,6 +76,7 @@ import { VeilleModule } from "./modules/veille/veille.module";
     InterventionsModule,
     SrpaModule,
     AnimauxModule,
+    ClientsModule,
     ProduitsModule,
     ProjetsModule,
     MaterielsModule,
