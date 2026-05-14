@@ -117,6 +117,10 @@ export default function NewTravailPage() {
   const [date, setDate] = useState(
     dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam) ? dateParam : todayIso(),
   );
+  // Heure prévue optionnelle (Fabien 2026-05-14 image 46) : si renseignée,
+  // elle est combinée avec `date` pour produire la `datePrevue` ISO. Sinon
+  // datePrevue = date à 00:00 et la carte planning n'affiche pas d'heure.
+  const [heurePrevue, setHeurePrevue] = useState<string>("");
   const [partenaireId, setPartenaireId] = useState("");
   // Décision Fabien 2026-05-06 : un client Odoo n'est pas un partenaire
   // Agri Qodo. Le sélecteur peut renvoyer soit l'un soit l'autre.
@@ -183,6 +187,16 @@ export default function NewTravailPage() {
     if (t.datePrevue && t.statut === "PLANIFIE") {
       setDate(t.datePrevue.slice(0, 10));
     }
+    // Pré-remplit l'heure prévue depuis la datePrevue ISO, sauf si
+    // c'est exactement minuit (= aucune heure renseignée).
+    if (t.datePrevue) {
+      const d = new Date(t.datePrevue);
+      if (d.getHours() !== 0 || d.getMinutes() !== 0) {
+        setHeurePrevue(
+          `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`,
+        );
+      }
+    }
     // Pré-remplit les produits en mode édition (V1 : 1 ligne = 1 produit
     // catalogué, on ignore les lignes libellé libre sans produitId).
     setProduitsLignes(
@@ -247,10 +261,13 @@ export default function NewTravailPage() {
     const titreFinal =
       titre.trim() ||
       `Travail ${new Date(date).toLocaleDateString("fr-CH")}${interne ? " — interne" : ""}`;
+    // Si heure prévue saisie → combine avec date pour produire un ISO
+    // local (la TZ est inférée par le navigateur). Sinon date pure.
+    const datePrevueIso = combineDateTime(date, heurePrevue) ?? date;
     const payload = {
       titre: titreFinal,
       date,
-      datePrevue: date,
+      datePrevue: datePrevueIso,
       interne,
       ...(partenaireId && !interne ? { partenaireId } : {}),
       ...(odooPartnerId && !interne ? { odooPartnerId } : {}),
@@ -310,10 +327,14 @@ export default function NewTravailPage() {
       lignesHeureClean.push(out);
     }
 
+    // Si l'heure prévue est saisie → datePrevue ISO local complet.
+    // Sinon on envoie juste la date (le backend la traite comme 00:00).
+    const datePrevueIso = combineDateTime(date, heurePrevue);
     const payload = {
       titre: titreFinal,
       date,
       interne,
+      ...(datePrevueIso ? { datePrevue: datePrevueIso } : {}),
       ...(partenaireId && !interne ? { partenaireId } : {}),
       ...(odooPartnerId && !interne ? { odooPartnerId } : {}),
       ...(odooPartnerName && odooPartnerId && !interne ? { odooPartnerName } : {}),
@@ -398,6 +419,18 @@ export default function NewTravailPage() {
               type="date"
               value={date}
               onChange={(e) => setDate(e.target.value)}
+              className="h-12 text-base"
+            />
+          </Field>
+
+          <Field
+            label="Heure prévue (optionnel)"
+            hint="Si renseignée, elle apparaît dans la carte du planning. Sinon le travail reste planifié dans la journée sans heure précise."
+          >
+            <Input
+              type="time"
+              value={heurePrevue}
+              onChange={(e) => setHeurePrevue(e.target.value)}
               className="h-12 text-base"
             />
           </Field>
@@ -571,16 +604,19 @@ export default function NewTravailPage() {
                     {cancelTravail.isPending ? "Annulation…" : "Annuler ce travail"}
                   </Button>
                 )}
-              {isEditMode && existingTravail.data && existingTravail.data.statut === "DRAFT" && (
-                <Button
-                  type="button"
-                  onClick={() => validateTravail.mutate(existingTravail.data!.id)}
-                  disabled={validateTravail.isPending}
-                >
-                  <CheckCircle2 className="mr-1 h-4 w-4" />
-                  {validateTravail.isPending ? "Validation…" : "Valider"}
-                </Button>
-              )}
+              {isEditMode &&
+                existingTravail.data &&
+                (existingTravail.data.statut === "DRAFT" ||
+                  existingTravail.data.statut === "PENDING_REVIEW") && (
+                  <Button
+                    type="button"
+                    onClick={() => validateTravail.mutate(existingTravail.data!.id)}
+                    disabled={validateTravail.isPending}
+                  >
+                    <CheckCircle2 className="mr-1 h-4 w-4" />
+                    {validateTravail.isPending ? "Validation…" : "Valider"}
+                  </Button>
+                )}
               <Button type="submit" disabled={create.isPending} className="h-11 px-6">
                 <Save className="mr-1 h-4 w-4" />
                 {create.isPending || update.isPending

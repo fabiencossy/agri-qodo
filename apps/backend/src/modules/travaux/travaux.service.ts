@@ -313,8 +313,12 @@ export class TravauxService {
       select: { id: true, statut: true, odooSaleOrderId: true },
     });
     if (!travail) throw new NotFoundException("Travail introuvable");
-    if (travail.statut !== TravailStatut.DRAFT) {
-      throw new ConflictException("Le travail n'est pas en brouillon — impossible de valider.");
+    // Fabien 2026-05-14 image 48 : la validation accepte désormais
+    // aussi PENDING_REVIEW (employé a marqué fait → OWNER valide).
+    if (travail.statut !== TravailStatut.DRAFT && travail.statut !== TravailStatut.PENDING_REVIEW) {
+      throw new ConflictException(
+        "Le travail n'est ni en brouillon ni en attente de validation — impossible de valider.",
+      );
     }
     await this.prisma.travail.update({
       where: { id },
