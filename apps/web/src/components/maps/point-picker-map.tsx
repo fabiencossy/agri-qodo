@@ -14,6 +14,19 @@ import "leaflet/dist/leaflet.css";
 import { Crosshair, Loader2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
+// Workaround Leaflet 1.9 + bundler moderne (Next.js Turbopack) : l'icône
+// par défaut référence des images relatives à un chemin qui n'existe
+// pas dans le bundle, ce qui affiche un "Marker" textuel cassé. On
+// pointe explicitement vers les copies servies depuis /public/leaflet/.
+// Fabien 2026-05-14 (image 37).
+(
+  L.Icon.Default as unknown as { mergeOptions: (opts: Record<string, string>) => void }
+).mergeOptions({
+  iconRetinaUrl: "/leaflet/marker-icon-2x.png",
+  iconUrl: "/leaflet/marker-icon.png",
+  shadowUrl: "/leaflet/marker-shadow.png",
+});
+
 const SUISSE_ROMANDE: L.LatLngTuple = [46.6, 6.55];
 
 const SWISSTOPO_PIXELKARTE =

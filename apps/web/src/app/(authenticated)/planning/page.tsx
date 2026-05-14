@@ -20,6 +20,7 @@ import {
   Tractor,
   User as UserIcon,
   Wrench,
+  X,
 } from "lucide-react";
 import Link from "next/link";
 import type { Route } from "next";
@@ -89,6 +90,9 @@ export default function PlanningPage() {
   const [filtreEmploye, setFiltreEmploye] = useState<string | "all" | "me">("all");
   // Décalage de jours par rapport à aujourd'hui pour la navigation.
   const [jourOffset, setJourOffset] = useState(0);
+  // Modal de choix au click sur "Planifier" : Carnet / Tiers / Interne
+  // (Fabien 2026-05-14, image 36).
+  const [showPlanifierModal, setShowPlanifierModal] = useState(false);
 
   const items = useMemo<PlanningItem[]>(() => {
     const usersById = new Map((users.data ?? []).map((u) => [u.id, `${u.prenom} ${u.nom}`.trim()]));
@@ -160,13 +164,14 @@ export default function PlanningPage() {
             <CalendarDays className="h-6 w-6 text-foreground/60" />
             <h1 className="text-2xl font-bold sm:text-3xl">Planning</h1>
           </div>
-          <Link
-            href={"/interventions/new" as Route}
+          <button
+            type="button"
+            onClick={() => setShowPlanifierModal(true)}
             className="inline-flex items-center gap-1.5 rounded-xl bg-green px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-green-dark"
           >
             <Plus className="h-4 w-4" />
             Planifier
-          </Link>
+          </button>
         </header>
 
         {/* Filtres employé */}
@@ -258,7 +263,95 @@ export default function PlanningPage() {
           </ul>
         )}
       </div>
+
+      {showPlanifierModal && <PlanifierChoiceModal onClose={() => setShowPlanifierModal(false)} />}
     </>
+  );
+}
+
+function PlanifierChoiceModal({ onClose }: { onClose: () => void }) {
+  return (
+    <div
+      className="fixed inset-0 z-[9000] flex items-end justify-center bg-black/50 backdrop-blur-sm sm:items-center"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-md rounded-t-3xl bg-background p-4 shadow-2xl sm:p-5 sm:rounded-3xl sm:mx-4"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-base font-bold">Que veux-tu planifier ?</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Fermer"
+            className="rounded-full p-2 hover:bg-muted"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+        <div className="grid grid-cols-1 gap-2">
+          <PlanifierChoice
+            href={"/interventions/new" as Route}
+            icon={Sprout}
+            label="Carnet des champs"
+            hint="Intervention sur mes parcelles (semis, fumure, phyto…)"
+            iconColor="bg-emerald-50 text-emerald-700"
+            onClose={onClose}
+          />
+          <PlanifierChoice
+            href={"/travaux/new?interne=false" as Route}
+            icon={Tractor}
+            label="Travail pour tiers"
+            hint="Prestation facturable chez un client."
+            iconColor="bg-purple-50 text-purple-700"
+            onClose={onClose}
+          />
+          <PlanifierChoice
+            href={"/travaux/new?interne=true" as Route}
+            icon={Wrench}
+            label="Travail interne"
+            hint="Activité interne non facturable."
+            iconColor="bg-sky-50 text-sky-700"
+            onClose={onClose}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PlanifierChoice({
+  href,
+  icon: Icon,
+  label,
+  hint,
+  iconColor,
+  onClose,
+}: {
+  href: Route;
+  icon: typeof Sprout;
+  label: string;
+  hint: string;
+  iconColor: string;
+  onClose: () => void;
+}) {
+  return (
+    <Link
+      href={href}
+      onClick={onClose}
+      className="flex items-center gap-3 rounded-2xl border-2 border-border bg-background p-4 transition-all hover:border-green hover:bg-green/5 active:scale-[0.99]"
+    >
+      <span
+        className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${iconColor}`}
+      >
+        <Icon className="h-5 w-5" />
+      </span>
+      <span className="block">
+        <span className="block text-sm font-bold">{label}</span>
+        <span className="mt-0.5 block text-xs text-foreground/70">{hint}</span>
+      </span>
+    </Link>
   );
 }
 
