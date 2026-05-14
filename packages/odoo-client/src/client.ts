@@ -117,7 +117,26 @@ export function createOdooClient(config: OdooConnectionConfig): OdooClient {
   let session: AuthenticatedSession | null = null;
   let cachedVersion: OdooVersion | null = null;
 
-  async function jsonRpc<T>(payload: JsonRpcRequest): Promise<T> {
+  // Retry transparent sur les transitoires (502/503/504/network) : Odoo
+  // derrière Cloudflare/Infomaniak rend parfois un 503 ponctuel quand
+  // l'instance vient de redémarrer. Pour éviter les doublons sur les
+  // create/write, on ne retry que les statuts qui indiquent clairement
+  // que la requête n'a pas (encore) été traitée côté backend Odoo.
+  const RETRY_STATUSES: ReadonlySet<number> = new Set([0, 502, 503, 504]);
+  const RETRY_DELAYS_MS = [300, 1200];
+
+  function shouldRetry(err: unknown, attempt: number): boolean {
+    if (attempt >= RETRY_DELAYS_MS.length) return false;
+    if (err instanceof OdooAuthError) return false;
+    if (err instanceof OdooError) return RETRY_STATUSES.has(err.status);
+    return false;
+  }
+
+  async function sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  async function jsonRpcOnce<T>(payload: JsonRpcRequest): Promise<T> {
     const ctrl = new AbortController();
     const tid = setTimeout(() => ctrl.abort(), timeoutMs);
     let response: Response;
@@ -157,6 +176,19 @@ export function createOdooClient(config: OdooConnectionConfig): OdooClient {
       throw new ErrCtor(odooMsg, isAuth ? 401 : (json.error.code ?? 500), json.error.data);
     }
     return json.result;
+  }
+
+  async function jsonRpc<T>(payload: JsonRpcRequest): Promise<T> {
+    let attempt = 0;
+    for (;;) {
+      try {
+        return await jsonRpcOnce<T>(payload);
+      } catch (err) {
+        if (!shouldRetry(err, attempt)) throw err;
+        await sleep(RETRY_DELAYS_MS[attempt] as number);
+        attempt += 1;
+      }
+    }
   }
 
   async function fetchVersion(): Promise<OdooVersion> {
