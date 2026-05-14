@@ -474,13 +474,13 @@ export default function NewTravailPage() {
             />
           </Field>
 
-          {/* Boutons "Ajouter du temps" / "Ajouter des produits" + résumé
-              détaillé en dessous (décision Fabien 2026-05-14 v2). */}
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            {(interne
-              ? tenantDetail.data?.heuresVisiblesTravauxInterne
-              : tenantDetail.data?.heuresVisiblesTravauxTiers) !== false && (
-              <div className="space-y-2">
+          {/* Boutons côte à côte ; résumés détaillés empilés en pleine
+              largeur sous les boutons (décision Fabien 2026-05-14 v4). */}
+          <div className="space-y-2">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {(interne
+                ? tenantDetail.data?.heuresVisiblesTravauxInterne
+                : tenantDetail.data?.heuresVisiblesTravauxTiers) !== false && (
                 <BigActionButton
                   icon={Clock}
                   label="Ajouter du temps"
@@ -489,10 +489,7 @@ export default function NewTravailPage() {
                   }
                   onClick={() => setShowTempsSheet(true)}
                 />
-                {heuresSimples.dureeMinutes > 0 && <TempsSummary value={heuresSimples} />}
-              </div>
-            )}
-            <div className="space-y-2">
+              )}
               <BigActionButton
                 icon={Package}
                 label="Ajouter des produits"
@@ -503,10 +500,11 @@ export default function NewTravailPage() {
                 }
                 onClick={() => setShowProduitsSheet(true)}
               />
-              {produitsLignes.filter((l) => l.produitId).length > 0 && (
-                <ProduitsSummary lignes={produitsLignes} catalogue={produitsCatalogue} />
-              )}
             </div>
+            {heuresSimples.dureeMinutes > 0 && <TempsSummary value={heuresSimples} />}
+            {produitsLignes.filter((l) => l.produitId).length > 0 && (
+              <ProduitsSummary lignes={produitsLignes} catalogue={produitsCatalogue} />
+            )}
           </div>
 
           <Field label="Photos (optionnel)">
