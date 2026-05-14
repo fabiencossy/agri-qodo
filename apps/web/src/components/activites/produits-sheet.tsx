@@ -6,6 +6,7 @@ import { FullscreenSheet } from "@/components/activites/fullscreen-sheet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useOdooConnected } from "@/lib/odoo-config";
+import { dedupProduits } from "@/lib/produits-dedup";
 import {
   CATEGORIE_LABEL,
   CATEGORIES_ORDER,
@@ -67,10 +68,17 @@ export function ProduitsSheet({
     });
   };
 
+  // Dédup avant filtrage : un même libellé peut avoir 3 entrées en base
+  // (global + perso AUTRE + perso reclassé) suite à des syncs Odoo
+  // successives. La dédup garde la version la plus "complète".
+  const dedupedProduits = useMemo(
+    () => dedupProduits((allProduits.data ?? []).filter((p) => p.actif !== false)),
+    [allProduits.data],
+  );
+
   const filtered: Produit[] = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return (allProduits.data ?? [])
-      .filter((p) => p.actif !== false)
+    return dedupedProduits
       .filter((p) => (filtreCat ? p.categorie === filtreCat : true))
       .filter((p) =>
         !q
@@ -82,7 +90,7 @@ export function ProduitsSheet({
               .includes(q),
       )
       .sort((a, b) => a.libelle.localeCompare(b.libelle, "fr"));
-  }, [allProduits.data, query, filtreCat]);
+  }, [dedupedProduits, query, filtreCat]);
 
   const idxByProduit = useMemo(() => {
     const m = new Map<string, number>();
@@ -139,21 +147,23 @@ export function ProduitsSheet({
           />
         </div>
 
-        {/* Dropdown catégories — trop de catégories pour des chips
-            (Fabien 2026-05-14, image 38/39/52). */}
+        {/* Dropdown catégories — n'affiche que celles qui ont des
+            produits après dédup (Fabien 2026-05-14 image 66 :
+            "Prestations vide" → on cache la catégorie au lieu de
+            l'afficher avec 0). */}
         <select
           value={filtreCat ?? ""}
           onChange={(e) => setFiltreCat((e.target.value || null) as ProduitCategorie | null)}
           className="h-11 w-full rounded-lg border border-border bg-background px-3 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green"
           aria-label="Filtrer par catégorie"
         >
-          <option value="">Toutes les catégories ({allProduits.data?.length ?? 0})</option>
+          <option value="">Toutes les catégories ({dedupedProduits.length})</option>
           {CATEGORIES_ORDER.map((c) => {
-            const count = (allProduits.data ?? []).filter((p) => p.categorie === c).length;
+            const count = dedupedProduits.filter((p) => p.categorie === c).length;
+            if (count === 0) return null;
             return (
               <option key={c} value={c}>
-                {CATEGORIE_LABEL[c]}
-                {count > 0 ? ` (${count})` : ""}
+                {CATEGORIE_LABEL[c]} ({count})
               </option>
             );
           })}
