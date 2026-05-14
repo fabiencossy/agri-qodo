@@ -106,6 +106,10 @@ export class OdooSyncService {
       L: ["L", "Litre(s)", "Litre"],
       M3: ["m³", "m3", "Mètre(s) cube", "Mètre cube"],
       DOSE: ["Dose(s)", "Dose"],
+      // Étendu Fabien 2026-05-14 : prestations à façon, balles, heures.
+      HA: ["Hectare(s)", "Hectare", "ha"],
+      UNITE: ["Unité(s)", "Unité", "u"],
+      HEURE: ["Heure(s)", "Heure", "h"],
     };
     for (const name of candidates[unite]) {
       try {

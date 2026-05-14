@@ -3,6 +3,7 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from "@nestjs/common";
 import {
@@ -25,6 +26,8 @@ import type { UpdateInterventionDto } from "./dto/update-intervention.dto";
 
 @Injectable()
 export class InterventionsService {
+  private readonly logger = new Logger(InterventionsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly tenantContext: TenantContextService,
@@ -273,6 +276,16 @@ export class InterventionsService {
           ? surfaceFromGeom / 10000
           : Number(parcelle.surfaceM2) / 10000;
 
+    // Anti-chevauchement (Fabien 2026-05-14 image 55 #4) :
+    // un même employé ne peut pas avoir deux plages horaires qui se
+    // chevauchent — qu'elles viennent d'autres interventions ou de
+    // LigneTravailHeure (saisies dans un Travail tiers).
+    await this.assertNoUserHoursOverlap({
+      assignedToUserId: dto.assignedToUserId,
+      heureDebut: dto.heureDebut,
+      heureFin: dto.heureFin,
+    });
+
     // SEMIS = déclencheur de Culture. Carnet = source unique : pas de
     // saisie séparée. Le produit doit être une SEMENCE avec especeCode.
     const result = await this.prisma.$transaction(async (tx) => {
@@ -390,20 +403,116 @@ export class InterventionsService {
 
     // Hors transaction : push automatique Odoo. Best-effort dans les deux
     // cas — si Odoo est down ou mal configuré, l'intervention reste OK et
-    // l'utilisateur peut re-pousser manuellement plus tard.
+    // l'utilisateur peut re-pousser manuellement plus tard. On capture le
+    // résultat pour le remonter à l'UI : bandeau d'erreur visible si push KO.
+    let lastPushResult: {
+      ok: boolean;
+      error?: string;
+      odooTaskId?: number | null;
+      odooSaleOrderId?: number | null;
+    } | null = null;
     if (result.casBTravailId) {
-      // Cas B : devis Odoo (sale.order draft) sur le Travail facturable.
-      await this.odooPush.tryPushTravailQuotation(result.casBTravailId);
+      try {
+        const pushed = await this.odooPush.pushTravail(result.casBTravailId);
+        lastPushResult = {
+          ok: true,
+          odooSaleOrderId: pushed.odooSaleOrderId,
+        };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        this.logger.warn(`Push Odoo (cas B travail ${result.casBTravailId}) échoué : ${msg}`);
+        lastPushResult = { ok: false, error: msg };
+      }
     } else {
-      // Cas A : project.task Odoo (pas de facturation) pour tracer
-      // l'intervention dans le projet "Carnet des champs" du tenant.
-      await this.odooPush.tryPushInterventionTask(result.intervention.id);
+      try {
+        const pushed = await this.odooPush.tryPushInterventionTask(result.intervention.id);
+        lastPushResult = pushed
+          ? { ok: true, odooTaskId: pushed.taskId }
+          : { ok: false, error: "Push Odoo n'a rien retourné (vérifier les logs)" };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        this.logger.warn(
+          `Push Odoo (cas A intervention ${result.intervention.id}) échoué : ${msg}`,
+        );
+        lastPushResult = { ok: false, error: msg };
+      }
     }
-    // Recharge l'intervention pour exposer odooTaskId / linkedTravailId à jour.
-    return this.prisma.intervention.findUniqueOrThrow({
+    // Recharge l'intervention pour exposer odooTaskId / linkedTravailId à jour
+    // et propage le résultat du push pour l'UI.
+    const reloaded = await this.prisma.intervention.findUniqueOrThrow({
       where: { id: result.intervention.id },
       include: this.includeRelations,
     });
+    return { ...reloaded, lastPushResult } as typeof reloaded & {
+      lastPushResult: typeof lastPushResult;
+    };
+  }
+
+  /**
+   * Vérifie qu'aucune plage horaire existante ne chevauche celle qu'on
+   * tente de saisir, pour un même employé. Considère :
+   * - les autres Interventions (heureDebut/heureFin/assignedToUserId)
+   * - les LigneTravailHeure (heureDebut/heureFin/userId)
+   *
+   * No-op si l'un des trois champs manque (saisie sans horaires précis).
+   * Lève ConflictException avec un message explicite si trouvé.
+   */
+  private async assertNoUserHoursOverlap(args: {
+    assignedToUserId?: string | null | undefined;
+    heureDebut?: string | null | undefined;
+    heureFin?: string | null | undefined;
+    excludeInterventionId?: string;
+  }): Promise<void> {
+    if (!args.assignedToUserId || !args.heureDebut || !args.heureFin) return;
+    const debut = new Date(args.heureDebut);
+    const fin = new Date(args.heureFin);
+    if (Number.isNaN(debut.getTime()) || Number.isNaN(fin.getTime())) return;
+    if (fin <= debut) return;
+
+    // Chevauchement : autre.fin > newDebut ET autre.debut < newFin
+    const conflictIntervention = await this.prisma.intervention.findFirst({
+      where: {
+        assignedToUserId: args.assignedToUserId,
+        heureDebut: { lt: fin, not: null },
+        heureFin: { gt: debut, not: null },
+        ...(args.excludeInterventionId ? { id: { not: args.excludeInterventionId } } : {}),
+      },
+      select: {
+        id: true,
+        type: true,
+        heureDebut: true,
+        heureFin: true,
+        parcelle: { select: { nom: true } },
+      },
+    });
+    if (conflictIntervention) {
+      const hd = conflictIntervention.heureDebut?.toISOString().slice(11, 16) ?? "—";
+      const hf = conflictIntervention.heureFin?.toISOString().slice(11, 16) ?? "—";
+      throw new ConflictException(
+        `Chevauchement d'heures pour cet employé : une intervention "${conflictIntervention.type}" sur ${conflictIntervention.parcelle.nom} occupe déjà ${hd}–${hf}.`,
+      );
+    }
+
+    const conflictLigne = await this.prisma.ligneTravailHeure.findFirst({
+      where: {
+        userId: args.assignedToUserId,
+        heureDebut: { lt: fin, not: null },
+        heureFin: { gt: debut, not: null },
+      },
+      select: {
+        id: true,
+        heureDebut: true,
+        heureFin: true,
+        travail: { select: { titre: true } },
+      },
+    });
+    if (conflictLigne) {
+      const hd = conflictLigne.heureDebut?.toISOString().slice(11, 16) ?? "—";
+      const hf = conflictLigne.heureFin?.toISOString().slice(11, 16) ?? "—";
+      throw new ConflictException(
+        `Chevauchement d'heures pour cet employé : le travail "${conflictLigne.travail.titre}" occupe déjà ${hd}–${hf}.`,
+      );
+    }
   }
 
   /**
@@ -601,11 +710,32 @@ export class InterventionsService {
           cultureId: true,
           dateOperation: true,
           parcelleId: true,
+          heureDebut: true,
+          heureFin: true,
+          assignedToUserId: true,
           parcelle: { select: { surfaceM2: true } },
         },
       });
       if (!existing) {
         throw new NotFoundException("Intervention introuvable");
+      }
+
+      // Anti-chevauchement à l'update (Fabien 2026-05-14 image 55 #4) :
+      // si les heures ou l'employé bougent, on revalide en excluant
+      // l'intervention courante.
+      const willTouchHours =
+        dto.heureDebut !== undefined ||
+        dto.heureFin !== undefined ||
+        dto.assignedToUserId !== undefined;
+      if (willTouchHours) {
+        await this.assertNoUserHoursOverlap({
+          assignedToUserId:
+            dto.assignedToUserId !== undefined ? dto.assignedToUserId : existing.assignedToUserId,
+          heureDebut:
+            dto.heureDebut !== undefined ? dto.heureDebut : existing.heureDebut?.toISOString(),
+          heureFin: dto.heureFin !== undefined ? dto.heureFin : existing.heureFin?.toISOString(),
+          excludeInterventionId: id,
+        });
       }
 
       const newDate = dto.dateOperation ? new Date(dto.dateOperation) : null;
@@ -741,7 +871,7 @@ export class InterventionsService {
       FROM interventions i
       JOIN parcelles p ON p.id = i.parcelle_id
       LEFT JOIN cultures c ON c.id = i.culture_id
-      WHERE ${conditions.join(" AND ")} AND i.geom IS NOT NULL
+      WHERE ${conditions.join(" AND ")}
       ORDER BY i.date_operation DESC`;
     const rows = await this.prisma.$queryRawUnsafe<
       {

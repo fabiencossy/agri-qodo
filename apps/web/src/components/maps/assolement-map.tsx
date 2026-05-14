@@ -56,10 +56,21 @@ export default function AssolementMap({
       .addTo(map);
 
     const allLayers = L.featureGroup();
+    const parcelleById = new Map(parcelles.map((p) => [p.id, p]));
 
-    // 1) Contour des parcelles en gris (toile de fond).
+    // Parcelles couvertes par un SEMIS (sous-zone OU parcelle entière) :
+    // on les colorie au point 2 → on évite de dessiner le contour neutre
+    // par-dessus pour ne pas masquer la couleur.
+    const coveredParcelleIds = new Set<string>();
+    for (const i of interventions) {
+      if (i.type === "SEMIS" && !i.geom) coveredParcelleIds.add(i.parcelleId);
+    }
+
+    // 1) Contour des parcelles en gris (toile de fond). Skip celles
+    // entièrement couvertes par un SEMIS (elles seront colorées au #2).
     for (const p of parcelles) {
       if (!p.geom) continue;
+      if (coveredParcelleIds.has(p.id)) continue;
       const layer = L.geoJSON(p.geom, {
         style: {
           color: "#525252",
@@ -74,19 +85,26 @@ export default function AssolementMap({
       allLayers.addLayer(layer);
     }
 
-    // 2) Sous-zones SEMIS coloriées par espèce, avec tooltip enrichi.
+    // 2) SEMIS coloriés par espèce. Si l'intervention a une sous-zone
+    // (geom), on l'utilise. Sinon (semis sur toute la parcelle), on
+    // colorie la parcelle entière. Fix Fabien 2026-05-14 image 55 #1.
     for (const i of interventions) {
-      if (!i.geom || i.type !== "SEMIS") continue;
+      if (i.type !== "SEMIS") continue;
+      const parcelle = parcelleById.get(i.parcelleId);
+      const geom = i.geom ?? parcelle?.geom ?? null;
+      if (!geom) continue;
       const espece = i.culture?.espece ?? "Inconnu";
       const couleur = colorByEspece[espece] ?? "#1565C0";
-      const surface = i.surfaceTravailleeM2 ? Number(i.surfaceTravailleeM2) : 0;
+      const surface = i.surfaceTravailleeM2
+        ? Number(i.surfaceTravailleeM2)
+        : Number(parcelle?.surfaceM2 ?? 0);
       const surfaceLabel =
         surface >= 10000
           ? `${(surface / 10000).toFixed(2)} ha`
           : surface >= 100
             ? `${(surface / 100).toFixed(1)} ares`
             : `${surface.toFixed(0)} m²`;
-      const layer = L.geoJSON(i.geom, {
+      const layer = L.geoJSON(geom, {
         style: { color: couleur, weight: 2, fillColor: couleur, fillOpacity: 0.55 },
       })
         .bindTooltip(

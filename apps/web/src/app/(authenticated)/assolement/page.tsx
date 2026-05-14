@@ -48,17 +48,28 @@ export default function AssolementPage() {
   const parcelles = useParcellesMap();
   const interventions = useInterventionsWithGeom({ campagne });
 
+  // Fabien 2026-05-14 image 55 #1 : les SEMIS sans sous-zone (couvrant
+  // toute la parcelle) doivent aussi apparaître. Le fallback geom est
+  // appliqué dans la carte (geom parcelle).
   const semis = useMemo<InterventionWithGeom[]>(
-    () => (interventions.data ?? []).filter((i) => i.type === "SEMIS" && i.geom),
+    () => (interventions.data ?? []).filter((i) => i.type === "SEMIS"),
     [interventions.data],
   );
 
-  // Stats par espèce : surface totale + % de la SAU couverte.
+  // Stats par espèce : surface totale + % de la SAU couverte. Pour les
+  // SEMIS sans sous-zone, on prend la surface totale de la parcelle.
+  const parcelleSurfaceById = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const p of parcelles.data ?? []) m.set(p.id, Number(p.surfaceM2));
+    return m;
+  }, [parcelles.data]);
+
   const stats = useMemo(() => {
     const map = new Map<string, { surfaceM2: number; nbZones: number }>();
     for (const i of semis) {
       const espece = i.culture?.espece ?? "Inconnu";
-      const surface = i.surfaceTravailleeM2 ? Number(i.surfaceTravailleeM2) : 0;
+      const surfaceRaw = i.surfaceTravailleeM2 ? Number(i.surfaceTravailleeM2) : 0;
+      const surface = surfaceRaw > 0 ? surfaceRaw : (parcelleSurfaceById.get(i.parcelleId) ?? 0);
       const cur = map.get(espece) ?? { surfaceM2: 0, nbZones: 0 };
       cur.surfaceM2 += surface;
       cur.nbZones += 1;

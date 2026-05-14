@@ -189,6 +189,8 @@ export default function NewInterventionPage() {
   // existante est chargée. Garde-fou via une ref-like (loadedRef) pour
   // éviter de reset à chaque re-render.
   const [loadedId, setLoadedId] = useState<string>("");
+  // Erreur push Odoo après création/modif (Fabien 2026-05-14 image 55 #3).
+  const [pushError, setPushError] = useState<string | null>(null);
   useEffect(() => {
     if (!isEditMode || !existingIntervention.data) return;
     if (loadedId === existingIntervention.data.id) return;
@@ -478,7 +480,17 @@ export default function NewInterventionPage() {
       {
         // Après création, on reste sur le formulaire en mode édition
         // pour continuer à modifier (décision Fabien 2026-05-14).
-        onSuccess: (created) => router.push(`/interventions/new?edit=${created.id}` as never),
+        onSuccess: (created) => {
+          // Si Odoo a échoué, on garde l'utilisateur sur la page pour
+          // qu'il voie le bandeau (pas de bandeau = silence = ok).
+          const lp = (created as { lastPushResult?: { ok: boolean; error?: string } | null })
+            .lastPushResult;
+          if (lp && !lp.ok) {
+            setPushError(lp.error ?? "Push Odoo échoué (raison inconnue).");
+            return;
+          }
+          router.push(`/interventions/new?edit=${created.id}` as never);
+        },
       },
     );
   };
@@ -998,6 +1010,17 @@ export default function NewInterventionPage() {
               <strong>{isEditMode ? "Modification impossible" : "Saisie impossible"} :</strong>{" "}
               {extractApiErrorMessage(createMutation.error ?? updateMutation.error) ??
                 "Vérifie les valeurs et réessaie."}
+            </div>
+          )}
+
+          {pushError && (
+            <div className="rounded-lg border border-orange-300 bg-orange-50 px-3 py-2 text-sm text-orange-800">
+              <strong>Intervention enregistrée mais Odoo non synchronisé :</strong> {pushError}
+              <br />
+              <span className="text-xs">
+                La saisie est bien enregistrée localement. Tu peux ré-essayer en modifiant
+                l&apos;intervention, ou contacter l&apos;admin si le problème persiste.
+              </span>
             </div>
           )}
 
