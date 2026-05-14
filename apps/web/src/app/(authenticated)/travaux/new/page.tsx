@@ -41,7 +41,6 @@ import { Input } from "@/components/ui/input";
 import { ParcelleSearchSelect } from "@/components/ui/parcelle-search-select";
 import { PartenaireSelect } from "@/components/ui/partenaire-select";
 import { useCurrentUser } from "@/lib/auth";
-import { useProjets } from "@/lib/projets";
 import { useProduits } from "@/lib/produits";
 import { useTenantDetail } from "@/lib/tenants";
 import { useOdooConnected } from "@/lib/odoo-config";
@@ -101,7 +100,6 @@ export default function NewTravailPage() {
   const [pushResult, setPushResult] = useState<PushTravailResult | null>(null);
   const me = useCurrentUser();
   const users = useUsers();
-  const projets = useProjets({ type: "TRAVAUX_TIERS" });
   const tenantDetail = useTenantDetail();
 
   // Mode édition : ?edit={travailId} → pré-remplit le form depuis l'API.
@@ -462,29 +460,10 @@ export default function NewTravailPage() {
             </button>
           )}
 
-          <Field
-            label={interne ? "Projet (optionnel)" : "Projet"}
-            {...(tenantDetail.data?.defaultProjetTravauxTiersId && !interne
-              ? {
-                  hint: "Pré-rempli avec ton projet par défaut (modifiable dans Paramètres → Exploitation).",
-                }
-              : (projets.data?.length ?? 0) === 0
-                ? { hint: "Aucun projet créé. Va dans Paramètres → Projets pour en créer." }
-                : {})}
-          >
-            <select
-              value={projetId}
-              onChange={(e) => setProjetId(e.target.value)}
-              className="h-12 w-full rounded-lg border border-border bg-background px-3 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green"
-            >
-              <option value="">— Aucun —</option>
-              {(projets.data ?? []).map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.nom}
-                </option>
-              ))}
-            </select>
-          </Field>
+          {/* Le dropdown "Projet" Agri Qodo (étiquette locale) a été
+              retiré 2026-05-14 (v2) — la projection vers Odoo se gère
+              via "Projets Odoo cibles" dans Paramètres → Exploitation.
+              `projetId` reste à vide pour les nouveaux travaux. */}
 
           <Field label="Description (optionnel)">
             <textarea
@@ -495,37 +474,39 @@ export default function NewTravailPage() {
             />
           </Field>
 
-          {/* Boutons "Ajouter du temps" / "Ajouter du matériel" → ouvrent
-              chacun une page complète (décision Fabien 2026-05-14). */}
+          {/* Boutons "Ajouter du temps" / "Ajouter des produits" + résumé
+              détaillé en dessous (décision Fabien 2026-05-14 v2). */}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             {(interne
               ? tenantDetail.data?.heuresVisiblesTravauxInterne
               : tenantDetail.data?.heuresVisiblesTravauxTiers) !== false && (
-              <BigActionButton
-                icon={Clock}
-                label="Ajouter du temps"
-                hint={
-                  heuresSimples.dureeMinutes > 0
-                    ? `${Math.floor(heuresSimples.dureeMinutes / 60)}h${String(
-                        heuresSimples.dureeMinutes % 60,
-                      ).padStart(2, "0")}`
-                    : "Aucun temps saisi"
-                }
-                onClick={() => setShowTempsSheet(true)}
-              />
+              <div className="space-y-2">
+                <BigActionButton
+                  icon={Clock}
+                  label="Ajouter du temps"
+                  hint={
+                    heuresSimples.dureeMinutes > 0 ? "Modifier le temps saisi" : "Aucun temps saisi"
+                  }
+                  onClick={() => setShowTempsSheet(true)}
+                />
+                {heuresSimples.dureeMinutes > 0 && <TempsSummary value={heuresSimples} />}
+              </div>
             )}
-            <BigActionButton
-              icon={Package}
-              label="Ajouter des produits"
-              hint={
-                produitsLignes.filter((l) => l.produitId).length > 0
-                  ? `${produitsLignes.filter((l) => l.produitId).length} produit${
-                      produitsLignes.filter((l) => l.produitId).length > 1 ? "s" : ""
-                    } sélectionné${produitsLignes.filter((l) => l.produitId).length > 1 ? "s" : ""}`
-                  : "Aucun produit ajouté"
-              }
-              onClick={() => setShowProduitsSheet(true)}
-            />
+            <div className="space-y-2">
+              <BigActionButton
+                icon={Package}
+                label="Ajouter des produits"
+                hint={
+                  produitsLignes.filter((l) => l.produitId).length > 0
+                    ? "Modifier les produits sélectionnés"
+                    : "Aucun produit ajouté"
+                }
+                onClick={() => setShowProduitsSheet(true)}
+              />
+              {produitsLignes.filter((l) => l.produitId).length > 0 && (
+                <ProduitsSummary lignes={produitsLignes} catalogue={produitsCatalogue} />
+              )}
+            </div>
           </div>
 
           <Field label="Photos (optionnel)">
@@ -599,6 +580,62 @@ export default function NewTravailPage() {
         />
       )}
     </>
+  );
+}
+
+function TempsSummary({ value }: { value: HeuresSimplesValue }) {
+  const h = Math.floor(value.dureeMinutes / 60);
+  const m = value.dureeMinutes % 60;
+  return (
+    <div className="rounded-xl border border-border bg-background px-3 py-2 text-xs">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-foreground/60">Durée effective</span>
+        <span className="font-mono font-semibold">
+          {h}h{String(m).padStart(2, "0")}
+        </span>
+      </div>
+      {(value.heureDebut || value.heureFin) && (
+        <div className="mt-1 flex items-center justify-between gap-2 text-foreground/60">
+          <span>Horaire</span>
+          <span className="font-mono">
+            {value.heureDebut || "—"} → {value.heureFin || "—"}
+          </span>
+        </div>
+      )}
+      {value.dureePauseMinutes > 0 && (
+        <div className="mt-1 flex items-center justify-between gap-2 text-foreground/60">
+          <span>Pause</span>
+          <span className="font-mono">{value.dureePauseMinutes} min</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ProduitsSummary({
+  lignes,
+  catalogue,
+}: {
+  lignes: ProduitLigne[];
+  catalogue: Array<{ id: string; libelle: string; unite: string }>;
+}) {
+  const valides = lignes.filter((l) => l.produitId);
+  return (
+    <ul className="divide-y divide-border rounded-xl border border-border bg-background text-xs">
+      {valides.map((l) => {
+        const produit = catalogue.find((p) => p.id === l.produitId);
+        return (
+          <li key={l.uid} className="flex items-center justify-between gap-2 px-3 py-2">
+            <span className="min-w-0 flex-1 truncate font-medium">
+              {produit?.libelle ?? "Produit"}
+            </span>
+            <span className="shrink-0 font-mono text-foreground/70">
+              {l.quantite || "—"} {produit?.unite ?? ""}
+            </span>
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 
