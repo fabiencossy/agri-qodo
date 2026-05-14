@@ -31,6 +31,7 @@ import { useEffect, useState } from "react";
 import { Breadcrumb } from "@/components/app/breadcrumb";
 import { BigActionButton } from "@/components/activites/big-action-button";
 import { EditActionsMenu } from "@/components/activites/edit-actions-menu";
+import { PhotosField } from "@/components/activites/photos-field";
 import { type HeuresSimplesValue } from "@/components/activites/heures-simples-input";
 import { ProduitsSheet, type ProduitLigne } from "@/components/activites/produits-sheet";
 import { TempsSheet } from "@/components/activites/temps-sheet";
@@ -526,6 +527,12 @@ export default function NewTravailPage() {
               onClick={() => setShowProduitsSheet(true)}
             />
           </div>
+
+          <Field label="Photos (optionnel)">
+            <PhotosField
+              parent={isEditMode && editId ? { kind: "travail", id: editId } : { kind: "none" }}
+            />
+          </Field>
 
           {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
 
