@@ -828,7 +828,20 @@ function EditActionsBlock({
 
       {pushError && (
         <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
-          Push Odoo échoué : {pushError}
+          <p className="font-semibold">Push Odoo échoué</p>
+          <p className="mt-1 font-mono text-xs">{pushError}</p>
+          {/^.*\b(50[234])\b/.test(pushError) ? (
+            <p className="mt-2 text-xs text-red-700/80">
+              Ton instance Odoo est temporairement indisponible (erreur passerelle). Vérifie qu'elle
+              est bien démarrée puis clique sur « Réessayer » ci-dessus. Le backend retente
+              automatiquement 2 fois avant de remonter cette erreur.
+            </p>
+          ) : (
+            <p className="mt-2 text-xs text-red-700/80">
+              Clique sur « Réessayer » ci-dessus. Si l'erreur persiste, vérifie la config Odoo dans
+              Paramètres → Odoo.
+            </p>
+          )}
         </div>
       )}
 
