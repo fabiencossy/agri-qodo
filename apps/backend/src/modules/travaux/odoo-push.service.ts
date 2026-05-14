@@ -1056,10 +1056,14 @@ export class OdooPushService {
 
       // 3. Toujours poster un résumé dans le chatter de la tâche
       //    (append-only — on accepte les doublons si l'utilisateur re-save).
+      //    Fabien 2026-05-14 (image 42) : sans subtype_xmlid, Odoo
+      //    affichait le HTML brut (balises <strong>…</strong> en texte).
+      //    "mail.mt_note" = note interne (HTML rendu, pas de notif email).
       const summary = this.buildInterventionChatterMessage(intervention);
       await client.callKw("project.task", "message_post", [[taskId]], {
         body: summary,
         message_type: "comment",
+        subtype_xmlid: "mail.mt_note",
       });
 
       this.logger.log(
@@ -1193,7 +1197,7 @@ export class OdooPushService {
     if (intervention.notes) {
       lines.push(`Notes : ${escape(intervention.notes)}`);
     }
-    return lines.join("<br/>");
+    return lines.join("<br>");
   }
 
   /**
