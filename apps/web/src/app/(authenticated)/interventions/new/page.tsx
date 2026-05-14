@@ -890,21 +890,42 @@ export default function NewInterventionPage() {
             </Field>
           )}
 
-          {/* Bouton "Ajouter du temps" → modal plein écran (décision
-              Fabien 2026-05-14, idem Travaux). */}
+          {/* Bouton "Ajouter du temps" → modal plein écran + résumé
+              détaillé en dessous (décision Fabien 2026-05-14 v2). */}
           {heuresVisibles && (
-            <BigActionButton
-              icon={Clock}
-              label="Ajouter du temps"
-              hint={
-                heures.dureeMinutes > 0
-                  ? `${Math.floor(heures.dureeMinutes / 60)}h${String(
-                      heures.dureeMinutes % 60,
-                    ).padStart(2, "0")}`
-                  : "Aucun temps saisi"
-              }
-              onClick={() => setShowTempsSheet(true)}
-            />
+            <div className="space-y-2">
+              <BigActionButton
+                icon={Clock}
+                label="Ajouter du temps"
+                hint={heures.dureeMinutes > 0 ? "Modifier le temps saisi" : "Aucun temps saisi"}
+                onClick={() => setShowTempsSheet(true)}
+              />
+              {heures.dureeMinutes > 0 && (
+                <div className="rounded-xl border border-border bg-background px-3 py-2 text-xs">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-foreground/60">Durée effective</span>
+                    <span className="font-mono font-semibold">
+                      {Math.floor(heures.dureeMinutes / 60)}h
+                      {String(heures.dureeMinutes % 60).padStart(2, "0")}
+                    </span>
+                  </div>
+                  {(heures.heureDebut || heures.heureFin) && (
+                    <div className="mt-1 flex items-center justify-between gap-2 text-foreground/60">
+                      <span>Horaire</span>
+                      <span className="font-mono">
+                        {heures.heureDebut || "—"} → {heures.heureFin || "—"}
+                      </span>
+                    </div>
+                  )}
+                  {heures.dureePauseMinutes > 0 && (
+                    <div className="mt-1 flex items-center justify-between gap-2 text-foreground/60">
+                      <span>Pause</span>
+                      <span className="font-mono">{heures.dureePauseMinutes} min</span>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           )}
 
           <Field label="Notes (optionnel)" error={errors.notes?.message}>

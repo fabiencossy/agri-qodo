@@ -1206,16 +1206,14 @@ export class OdooPushService {
       where: { id: tenantId },
       select: {
         odooProjectIdCarnetTiers: true,
-        odooProjectIdCarnetInterne: true,
       },
     });
-    // Fabien 2026-05-14 : "Carnet des champs" est un seul concept côté
-    // UI. Le frontend écrit la même valeur dans les deux champs ; on
-    // prend l'un ou l'autre selon ce qui est renseigné.
-    const configured = tenant?.odooProjectIdCarnetTiers ?? tenant?.odooProjectIdCarnetInterne;
-    if (configured) {
-      this.carnetProjectCache.set(tenantId, configured);
-      return configured;
+    // Fabien 2026-05-14 (v2) : Carnet = `odooProjectIdCarnetTiers` ;
+    // `odooProjectIdCarnetInterne` devient sémantiquement "Travaux
+    // internes" et n'est plus utilisé ici (cf ensureInternalWorkProject).
+    if (tenant?.odooProjectIdCarnetTiers) {
+      this.carnetProjectCache.set(tenantId, tenant.odooProjectIdCarnetTiers);
+      return tenant.odooProjectIdCarnetTiers;
     }
 
     const projectName = "Agri Qodo — Carnet des champs";
