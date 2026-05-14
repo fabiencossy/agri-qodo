@@ -17,35 +17,29 @@ import {
   ArrowLeft,
   CalendarDays,
   CheckCircle2,
-  ChevronRight,
   Clock,
   ExternalLink,
   Package,
-  Plus,
   Save,
   Send,
   Tractor,
-  Trash2,
-  X,
   XCircle,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Breadcrumb } from "@/components/app/breadcrumb";
+import { BigActionButton } from "@/components/activites/big-action-button";
 import { EditActionsMenu } from "@/components/activites/edit-actions-menu";
+import { type HeuresSimplesValue } from "@/components/activites/heures-simples-input";
+import { ProduitsSheet, type ProduitLigne } from "@/components/activites/produits-sheet";
+import { TempsSheet } from "@/components/activites/temps-sheet";
 import { TypeSaisieHeader } from "@/components/activites/type-saisie-header";
-import {
-  HeuresSimplesInput,
-  type HeuresSimplesValue,
-} from "@/components/activites/heures-simples-input";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ParcelleSearchSelect } from "@/components/ui/parcelle-search-select";
 import { PartenaireSelect } from "@/components/ui/partenaire-select";
-import { ProduitFullscreenPicker } from "@/components/ui/produit-fullscreen-picker";
 import { useCurrentUser } from "@/lib/auth";
-import { useParcelle } from "@/lib/parcelles";
 import { useProjets } from "@/lib/projets";
 import { useProduits } from "@/lib/produits";
 import { useTenantDetail } from "@/lib/tenants";
@@ -159,36 +153,16 @@ export default function NewTravailPage() {
     dureePauseMinutes: 0,
     dureeMinutes: 0,
   });
-  const [tauxCHF, setTauxCHF] = useState<string>("");
   // Multi-produits : tableau de lignes empilables.
-  interface DraftProduitSimple {
-    uid: string;
-    produitId: string;
-    quantite: string;
-  }
-  const [produitsLignes, setProduitsLignes] = useState<DraftProduitSimple[]>([]);
+  const [produitsLignes, setProduitsLignes] = useState<ProduitLigne[]>([]);
   const [error, setError] = useState<string | null>(null);
-  // Modaux plein écran "Ajouter du temps" / "Ajouter du matériel"
+  // Modaux plein écran "Ajouter du temps" / "Ajouter des produits"
   // (décision Fabien 2026-05-14 : sortir ces saisies du formulaire principal).
   const [showTempsSheet, setShowTempsSheet] = useState(false);
-  const [showMaterielSheet, setShowMaterielSheet] = useState(false);
+  const [showProduitsSheet, setShowProduitsSheet] = useState(false);
 
-  const parcelleQuery = useParcelle(parcelleId || undefined);
   const produitsQuery = useProduits();
   const produitsCatalogue = produitsQuery.data ?? [];
-  const surfaceHa = parcelleQuery.data?.surfaceM2
-    ? Number(parcelleQuery.data.surfaceM2) / 10_000
-    : null;
-
-  function addProduitLigne() {
-    setProduitsLignes((prev) => [...prev, { uid: uid(), produitId: "", quantite: "" }]);
-  }
-  function updateProduitLigne(idx: number, patch: Partial<DraftProduitSimple>) {
-    setProduitsLignes((prev) => prev.map((l, i) => (i === idx ? { ...l, ...patch } : l)));
-  }
-  function removeProduitLigne(idx: number) {
-    setProduitsLignes((prev) => prev.filter((_, i) => i !== idx));
-  }
 
   // Pré-remplissage en mode édition depuis le travail existant.
   const loadedRef = useState({ id: "" })[0];
@@ -249,7 +223,9 @@ export default function NewTravailPage() {
       dureePauseMinutes: 0,
       dureeMinutes: first.dureeMinutes,
     });
-    if (first.tauxHoraireCHF != null) setTauxCHF(String(first.tauxHoraireCHF));
+    // tauxHoraireCHF n'est plus exposé dans la saisie (décision Fabien
+    // 2026-05-14) — le champ existant en DB reste lisible pour le total,
+    // mais on ne le re-prérompit plus ici puisqu'il n'y a plus d'UI.
   }, [isEditMode, lignesHeure]);
 
   // Présélection projet par défaut (create only, et seulement si vide).
@@ -258,8 +234,6 @@ export default function NewTravailPage() {
     const def = tenantDetail.data?.defaultProjetTravauxTiersId;
     if (def) setProjetId((prev) => prev || def);
   }, [tenantDetail.data?.defaultProjetTravauxTiersId, isEditMode]);
-
-  const tauxNum = tauxCHF ? Number(tauxCHF) : 0;
 
   /**
    * Sprint 2 fusion-interventions — submit "Planifier" : crée une pré-tâche
@@ -335,7 +309,6 @@ export default function NewTravailPage() {
       const finIso = combineDateTime(date, heuresSimples.heureFin);
       if (debutIso) out.heureDebut = debutIso;
       if (finIso) out.heureFin = finIso;
-      if (!interne && tauxNum > 0) out.tauxHoraireCHF = tauxNum;
       lignesHeureClean.push(out);
     }
 
@@ -532,9 +505,9 @@ export default function NewTravailPage() {
                 label="Ajouter du temps"
                 hint={
                   heuresSimples.dureeMinutes > 0
-                    ? `${Math.floor(heuresSimples.dureeMinutes / 60)}h${String(heuresSimples.dureeMinutes % 60).padStart(2, "0")}${
-                        tauxNum > 0 && !interne ? ` · ${tauxNum} CHF/h` : ""
-                      }`
+                    ? `${Math.floor(heuresSimples.dureeMinutes / 60)}h${String(
+                        heuresSimples.dureeMinutes % 60,
+                      ).padStart(2, "0")}`
                     : "Aucun temps saisi"
                 }
                 onClick={() => setShowTempsSheet(true)}
@@ -542,15 +515,15 @@ export default function NewTravailPage() {
             )}
             <BigActionButton
               icon={Package}
-              label="Ajouter du matériel"
+              label="Ajouter des produits"
               hint={
                 produitsLignes.filter((l) => l.produitId).length > 0
                   ? `${produitsLignes.filter((l) => l.produitId).length} produit${
                       produitsLignes.filter((l) => l.produitId).length > 1 ? "s" : ""
-                    } ajouté${produitsLignes.filter((l) => l.produitId).length > 1 ? "s" : ""}`
-                  : "Aucun matériel ajouté"
+                    } sélectionné${produitsLignes.filter((l) => l.produitId).length > 1 ? "s" : ""}`
+                  : "Aucun produit ajouté"
               }
-              onClick={() => setShowMaterielSheet(true)}
+              onClick={() => setShowProduitsSheet(true)}
             />
           </div>
 
@@ -608,242 +581,17 @@ export default function NewTravailPage() {
         <TempsSheet
           value={heuresSimples}
           onChange={setHeuresSimples}
-          tauxCHF={tauxCHF}
-          onTauxChange={setTauxCHF}
-          showTaux={!interne}
           onClose={() => setShowTempsSheet(false)}
         />
       )}
-      {showMaterielSheet && (
-        <MateriauxSheet
+      {showProduitsSheet && (
+        <ProduitsSheet
           lignes={produitsLignes}
-          onAdd={addProduitLigne}
-          onUpdate={updateProduitLigne}
-          onRemove={removeProduitLigne}
-          produitsCatalogue={produitsCatalogue}
-          surfaceHa={surfaceHa}
-          onClose={() => setShowMaterielSheet(false)}
+          onChange={setProduitsLignes}
+          onClose={() => setShowProduitsSheet(false)}
         />
       )}
     </>
-  );
-}
-
-function BigActionButton({
-  icon: Icon,
-  label,
-  hint,
-  onClick,
-}: {
-  icon: typeof Clock;
-  label: string;
-  hint: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="flex w-full items-center gap-3 rounded-2xl border-2 border-dashed border-border bg-muted/20 p-4 text-left transition-colors hover:border-green hover:bg-green/5"
-    >
-      <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-background text-foreground/70">
-        <Icon className="h-5 w-5" />
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="block text-base font-semibold">{label}</span>
-        <span className="mt-0.5 block truncate text-xs text-foreground/60">{hint}</span>
-      </span>
-      <ChevronRight className="h-4 w-4 shrink-0 text-foreground/40" />
-    </button>
-  );
-}
-
-function FullscreenSheet({
-  title,
-  onClose,
-  children,
-  footer,
-}: {
-  title: string;
-  onClose: () => void;
-  children: React.ReactNode;
-  footer?: React.ReactNode;
-}) {
-  return (
-    <div
-      className="fixed inset-0 z-[8000] flex flex-col bg-background"
-      role="dialog"
-      aria-label={title}
-    >
-      <header className="border-b border-border bg-background p-3 sm:p-4">
-        <div className="mx-auto flex max-w-3xl items-center gap-3">
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Fermer"
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full hover:bg-muted"
-          >
-            <X className="h-5 w-5" />
-          </button>
-          <h2 className="min-w-0 flex-1 truncate text-lg font-semibold">{title}</h2>
-        </div>
-      </header>
-      <div className="flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-3xl px-4 py-6">{children}</div>
-      </div>
-      {footer && (
-        <footer className="border-t border-border bg-background p-3 sm:p-4">
-          <div className="mx-auto flex max-w-3xl justify-end gap-2">{footer}</div>
-        </footer>
-      )}
-    </div>
-  );
-}
-
-function TempsSheet({
-  value,
-  onChange,
-  tauxCHF,
-  onTauxChange,
-  showTaux,
-  onClose,
-}: {
-  value: HeuresSimplesValue;
-  onChange: (v: HeuresSimplesValue) => void;
-  tauxCHF: string;
-  onTauxChange: (v: string) => void;
-  showTaux: boolean;
-  onClose: () => void;
-}) {
-  return (
-    <FullscreenSheet
-      title="Ajouter du temps"
-      onClose={onClose}
-      footer={
-        <Button type="button" onClick={onClose} className="h-11 px-6">
-          OK
-        </Button>
-      }
-    >
-      <div className="space-y-5">
-        <HeuresSimplesInput value={value} onChange={onChange} />
-        {showTaux && (
-          <Field
-            label="Taux horaire (CHF / h)"
-            hint="Optionnel — utilisé pour le total et le push Odoo."
-          >
-            <Input
-              type="number"
-              inputMode="decimal"
-              min="0"
-              step="0.05"
-              value={tauxCHF}
-              onChange={(e) => onTauxChange(e.target.value)}
-              placeholder="Ex. 80"
-              className="h-12 text-base"
-            />
-          </Field>
-        )}
-      </div>
-    </FullscreenSheet>
-  );
-}
-
-interface DraftProduitForSheet {
-  uid: string;
-  produitId: string;
-  quantite: string;
-}
-
-function MateriauxSheet({
-  lignes,
-  onAdd,
-  onUpdate,
-  onRemove,
-  produitsCatalogue,
-  surfaceHa,
-  onClose,
-}: {
-  lignes: DraftProduitForSheet[];
-  onAdd: () => void;
-  onUpdate: (idx: number, patch: Partial<DraftProduitForSheet>) => void;
-  onRemove: (idx: number) => void;
-  produitsCatalogue: Array<{ id: string; libelle: string; unite: string }>;
-  surfaceHa: number | null;
-  onClose: () => void;
-}) {
-  return (
-    <FullscreenSheet
-      title="Ajouter du matériel"
-      onClose={onClose}
-      footer={
-        <Button type="button" onClick={onClose} className="h-11 px-6">
-          OK
-        </Button>
-      }
-    >
-      <div className="space-y-3">
-        {surfaceHa != null && (
-          <p className="text-xs text-foreground/60">
-            Astuce : pour une dose à l'hectare × {surfaceHa.toFixed(2)} ha = quantité totale.
-          </p>
-        )}
-        {lignes.length === 0 && (
-          <p className="rounded-xl border border-dashed border-border bg-muted/20 p-6 text-center text-sm text-foreground/60">
-            Aucun produit pour l'instant. Clique sur « Ajouter un produit » pour commencer.
-          </p>
-        )}
-        {lignes.map((ligne, idx) => {
-          const produit = produitsCatalogue.find((p) => p.id === ligne.produitId);
-          return (
-            <div key={ligne.uid} className="rounded-xl border border-border bg-background p-3">
-              <div className="flex items-start gap-2">
-                <div className="min-w-0 flex-1">
-                  <ProduitFullscreenPicker
-                    value={ligne.produitId}
-                    onChange={(id) => onUpdate(idx, { produitId: id })}
-                    placeholder="Choisir un produit…"
-                  />
-                </div>
-                <button
-                  type="button"
-                  onClick={() => onRemove(idx)}
-                  aria-label="Supprimer cette ligne"
-                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-border text-red-700 hover:bg-red-50"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              </div>
-              {ligne.produitId && (
-                <div className="mt-2 grid grid-cols-[1fr_auto] gap-2">
-                  <Input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    inputMode="decimal"
-                    value={ligne.quantite}
-                    onChange={(e) => onUpdate(idx, { quantite: e.target.value })}
-                    placeholder="Quantité totale"
-                    className="h-11"
-                  />
-                  <span className="flex h-11 items-center justify-center rounded-lg border border-border bg-muted/30 px-3 text-sm font-medium text-foreground/70">
-                    {produit?.unite ?? ""}
-                  </span>
-                </div>
-              )}
-            </div>
-          );
-        })}
-        <button
-          type="button"
-          onClick={onAdd}
-          className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-green bg-background py-4 text-sm font-semibold text-green hover:bg-green/5"
-        >
-          <Plus className="h-4 w-4" />
-          Ajouter un produit
-        </button>
-      </div>
-    </FullscreenSheet>
   );
 }
 

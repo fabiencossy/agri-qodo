@@ -2,7 +2,7 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import area from "@turf/area";
-import { CalendarDays } from "lucide-react";
+import { CalendarDays, Clock } from "lucide-react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -10,12 +10,11 @@ import { useEffect, useMemo, useState } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import { Breadcrumb } from "@/components/app/breadcrumb";
+import { BigActionButton } from "@/components/activites/big-action-button";
 import { TypeSaisieHeader } from "@/components/activites/type-saisie-header";
 import { EditActionsMenu } from "@/components/activites/edit-actions-menu";
-import {
-  HeuresSimplesInput,
-  type HeuresSimplesValue,
-} from "@/components/activites/heures-simples-input";
+import { type HeuresSimplesValue } from "@/components/activites/heures-simples-input";
+import { TempsSheet } from "@/components/activites/temps-sheet";
 import { extractApiErrorMessage } from "@/lib/api-client";
 import { useTenantDetail } from "@/lib/tenants";
 import { useUsers } from "@/lib/users";
@@ -148,6 +147,9 @@ export default function NewInterventionPage() {
     dureePauseMinutes: 0,
     dureeMinutes: 0,
   });
+  // Modal plein écran "Ajouter du temps" (décision Fabien 2026-05-14 :
+  // sortir la saisie d'heures du formulaire principal, comme Travaux).
+  const [showTempsSheet, setShowTempsSheet] = useState(false);
   // Sprint 2 fusion-interventions — Planning : juste assignedToUserId.
   // datePrevue n'est plus un champ séparé, on prend `dateOperation` quand
   // on clique sur "Planifier".
@@ -887,12 +889,21 @@ export default function NewInterventionPage() {
             </Field>
           )}
 
-          {/* Heures en bas (Sprint 2 : pas pertinent pour le planning,
-              utile uniquement quand on saisit en mode immédiat). */}
-          {heuresVisibles && !isEditMode && (
-            <Field label="Heures (optionnel)">
-              <HeuresSimplesInput value={heures} onChange={setHeures} />
-            </Field>
+          {/* Bouton "Ajouter du temps" → modal plein écran (décision
+              Fabien 2026-05-14, idem Travaux). */}
+          {heuresVisibles && (
+            <BigActionButton
+              icon={Clock}
+              label="Ajouter du temps"
+              hint={
+                heures.dureeMinutes > 0
+                  ? `${Math.floor(heures.dureeMinutes / 60)}h${String(
+                      heures.dureeMinutes % 60,
+                    ).padStart(2, "0")}`
+                  : "Aucun temps saisi"
+              }
+              onClick={() => setShowTempsSheet(true)}
+            />
           )}
 
           <Field label="Notes (optionnel)" error={errors.notes?.message}>
@@ -956,6 +967,10 @@ export default function NewInterventionPage() {
           </div>
         </form>
       </div>
+
+      {showTempsSheet && (
+        <TempsSheet value={heures} onChange={setHeures} onClose={() => setShowTempsSheet(false)} />
+      )}
     </>
   );
 }
