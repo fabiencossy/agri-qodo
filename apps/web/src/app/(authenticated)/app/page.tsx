@@ -2,7 +2,6 @@
 
 import {
   CalendarDays,
-  Clock,
   type LucideIcon,
   MapPin,
   Sprout,
@@ -18,10 +17,6 @@ import { useParcelles } from "@/lib/parcelles";
 import { useTenantDetail } from "@/lib/tenants";
 import { useMesHeures, useTravaux } from "@/lib/travaux";
 
-function nbDays(start: Date, end: Date): number {
-  return Math.floor((end.getTime() - start.getTime()) / 86_400_000);
-}
-
 function startOfWeek(): Date {
   const d = new Date();
   const day = d.getDay();
@@ -36,19 +31,6 @@ function endOfWeekIso(): string {
   d.setDate(d.getDate() + 6);
   d.setHours(23, 59, 59, 999);
   return d.toISOString().slice(0, 10);
-}
-
-function startOfMonth(): Date {
-  const d = new Date();
-  return new Date(d.getFullYear(), d.getMonth(), 1);
-}
-
-function formatDuree(minutes: number): string {
-  const h = Math.floor(minutes / 60);
-  const m = minutes % 60;
-  if (h === 0) return `${m}min`;
-  if (m === 0) return `${h}h`;
-  return `${h}h${String(m).padStart(2, "0")}`;
 }
 
 function formatHectares(m2: number): string {
@@ -72,10 +54,6 @@ export default function HomePage() {
   // Stats
   const nbParcelles = parcelles.data?.length ?? 0;
   const totalSurfaceM2 = parcelles.data?.reduce((s, p) => s + Number(p.surfaceM2), 0) ?? 0;
-  const nbInterventions7j =
-    interventions.data?.filter((iv) => nbDays(new Date(iv.dateOperation), new Date()) <= 7)
-      .length ?? 0;
-  const nbTravaux30j = travaux.data?.filter((t) => new Date(t.date) >= startOfMonth()).length ?? 0;
   const minutesSemaine = heuresWeek.data?.reduce((s, l) => s + l.dureeMinutes, 0) ?? 0;
 
   // Résumé semaine compact (déplacé depuis /activites — décision 2026-05-05).
@@ -192,46 +170,19 @@ export default function HomePage() {
       </section>
 
       {/* Section : Statistiques clés */}
+      {/* Section "Vue d'ensemble" retirée 2026-05-14 (image 34) : faisait
+          doublon avec "Activités de la semaine" (heures, carnet, tiers
+          partagent les mêmes chiffres). Seule la card Parcelles n'était
+          pas couverte → on la remet ailleurs ci-dessous, en compact. */}
       <section className="mb-8">
-        <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-foreground/50">
-          Vue d'ensemble
-        </h2>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-          <StatCard
-            href="/parcelles"
-            icon={MapPin}
-            label="Parcelles"
-            value={nbParcelles.toString()}
-            sub={totalSurfaceM2 > 0 ? `${formatHectares(totalSurfaceM2)} ha au total` : undefined}
-            color="bg-emerald-50 text-emerald-700"
-          />
-          <StatCard
-            href="/activites"
-            icon={Sprout}
-            label="Interventions 7j"
-            value={nbInterventions7j.toString()}
-            sub={nbInterventions7j === 0 ? "Rien saisi cette semaine" : `derniers 7 jours`}
-            color="bg-green-50 text-green-700"
-          />
-          {/* Cards "UGB total" et "SRPA" retirées 2026-05-14 (image 32) :
-              modules cheptel / pâturage pas d'actualité pour l'instant. */}
-          <StatCard
-            href="/travaux"
-            icon={Tractor}
-            label="Travaux pour tiers ce mois"
-            value={nbTravaux30j.toString()}
-            sub={nbTravaux30j === 0 ? "Aucun travail saisi" : "ce mois-ci"}
-            color="bg-amber-50 text-amber-700"
-          />
-          <StatCard
-            href="/mes-heures"
-            icon={Clock}
-            label="Mes heures (sem.)"
-            value={minutesSemaine > 0 ? formatDuree(minutesSemaine) : "0h"}
-            sub="lundi → dimanche"
-            color="bg-indigo-50 text-indigo-700"
-          />
-        </div>
+        <StatCard
+          href="/parcelles"
+          icon={MapPin}
+          label="Parcelles"
+          value={nbParcelles.toString()}
+          sub={totalSurfaceM2 > 0 ? `${formatHectares(totalSurfaceM2)} ha au total` : undefined}
+          color="bg-emerald-50 text-emerald-700"
+        />
       </section>
 
       {/* Section : Planning des prochains jours (Fabien 2026-05-14, image 27) */}
