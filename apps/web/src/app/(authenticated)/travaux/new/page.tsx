@@ -326,9 +326,13 @@ export default function NewTravailPage() {
     };
     try {
       if (isEditMode && editId) {
-        await update.mutateAsync({ id: editId, ...payload });
-        // Reste sur le formulaire en mode édition (champs toujours
-        // éditables — décision Fabien 2026-05-14).
+        const updated = await update.mutateAsync({ id: editId, ...payload });
+        // Si le backend a déclenché un push Odoo lors de l'update,
+        // on remonte le résultat dans le bandeau vert (toast éphémère
+        // dans l'EditActionsBlock) — Fabien 2026-05-14 image 40.
+        if (updated.lastPushResult) {
+          setPushResult(updated.lastPushResult);
+        }
       } else {
         const created = await create.mutateAsync(payload);
         router.push(`/travaux/new?edit=${created.id}` as never);

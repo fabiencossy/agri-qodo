@@ -291,16 +291,18 @@ export class TravauxService {
           after,
         });
 
-        // Push Odoo automatique si le travail n'a pas encore été poussé
-        // et qu'il a des lignes maintenant (review 2026-05-04). Ne touche
-        // pas aux travaux déjà poussés (sale.order ou project.task) pour
-        // éviter les doublons côté Odoo.
+        // Push Odoo automatique await (Fabien 2026-05-14, image 40 :
+        // après "Mettre à jour" rien ne se passait visiblement dans
+        // Odoo car le push était fire-and-forget sans feedback). On
+        // attend désormais le résultat pour le remonter au frontend
+        // qui affiche un toast/banner.
         const alreadyPushed = !!updated.odooSaleOrderId || !!updated.odooTaskId;
         const hasContent = updated.lignesProduit.length > 0 || updated.lignesHeure.length > 0;
+        let lastPushResult: unknown = null;
         if (!alreadyPushed && hasContent) {
-          this.odooPush.tryPushTravailQuotation(id).catch(() => undefined);
+          lastPushResult = await this.odooPush.tryPushTravailQuotation(id).catch(() => null);
         }
-        return updated;
+        return { ...updated, lastPushResult };
       });
   }
 
