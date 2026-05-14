@@ -1,9 +1,4 @@
-import {
-  BadRequestException,
-  ConflictException,
-  Injectable,
-  NotFoundException,
-} from "@nestjs/common";
+import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import { Canton, Prisma } from "@prisma/client";
 import { randomBytes } from "node:crypto";
 import { PrismaService } from "@/common/prisma/prisma.service";
@@ -103,54 +98,13 @@ export class TenantsService {
       }
     }
 
-    // Validation cohérence : un toggle heuresVisibles_X=true exige un
-    // projetHeures_X non null dans l'état final (post-patch).
-    const current = await this.prisma.exploitation.findUnique({
-      where: { id: tenantId },
-      select: {
-        heuresVisiblesCarnet: true,
-        heuresVisiblesTravauxTiers: true,
-        heuresVisiblesTravauxInterne: true,
-        projetHeuresCarnetId: true,
-        projetHeuresTravauxTiersId: true,
-        projetHeuresTravauxInterneId: true,
-      },
-    });
-    if (!current) throw new NotFoundException("Exploitation introuvable");
-    const projected = {
-      heuresVisiblesCarnet: dto.heuresVisiblesCarnet ?? current.heuresVisiblesCarnet,
-      heuresVisiblesTravauxTiers:
-        dto.heuresVisiblesTravauxTiers ?? current.heuresVisiblesTravauxTiers,
-      heuresVisiblesTravauxInterne:
-        dto.heuresVisiblesTravauxInterne ?? current.heuresVisiblesTravauxInterne,
-      projetHeuresCarnetId:
-        dto.projetHeuresCarnetId !== undefined
-          ? dto.projetHeuresCarnetId
-          : current.projetHeuresCarnetId,
-      projetHeuresTravauxTiersId:
-        dto.projetHeuresTravauxTiersId !== undefined
-          ? dto.projetHeuresTravauxTiersId
-          : current.projetHeuresTravauxTiersId,
-      projetHeuresTravauxInterneId:
-        dto.projetHeuresTravauxInterneId !== undefined
-          ? dto.projetHeuresTravauxInterneId
-          : current.projetHeuresTravauxInterneId,
-    };
-    const incoherences: string[] = [];
-    if (projected.heuresVisiblesCarnet && !projected.projetHeuresCarnetId) {
-      incoherences.push("Carnet");
-    }
-    if (projected.heuresVisiblesTravauxTiers && !projected.projetHeuresTravauxTiersId) {
-      incoherences.push("Travaux pour tiers");
-    }
-    if (projected.heuresVisiblesTravauxInterne && !projected.projetHeuresTravauxInterneId) {
-      incoherences.push("Travaux internes");
-    }
-    if (incoherences.length > 0) {
-      throw new BadRequestException(
-        `Un projet d'imputation des heures est obligatoire pour : ${incoherences.join(", ")}.`,
-      );
-    }
+    // [Décision Fabien 2026-05-14 v3] La validation "heuresVisibles_X
+    // exige projetHeures_X" a été retirée. L'UI "Préférences saisie"
+    // qui pilotait ces toggles + projets d'imputation a été supprimée
+    // (cf parametres/exploitation/page.tsx). Les flags
+    // `heuresVisibles*` restent en base avec leur valeur par défaut
+    // (true) pour que les boutons "Ajouter du temps" continuent à
+    // s'afficher dans les formulaires Carnet/Travaux.
 
     // Sprint B prestations v0.3 — 3 projets Odoo cibles. Pas de validation
     // métier ici : le caller (UI) doit s'assurer que l'ID provient bien
