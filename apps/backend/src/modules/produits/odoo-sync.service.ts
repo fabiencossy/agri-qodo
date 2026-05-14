@@ -425,6 +425,73 @@ export class OdooSyncService {
   }
 
   /**
+   * Pousse en masse tous les produits visibles du tenant vers Odoo.
+   * Fabien 2026-05-14 image 59 + nouveau message : "j'ai supprimé tous
+   * les produits Odoo, je veux refaire une sync depuis Agricodo".
+   *
+   * Stratégie : on liste tous les produits visibles (globaux non-perso
+   * + perso du tenant), on appelle `ensureOdooProduct` pour chacun en
+   * best-effort. Un échec sur un produit ne bloque pas les autres.
+   * Pour les globaux, ensureOdooProduct fait fork-on-push (crée une
+   * copie perso et garde l'odooProductId dessus).
+   */
+  async pushAllProduits(): Promise<{
+    total: number;
+    pushed: number;
+    skipped: number;
+    errors: Array<{ produitId: string; libelle: string; raison: string }>;
+  }> {
+    this.assertAdmin();
+    const { tenantId } = this.tenantContext.get();
+
+    // On pousse uniquement les actifs (les inactifs encombrent Odoo).
+    // Pour les globaux, on n'en pousse qu'un par libellé (le perso
+    // mappé prend le pas s'il existe — sinon le global).
+    const all = await this.prisma.produit.findMany({
+      where: {
+        actif: true,
+        OR: [{ tenantId: null }, { tenantId }],
+      },
+      select: { id: true, libelle: true, tenantId: true, odooProductId: true },
+      orderBy: { libelle: "asc" },
+    });
+
+    // Dédup par libellé : si un perso existe pour ce libellé, on skip
+    // le global correspondant (ensureOdooProduct ferait fork→doublon).
+    const persoLibelles = new Set(
+      all.filter((p) => p.tenantId === tenantId).map((p) => p.libelle.toLowerCase().trim()),
+    );
+    const toPush = all.filter(
+      (p) => p.tenantId === tenantId || !persoLibelles.has(p.libelle.toLowerCase().trim()),
+    );
+
+    const result = {
+      total: toPush.length,
+      pushed: 0,
+      skipped: 0,
+      errors: [] as Array<{ produitId: string; libelle: string; raison: string }>,
+    };
+
+    for (const produit of toPush) {
+      try {
+        await this.ensureOdooProduct(produit.id);
+        result.pushed++;
+      } catch (err) {
+        result.errors.push({
+          produitId: produit.id,
+          libelle: produit.libelle,
+          raison: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    this.logger.log(
+      `Push all produits terminé pour tenant ${tenantId} : ${result.pushed}/${result.total} poussés (${result.errors.length} erreurs).`,
+    );
+    return result;
+  }
+
+  /**
    * Garantit qu'un produit a un product.product Odoo associé. Crée le
    * produit côté Odoo si `odooProductId` est null, sinon retourne
    * l'existant (idempotent). Sert au bouton "Pousser vers Odoo" sur
@@ -443,49 +510,77 @@ export class OdooSyncService {
     // prime au moment du push.
     if (produit.odooProductId) {
       const client = await this.odooClientManager.forTenant(tenantId);
-      const uomId = await this.resolveUomId(client, tenantId, produit.unite);
-      const taxesPayload = await this.buildTaxesPayload(client, tenantId, produit.tauxTvaPercent);
-      // default_code mis à false pour effacer la référence interne
-      // visible côté Odoo (demande Fabien 2026-05-06).
-      await client
-        .write("product.product", [produit.odooProductId], {
-          name: produit.libelle,
-          list_price: produit.prixVenteCHF ? Number(produit.prixVenteCHF) : 0,
-          default_code: false,
-          ...(uomId ? { uom_id: uomId } : {}),
-          ...(taxesPayload ?? {}),
-        })
-        .catch((err) =>
-          this.logger.warn(
-            `Sync push (prod #${produit.odooProductId}) échoué : ${err instanceof Error ? err.message : err}`,
-          ),
-        );
+
+      // Fabien 2026-05-14 : avant de write, on vérifie que le produit
+      // existe encore côté Odoo. Si l'admin a supprimé son catalogue
+      // Odoo manuellement, l'odooProductId local pointe dans le vide.
+      // On reset le lien local et on retombe sur la branche de création.
+      let stillExists = true;
       try {
-        const probe = await client.searchRead<{
-          id: number;
-          name?: string;
-          list_price?: number;
-        }>("product.product", [["id", "=", produit.odooProductId]], {
-          fields: ["id", "name", "list_price"],
-          limit: 1,
-        });
-        const o = probe[0];
-        if (o) {
-          await this.prisma.produit.update({
-            where: { id: produit.id },
-            data: {
-              ...(o.name ? { libelle: o.name } : {}),
-              ...(typeof o.list_price === "number"
-                ? { prixVenteCHF: o.list_price > 0 ? o.list_price : null }
-                : {}),
-              odooSyncedAt: new Date(),
-            },
-          });
-        }
+        const probe = await client.searchRead<{ id: number }>(
+          "product.product",
+          [["id", "=", produit.odooProductId]],
+          { fields: ["id"], limit: 1 },
+        );
+        stillExists = probe.length > 0;
       } catch {
-        // Lecture best-effort.
+        // Erreur de communication → on suppose qu'il existe et on
+        // tentera le write (qui échouera proprement si c'est cassé).
       }
-      return produit.odooProductId;
+
+      if (!stillExists) {
+        this.logger.log(
+          `Produit ${produit.id} : odooProductId #${produit.odooProductId} orphelin (supprimé côté Odoo) → reset local et re-création.`,
+        );
+        await this.prisma.produit.update({
+          where: { id: produit.id },
+          data: { odooProductId: null, odooSyncedAt: null },
+        });
+        produit.odooProductId = null;
+        // Tombe en bas dans la branche de création.
+      } else {
+        const uomId = await this.resolveUomId(client, tenantId, produit.unite);
+        const taxesPayload = await this.buildTaxesPayload(client, tenantId, produit.tauxTvaPercent);
+        await client
+          .write("product.product", [produit.odooProductId], {
+            name: produit.libelle,
+            list_price: produit.prixVenteCHF ? Number(produit.prixVenteCHF) : 0,
+            default_code: false,
+            ...(uomId ? { uom_id: uomId } : {}),
+            ...(taxesPayload ?? {}),
+          })
+          .catch((err) =>
+            this.logger.warn(
+              `Sync push (prod #${produit.odooProductId}) échoué : ${err instanceof Error ? err.message : err}`,
+            ),
+          );
+        try {
+          const probe = await client.searchRead<{
+            id: number;
+            name?: string;
+            list_price?: number;
+          }>("product.product", [["id", "=", produit.odooProductId]], {
+            fields: ["id", "name", "list_price"],
+            limit: 1,
+          });
+          const o = probe[0];
+          if (o) {
+            await this.prisma.produit.update({
+              where: { id: produit.id },
+              data: {
+                ...(o.name ? { libelle: o.name } : {}),
+                ...(typeof o.list_price === "number"
+                  ? { prixVenteCHF: o.list_price > 0 ? o.list_price : null }
+                  : {}),
+                odooSyncedAt: new Date(),
+              },
+            });
+          }
+        } catch {
+          // Lecture best-effort.
+        }
+        return produit.odooProductId;
+      }
     }
 
     // Dédup : si on a déjà un produit perso avec même libellé côté

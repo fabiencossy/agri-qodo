@@ -136,6 +136,27 @@ export function usePushProduitOdoo() {
   });
 }
 
+export interface PushAllProduitsResult {
+  total: number;
+  pushed: number;
+  skipped: number;
+  errors: Array<{ produitId: string; libelle: string; raison: string }>;
+}
+
+/**
+ * Pousse tous les produits actifs visibles vers Odoo (Fabien
+ * 2026-05-14 image 59 : tout re-pousser après reset Odoo).
+ */
+export function usePushAllProduitsOdoo() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api<PushAllProduitsResult>("/api/produits/push-all-odoo", { method: "POST" }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: KEY });
+    },
+  });
+}
+
 export const CATEGORIE_LABEL: Record<ProduitCategorie, string> = {
   SEMENCE: "Semences",
   ENGRAIS_MINERAL: "Engrais minéraux",

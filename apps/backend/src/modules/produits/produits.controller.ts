@@ -72,6 +72,15 @@ export class ProduitsController {
     return this.odooSync.ensureOdooProduct(id).then((odooProductId) => ({ odooProductId }));
   }
 
+  @Post("push-all-odoo")
+  @ApiOperation({
+    summary:
+      "Pousse tous les produits visibles (globaux + perso du tenant) vers Odoo en best-effort. Crée les manquants côté Odoo et met à jour ceux déjà liés. Retourne {total, pushed, errors}.",
+  })
+  pushAllOdoo() {
+    return this.odooSync.pushAllProduits();
+  }
+
   @Patch(":id")
   @ApiOperation({
     summary: "Met à jour un produit perso. Les produits globaux sont read-only.",

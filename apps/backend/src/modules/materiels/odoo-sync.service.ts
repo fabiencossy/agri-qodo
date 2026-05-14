@@ -355,6 +355,61 @@ export class MaterielsOdooSyncService {
    * construire les sale.order.line. Si l'admin n'a pas pré-sync les
    * services depuis Odoo, on crée à la volée.
    */
+  /**
+   * Pousse en masse tous les matériels visibles du tenant vers Odoo.
+   * Variante Matériel de `pushAllProduits` (cf produits/odoo-sync).
+   */
+  async pushAllMateriels(): Promise<{
+    total: number;
+    pushed: number;
+    skipped: number;
+    errors: Array<{ materielId: string; libelle: string; raison: string }>;
+  }> {
+    this.assertAdmin();
+    const { tenantId } = this.tenantContext.get();
+
+    const all = await this.prisma.materiel.findMany({
+      where: {
+        actif: true,
+        OR: [{ tenantId: null }, { tenantId }],
+      },
+      select: { id: true, libelle: true, tenantId: true, odooProductId: true },
+      orderBy: { libelle: "asc" },
+    });
+
+    const persoLibelles = new Set(
+      all.filter((m) => m.tenantId === tenantId).map((m) => m.libelle.toLowerCase().trim()),
+    );
+    const toPush = all.filter(
+      (m) => m.tenantId === tenantId || !persoLibelles.has(m.libelle.toLowerCase().trim()),
+    );
+
+    const result = {
+      total: toPush.length,
+      pushed: 0,
+      skipped: 0,
+      errors: [] as Array<{ materielId: string; libelle: string; raison: string }>,
+    };
+
+    for (const materiel of toPush) {
+      try {
+        await this.ensureOdooProduct(materiel.id);
+        result.pushed++;
+      } catch (err) {
+        result.errors.push({
+          materielId: materiel.id,
+          libelle: materiel.libelle,
+          raison: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    this.logger.log(
+      `Push all matériels terminé pour tenant ${tenantId} : ${result.pushed}/${result.total} poussés (${result.errors.length} erreurs).`,
+    );
+    return result;
+  }
+
   async ensureOdooProduct(materielId: string): Promise<number> {
     const { tenantId } = this.tenantContext.get();
     const materiel = await this.prisma.materiel.findFirst({
@@ -371,55 +426,85 @@ export class MaterielsOdooSyncService {
     // taxes, etc.).
     if (materiel.odooProductId) {
       const client = await this.odooClientManager.forTenant(tenantId);
-      const uomId = await this.resolveUomId(client, tenantId, materiel.unite);
-      const taxesPayload = await this.buildTaxesPayload(client, tenantId, materiel.tauxTvaPercent);
-      // Push local → Odoo (best-effort). default_code mis à false
-      // pour effacer la référence interne AQ-... visible côté Odoo.
-      // uom_po_id même valeur que uom_id sinon Odoo refuse parfois
-      // le write d'uom_id seul (incohérence cat. unité achat/vente).
-      await client
-        .write("product.product", [materiel.odooProductId], {
-          name: materiel.libelle,
-          list_price: materiel.prixUnitaireCHF ? Number(materiel.prixUnitaireCHF) : 0,
-          default_code: false,
-          expense_policy: "no",
-          ...(uomId ? { uom_id: uomId, uom_po_id: uomId } : {}),
-          ...(taxesPayload ?? {}),
-        })
-        .catch((err) =>
-          this.logger.warn(
-            `Sync push (mat #${materiel.odooProductId}) échoué : ${err instanceof Error ? err.message : err}`,
-          ),
-        );
-      // Pull Odoo → local : on relit list_price, name, uom pour
-      // refléter ce qu'Odoo a finalement enregistré (taxes éventuelles
-      // sur le prix HT/TTC, validation Odoo). Best-effort.
+
+      // Fabien 2026-05-14 : si Odoo a supprimé le produit, on retombe
+      // sur la branche de création au lieu d'écrire dans le vide.
+      let stillExists = true;
       try {
-        const probe = await client.searchRead<{
-          id: number;
-          name?: string;
-          list_price?: number;
-        }>("product.product", [["id", "=", materiel.odooProductId]], {
-          fields: ["id", "name", "list_price"],
-          limit: 1,
-        });
-        const o = probe[0];
-        if (o) {
-          await this.prisma.materiel.update({
-            where: { id: materiel.id },
-            data: {
-              ...(o.name ? { libelle: o.name } : {}),
-              ...(typeof o.list_price === "number"
-                ? { prixUnitaireCHF: o.list_price > 0 ? o.list_price : null }
-                : {}),
-              odooSyncedAt: new Date(),
-            },
-          });
-        }
+        const probe = await client.searchRead<{ id: number }>(
+          "product.product",
+          [["id", "=", materiel.odooProductId]],
+          { fields: ["id"], limit: 1 },
+        );
+        stillExists = probe.length > 0;
       } catch {
-        // Lecture best-effort.
+        // Best-effort.
       }
-      return materiel.odooProductId;
+      if (!stillExists) {
+        this.logger.log(
+          `Matériel ${materiel.id} : odooProductId #${materiel.odooProductId} orphelin (supprimé côté Odoo) → reset local et re-création.`,
+        );
+        await this.prisma.materiel.update({
+          where: { id: materiel.id },
+          data: { odooProductId: null, odooSyncedAt: null },
+        });
+        materiel.odooProductId = null;
+        // Tombe dans la branche de création plus bas.
+      } else {
+        const uomId = await this.resolveUomId(client, tenantId, materiel.unite);
+        const taxesPayload = await this.buildTaxesPayload(
+          client,
+          tenantId,
+          materiel.tauxTvaPercent,
+        );
+        // Push local → Odoo (best-effort). default_code mis à false
+        // pour effacer la référence interne AQ-... visible côté Odoo.
+        // uom_po_id même valeur que uom_id sinon Odoo refuse parfois
+        // le write d'uom_id seul (incohérence cat. unité achat/vente).
+        await client
+          .write("product.product", [materiel.odooProductId], {
+            name: materiel.libelle,
+            list_price: materiel.prixUnitaireCHF ? Number(materiel.prixUnitaireCHF) : 0,
+            default_code: false,
+            expense_policy: "no",
+            ...(uomId ? { uom_id: uomId, uom_po_id: uomId } : {}),
+            ...(taxesPayload ?? {}),
+          })
+          .catch((err) =>
+            this.logger.warn(
+              `Sync push (mat #${materiel.odooProductId}) échoué : ${err instanceof Error ? err.message : err}`,
+            ),
+          );
+        // Pull Odoo → local : on relit list_price, name, uom pour
+        // refléter ce qu'Odoo a finalement enregistré (taxes éventuelles
+        // sur le prix HT/TTC, validation Odoo). Best-effort.
+        try {
+          const probe = await client.searchRead<{
+            id: number;
+            name?: string;
+            list_price?: number;
+          }>("product.product", [["id", "=", materiel.odooProductId]], {
+            fields: ["id", "name", "list_price"],
+            limit: 1,
+          });
+          const o = probe[0];
+          if (o) {
+            await this.prisma.materiel.update({
+              where: { id: materiel.id },
+              data: {
+                ...(o.name ? { libelle: o.name } : {}),
+                ...(typeof o.list_price === "number"
+                  ? { prixUnitaireCHF: o.list_price > 0 ? o.list_price : null }
+                  : {}),
+                odooSyncedAt: new Date(),
+              },
+            });
+          }
+        } catch {
+          // Lecture best-effort.
+        }
+        return materiel.odooProductId;
+      }
     }
 
     // Dédup #1 : si on a déjà un matériel perso pour le même libellé

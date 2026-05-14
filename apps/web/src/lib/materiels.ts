@@ -111,6 +111,25 @@ export function usePushMaterielOdoo() {
   });
 }
 
+export interface PushAllMaterielsResult {
+  total: number;
+  pushed: number;
+  skipped: number;
+  errors: Array<{ materielId: string; libelle: string; raison: string }>;
+}
+
+/** Pousse tous les matériels actifs vers Odoo. */
+export function usePushAllMaterielsOdoo() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      api<PushAllMaterielsResult>("/api/materiels/push-all-odoo", { method: "POST" }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: KEY });
+    },
+  });
+}
+
 export const MATERIEL_CATEGORIE_LABEL: Record<MaterielCategorie, string> = {
   TRAVAIL_DU_SOL: "Travail du sol",
   SEMIS: "Semis & plantation",
