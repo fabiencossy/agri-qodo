@@ -34,10 +34,10 @@ interface NavLink {
 
 const NAVIGATION: NavLink[] = [
   { href: "/app", label: "Accueil", icon: Home },
-  { href: "/parcelles", label: "Parcelles", icon: MapPin },
+  { href: "/planning", label: "Planning", icon: CalendarDays },
   { href: "/activites", label: "Carnet des champs", icon: Sprout },
   { href: "/travaux", label: "Travaux", icon: Tractor },
-  { href: "/planning", label: "Planning", icon: CalendarDays },
+  { href: "/parcelles", label: "Parcelles", icon: MapPin },
   { href: "/mes-heures", label: "Mes heures", icon: Clock },
   // Entrée "Présences" retirée 2026-05-14 — la création de présence
   // se fait désormais via /mes-heures (Fabien : "abolir l'onglet

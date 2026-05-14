@@ -45,8 +45,12 @@ interface OdooSaleOrderLineCreate {
   name?: string;
   product_uom_qty?: number;
   price_unit?: number;
-  /** Unité de mesure Odoo (uom.uom). Si absent, Odoo prend l'unité par défaut du produit. */
-  product_uom?: number;
+  /**
+   * Unité de mesure Odoo (uom.uom). Si absent, Odoo prend l'unité par
+   * défaut du produit. Renommé en `product_uom_id` à partir d'Odoo 19
+   * (avant : `product_uom`).
+   */
+  product_uom_id?: number;
   /**
    * "line_section" pour un titre de section, "line_note" pour une note
    * libre. Si renseigné, Odoo n'attend ni product_id ni quantité —
@@ -336,7 +340,7 @@ export class OdooPushService {
       // vers un uom.uom Odoo. Si non résolu, Odoo prend l'unité par
       // défaut du produit (souvent "Unité(s)" — pas idéal pour des ha).
       const uomId = await this.resolveUomId(client, tenantId, lp.unite);
-      if (uomId) line.product_uom = uomId;
+      if (uomId) line.product_uom_id = uomId;
       orderLines.push(line);
       // Routage FSM : seuls les produits "biens" (consu/product) — pas
       // les services — alimentent la future industry.fsm.task. Si
@@ -381,12 +385,14 @@ export class OdooPushService {
         order_line: orderLines.map((l) => [0, 0, l]),
       });
     } catch (err) {
+      const odooMsg = err instanceof Error ? err.message : String(err);
       this.logger.error(
-        `Push Odoo : sale.order create échoué pour travail ${travailId} : ${err instanceof Error ? err.message : err}`,
+        `Push Odoo : sale.order create échoué pour travail ${travailId} : ${odooMsg}`,
       );
-      throw new ServiceUnavailableException(
-        "Création du devis Odoo échouée. Vérifie les permissions du compte API et la config TVA.",
-      );
+      // On remonte le vrai message Odoo (Invalid field X, permission
+      // denied, etc.) au lieu d'un message générique — sinon Fabien
+      // voit "503 indisponible" alors que c'est un bug de schéma.
+      throw new ServiceUnavailableException(`Création du devis Odoo échouée : ${odooMsg}`);
     }
 
     // 4. Mémorisation côté local ----------------------------------------

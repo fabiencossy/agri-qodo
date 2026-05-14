@@ -2,6 +2,7 @@
 
 import {
   Beef,
+  CalendarDays,
   ClipboardList,
   Clock,
   type LucideIcon,
@@ -9,6 +10,7 @@ import {
   Sprout,
   Tractor,
   TrendingUp,
+  Wrench,
 } from "lucide-react";
 import Link from "next/link";
 import type { Route } from "next";
@@ -97,6 +99,53 @@ export default function HomePage() {
   });
   const tiersSemaine = travauxSemaineList.filter((t) => !t.interne).length;
   const interneSemaine = travauxSemaineList.filter((t) => t.interne).length;
+
+  // Vue Planning du dashboard (Fabien 2026-05-14, image 27) : items
+  // ayant une datePrevue dans la fenêtre [maintenant ; +7 jours],
+  // triés par date croissante, 5 premiers affichés.
+  type PlanningPreview = {
+    kind: "CARNET" | "TIERS" | "INTERNE";
+    id: string;
+    datePrevue: Date;
+    titre: string;
+    sousTitre: string;
+    href: string;
+  };
+  const now = new Date();
+  const horizon = new Date(now);
+  horizon.setDate(horizon.getDate() + 7);
+  horizon.setHours(23, 59, 59, 999);
+  const planningItems: PlanningPreview[] = [
+    ...(interventions.data ?? [])
+      .filter((iv) => iv.datePrevue)
+      .map((iv) => {
+        const d = new Date(iv.datePrevue as unknown as string);
+        return {
+          kind: "CARNET" as const,
+          id: iv.id,
+          datePrevue: d,
+          titre: iv.type,
+          sousTitre: `${iv.parcelle?.nom ?? "—"}${iv.produit ? ` · ${iv.produit}` : ""}`,
+          href: `/interventions/new?edit=${iv.id}`,
+        };
+      }),
+    ...(travaux.data ?? [])
+      .filter((t) => t.datePrevue)
+      .map((t) => {
+        const d = new Date(t.datePrevue as unknown as string);
+        return {
+          kind: t.interne ? ("INTERNE" as const) : ("TIERS" as const),
+          id: t.id,
+          datePrevue: d,
+          titre: t.titre,
+          sousTitre: t.partenaire?.nom ?? (t.interne ? "Interne" : "—"),
+          href: `/travaux/new?edit=${t.id}`,
+        };
+      }),
+  ]
+    .filter((it) => it.datePrevue >= now && it.datePrevue <= horizon)
+    .sort((a, b) => a.datePrevue.getTime() - b.datePrevue.getTime())
+    .slice(0, 5);
   const heuresLabel = `${Math.floor(minutesSemaine / 60)}h${String(minutesSemaine % 60).padStart(2, "0")}`;
   const showHours =
     tenantDetail.data?.heuresVisiblesCarnet !== false ||
@@ -201,6 +250,71 @@ export default function HomePage() {
             sub="Journal pâturage"
             color="bg-sky-50 text-sky-700"
           />
+        </div>
+      </section>
+
+      {/* Section : Planning des prochains jours (Fabien 2026-05-14, image 27) */}
+      <section className="mb-8">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-foreground/50">
+            Planning des 7 prochains jours
+          </h2>
+          <Link href="/planning" className="text-xs font-medium text-green hover:underline">
+            Voir tout →
+          </Link>
+        </div>
+        <div className="rounded-2xl border border-border bg-background">
+          {planningItems.length > 0 ? (
+            <ul className="divide-y divide-border">
+              {planningItems.map((it) => {
+                const Icon = it.kind === "CARNET" ? Sprout : it.kind === "TIERS" ? Tractor : Wrench;
+                const iconColor =
+                  it.kind === "CARNET"
+                    ? "bg-emerald-50 text-emerald-700"
+                    : it.kind === "TIERS"
+                      ? "bg-purple-50 text-purple-700"
+                      : "bg-sky-50 text-sky-700";
+                return (
+                  <li key={`${it.kind}-${it.id}`}>
+                    <Link
+                      href={it.href as Route}
+                      className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-muted/30"
+                    >
+                      <span
+                        className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg ${iconColor}`}
+                      >
+                        <Icon className="h-4 w-4" />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium">{it.titre}</p>
+                        <p className="truncate text-xs text-foreground/50">{it.sousTitre}</p>
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <p className="text-xs font-medium text-foreground/70">
+                          {it.datePrevue.toLocaleDateString("fr-CH", {
+                            weekday: "short",
+                            day: "2-digit",
+                            month: "short",
+                          })}
+                        </p>
+                        <p className="font-mono text-xs text-foreground/50">
+                          {it.datePrevue.toLocaleTimeString("fr-CH", {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        </p>
+                      </div>
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <p className="flex items-center justify-center gap-2 p-6 text-center text-sm text-foreground/50">
+              <CalendarDays className="h-4 w-4" />
+              Rien de planifié sur les 7 prochains jours.
+            </p>
+          )}
         </div>
       </section>
 
