@@ -90,6 +90,16 @@ export class OdooProjectsController {
     const { tenantId } = this.tenantContext.get();
     return this.service.listProjects(tenantId);
   }
+
+  @Get("diagnose")
+  @ApiOperation({
+    summary:
+      "Diagnostic — pourquoi la liste des project.project est vide ? Distingue Odoo non configuré / erreur XML-RPC / aucun projet actif.",
+  })
+  diagnose() {
+    const { tenantId } = this.tenantContext.get();
+    return this.service.diagnoseProjects(tenantId);
+  }
 }
 
 @ApiTags("odoo-employees")
