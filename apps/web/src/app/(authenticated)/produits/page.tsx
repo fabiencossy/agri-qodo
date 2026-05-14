@@ -398,8 +398,9 @@ export default function ProduitsPage() {
             <div className="flex-1 text-sm">
               <p className="font-semibold text-amber-900">Synchronisation Odoo</p>
               <p className="mt-0.5 text-xs text-foreground/70">
-                Importe tous les <code className="font-mono">product.product</code> (biens et
-                services) depuis ton instance Odoo.
+                Sync auto toutes les 6h. Le bouton ci-contre déclenche une sync immédiate. Les
+                produits cochés &laquo; Ne pas synchroniser &raquo; dans leur fiche restent
+                intouchés.
               </p>
             </div>
             <Button

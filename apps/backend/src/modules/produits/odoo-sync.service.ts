@@ -47,16 +47,101 @@ function mapUnite(uomLabel: string | undefined): ProduitUnite {
   return ProduitUnite.KG;
 }
 
-function mapCategorie(categLabel: string | undefined): ProduitCategorie {
-  if (!categLabel) return ProduitCategorie.AUTRE;
-  const c = categLabel.toLowerCase();
-  if (c.includes("semence") || c.includes("seed")) return ProduitCategorie.SEMENCE;
-  if (c.includes("phyto") || c.includes("herbicide") || c.includes("fongicide"))
+/**
+ * Devine la catégorie d'un produit à partir de son nom et de sa
+ * catégorie Odoo. Beaucoup de catalogues Odoo n'ont pas de catégorie
+ * pertinente — on s'appuie d'abord sur le nom (qui contient des termes
+ * agricoles français), puis on retombe sur la catégorie Odoo si rien
+ * n'a matché.
+ *
+ * Décision Fabien 2026-05-14 image 58 : trier 376+ produits en un coup.
+ */
+function mapCategorie(
+  produitLabel: string | undefined,
+  categLabel: string | undefined,
+): ProduitCategorie {
+  const haystack = `${produitLabel ?? ""} ${categLabel ?? ""}`.toLowerCase();
+  if (!haystack.trim()) return ProduitCategorie.AUTRE;
+
+  // 1) Prestations agricoles à façon — souvent en première ligne dans
+  // les factures aux clients (bottelage, fauchage, etc.).
+  if (
+    /bottel|botelage|fauch|endain|ensil|press|enrubann|moisson|battage|labour à façon|labour facon|prestation/.test(
+      haystack,
+    )
+  ) {
+    return ProduitCategorie.PRESTATION;
+  }
+
+  // 2) Phyto — herbicide / fongicide / insecticide / régulateur.
+  if (
+    /phyto|herbicid|fongicid|insecticid|acaricid|molluscicid|nématicid|nematicid|défoliant|defoliant|régulateur|regulateur|adjuvant/.test(
+      haystack,
+    )
+  ) {
     return ProduitCategorie.PHYTO;
-  if (c.includes("organi") || c.includes("compost") || c.includes("fumier") || c.includes("lisier"))
+  }
+
+  // 3) Semences (avant engrais — certains "engrais de couverture" sont
+  // en fait des semences de couverts végétaux).
+  if (
+    /semence|semis|seed|plantule|plant|bouture|tubercule|graine de|graines de/.test(haystack) &&
+    !haystack.includes("plant.")
+  ) {
+    return ProduitCategorie.SEMENCE;
+  }
+
+  // 4) Engrais organiques : fumier, compost, lisier, digestat.
+  if (
+    /organi|compost|fumier|lisier|digestat|guano|sang séché|sang seche|corne broyée|corne broyee|tourteau|vinasse|amendement organique|matière organique|matiere organique/.test(
+      haystack,
+    )
+  ) {
     return ProduitCategorie.ENGRAIS_ORGANIQUE;
-  if (c.includes("engrais") || c.includes("fertili") || c.includes("npk"))
+  }
+
+  // 5) Engrais minéraux : NPK + nutriments + amendements minéraux.
+  if (
+    /engrais|fertili|npk|nitrate|ammonitrate|ammoniac|urée|uree|potass|phosphat|chaux|magnési|magnesi|sulfat|kainit|patentkali|soufre|soufré|soufre|micro-?nutriment|oligo-?élément|oligo-?element|amendement minéral|amendement mineral|n34|26-?14|18-?46/.test(
+      haystack,
+    )
+  ) {
     return ProduitCategorie.ENGRAIS_MINERAL;
+  }
+
+  // 6) Récolte (foin, paille, balles vendues).
+  if (/foin|paille|regain|botte|balle\b|round[- ]?bale|big[- ]?bale|enrubanné/.test(haystack)) {
+    return ProduitCategorie.RECOLTE;
+  }
+
+  // 7) Travail du sol (location / prestation outil).
+  if (
+    /labour|déchaumage|dechaumage|hersage|herse|charrue|fraise|griffon|décompactage|decompactage|sous-?solage|roulage/.test(
+      haystack,
+    )
+  ) {
+    return ProduitCategorie.TRAVAIL_SOL;
+  }
+
+  // 8) Irrigation.
+  if (/irrigation|arrosage|asperseur|goutte[- ]?à[- ]?goutte|enrouleur/.test(haystack)) {
+    return ProduitCategorie.IRRIGATION;
+  }
+
+  // 9) Carburants & lubrifiants.
+  if (/diesel|gasoil|essence|carburant|fioul|fuel|huile moteur|lubrifiant|graisse/.test(haystack)) {
+    return ProduitCategorie.CARBURANT;
+  }
+
+  // 10) Pièces matériel / consommables atelier.
+  if (
+    /pièce|piece|filtre|courroie|roulement|joint|boulon|écrou|ecrou|vis\b|soc|dent|cardan|pneu|chambre à air|chambre a air|outillage/.test(
+      haystack,
+    )
+  ) {
+    return ProduitCategorie.PIECES_MATERIEL;
+  }
+
   return ProduitCategorie.AUTRE;
 }
 
@@ -214,6 +299,17 @@ export class OdooSyncService {
   async syncProduits(): Promise<SyncOdooProduitsResult> {
     this.assertAdmin();
     const { tenantId } = this.tenantContext.get();
+    return this.syncProduitsForTenant(tenantId);
+  }
+
+  /**
+   * Variante de `syncProduits()` réservée au scheduler interne : prend
+   * `tenantId` en paramètre, ne consulte pas le tenantContext et ne
+   * vérifie pas le rôle. À ne JAMAIS exposer via HTTP — c'est l'appelant
+   * (cron service) qui garantit qu'on tourne dans un contexte
+   * d'administration système.
+   */
+  async syncProduitsForTenant(tenantId: string): Promise<SyncOdooProduitsResult> {
     const client = await this.odooClientManager.forTenant(tenantId);
 
     let rows: OdooProductRow[];
@@ -256,7 +352,7 @@ export class OdooSyncService {
         const uniteLabel = row.uom_id ? row.uom_id[1] : undefined;
         const categLabel = row.categ_id ? row.categ_id[1] : undefined;
         const unite = mapUnite(uniteLabel);
-        const categorie = mapCategorie(categLabel);
+        const categorie = mapCategorie(row.name, categLabel);
 
         const data = {
           libelle: row.name.trim() || `Produit Odoo #${row.id}`,
@@ -270,10 +366,22 @@ export class OdooSyncService {
 
         const existing = await this.prisma.produit.findFirst({
           where: { tenantId, odooProductId: row.id },
-          select: { id: true },
+          select: { id: true, excludeFromOdooSync: true },
         });
 
         if (existing) {
+          // Fabien 2026-05-14 image 58 : si l'utilisateur a marqué ce
+          // produit "ne pas synchroniser", on conserve sa version locale
+          // (catégorie, libellé, prix manuels) et on remet juste à jour
+          // le timestamp pour tracer la tentative.
+          if (existing.excludeFromOdooSync) {
+            await this.prisma.produit.update({
+              where: { id: existing.id },
+              data: { odooSyncedAt: now, actif: row.active },
+            });
+            result.skipped++;
+            continue;
+          }
           await this.prisma.produit.update({
             where: { id: existing.id },
             data,

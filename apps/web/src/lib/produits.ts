@@ -41,6 +41,8 @@ export interface Produit {
   odooProductId: number | null;
   /** ISO datetime de la dernière sync Odoo. */
   odooSyncedAt: string | null;
+  /** Si true, le produit est ignoré par les sync Odoo (modifs locales préservées). */
+  excludeFromOdooSync: boolean;
 }
 
 export interface CreateProduitInput {
@@ -56,6 +58,7 @@ export interface CreateProduitInput {
   prixVenteCHF?: number;
   tauxTvaPercent?: number;
   notes?: string;
+  excludeFromOdooSync?: boolean;
 }
 
 const KEY = ["produits"] as const;

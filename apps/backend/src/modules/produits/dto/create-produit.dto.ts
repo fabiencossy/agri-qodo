@@ -100,4 +100,13 @@ export class CreateProduitDto {
   @IsOptional()
   @IsBoolean()
   actif?: boolean;
+
+  @ApiPropertyOptional({
+    default: false,
+    description:
+      "Si true, ce produit est ignoré par la sync Odoo automatique/manuelle. Permet de conserver des modifications locales (catégorie, libellé, prix) sans qu'elles soient écrasées.",
+  })
+  @IsOptional()
+  @IsBoolean()
+  excludeFromOdooSync?: boolean;
 }

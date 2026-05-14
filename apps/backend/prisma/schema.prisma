@@ -884,6 +884,10 @@ model Produit {
   // (upsert sur (tenantId, odooProductId)).
   odooProductId   Int?             @map("odoo_product_id")
   odooSyncedAt    DateTime?        @map("odoo_synced_at")
+  // Fabien 2026-05-14 image 58 : permet d'exclure ce produit des sync
+  // Odoo automatiques/manuelles. Les modifications locales (catégorie
+  // forcée, libellé renommé, prix custom) ne sont alors plus écrasées.
+  excludeFromOdooSync Boolean      @default(false) @map("exclude_from_odoo_sync")
   notes           String?
   actif           Boolean          @default(true)
   createdAt       DateTime         @default(now()) @map("created_at")
