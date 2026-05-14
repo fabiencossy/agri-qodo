@@ -385,7 +385,12 @@ export class TravauxService {
     const { tenantId } = this.tenantContext.get();
     const travail = await this.prisma.travail.findFirst({
       where: { id, tenantId },
-      select: { id: true, statut: true, odooSaleOrderId: true },
+      select: {
+        id: true,
+        statut: true,
+        odooSaleOrderId: true,
+        odooTaskId: true,
+      },
     });
     if (!travail) throw new NotFoundException("Travail introuvable");
     // Refuse la suppression seulement si le travail est facturé ET
@@ -407,6 +412,21 @@ export class TravauxService {
       await tx.presence.deleteMany({ where: { travailId: id, autoFromHeures: true } });
       await tx.travail.delete({ where: { id } });
     });
+
+    // Propagation Odoo : unlink sale.order + project.task + industry.fsm.task
+    // associés (Fabien 2026-05-14 : "j'ai supprimé dans l'app mais
+    // pas dans Odoo"). Best-effort — si Odoo down ou record déjà
+    // unlinké à la main, on log et on continue (la suppression locale
+    // est déjà commitée).
+    if (travail.odooSaleOrderId || travail.odooTaskId) {
+      this.odooPush
+        .tryUnlinkTravailOdoo(tenantId, {
+          odooSaleOrderId: travail.odooSaleOrderId,
+          odooTaskId: travail.odooTaskId,
+          odooFsmTaskId: null,
+        })
+        .catch(() => undefined);
+    }
   }
 
   // ---- helpers ---------------------------------------------------------
