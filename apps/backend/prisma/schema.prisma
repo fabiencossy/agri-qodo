@@ -247,6 +247,14 @@ model Exploitation {
   // Version Odoo détectée à la dernière connexion ("19.0+e", "20.0", …).
   odooVersion         String?   @map("odoo_version")
   odooConnectedAt     DateTime? @map("odoo_connected_at")
+  // Webhook temps réel Odoo → Agri Qodo (Fabien 2026-05-14). Le token
+  // est partagé avec Odoo dans le code python de ir.actions.server,
+  // côté Odoo, et envoyé en header sur chaque webhook entrant. Permet
+  // d'authentifier l'appelant + de router vers le bon tenant.
+  odooWebhookToken     String?   @map("odoo_webhook_token")
+  // Date d'activation du webhook (config base.automation côté Odoo
+  // posée avec succès). Null = webhook pas encore activé pour ce tenant.
+  odooWebhookEnabledAt DateTime? @map("odoo_webhook_enabled_at")
 
   // Opt-in annuaire : si true, l'exploitation est trouvable par recherche
   // nom/adresse depuis la page Partenaires d'autres tenants (cf §11 spec).

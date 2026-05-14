@@ -1,6 +1,6 @@
 "use client";
 
-import { Package, Plus, RefreshCw, Trash2, Upload, Wrench, X } from "lucide-react";
+import { Package, Plus, RefreshCw, Trash2, Upload, Wrench, X, Zap, ZapOff } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Breadcrumb } from "@/components/app/breadcrumb";
 import { PageHeader } from "@/components/app/page-header";
@@ -24,6 +24,11 @@ import {
   useSyncMaterielsOdoo,
 } from "@/lib/materiels";
 import { useOdooConnected } from "@/lib/odoo-config";
+import {
+  useDisableOdooWebhook,
+  useEnableOdooWebhook,
+  useOdooWebhookStatus,
+} from "@/lib/odoo-webhooks";
 import {
   CATEGORIE_LABEL,
   type Produit,
@@ -95,9 +100,45 @@ export default function ProduitsPage() {
   const syncMaterielsOdoo = useSyncMaterielsOdoo();
   const pushAllProduits = usePushAllProduitsOdoo();
   const pushAllMateriels = usePushAllMaterielsOdoo();
+  const webhookStatus = useOdooWebhookStatus();
+  const enableWebhook = useEnableOdooWebhook();
+  const disableWebhook = useDisableOdooWebhook();
   const me = useCurrentUser();
   const odoo = useOdooConnected();
   const isAdmin = me.data?.role === "OWNER" || me.data?.role === "COMPTABLE";
+
+  const handleToggleWebhook = async () => {
+    if (webhookStatus.data?.enabled) {
+      if (
+        !confirm(
+          "Désactiver la sync temps réel ? Les changements Odoo arriveront avec un délai (cron 6h).",
+        )
+      )
+        return;
+      try {
+        await disableWebhook.mutateAsync();
+      } catch (err) {
+        alert(`Erreur : ${err instanceof Error ? err.message : String(err)}`);
+      }
+    } else {
+      if (
+        !confirm(
+          "Activer la sync temps réel ?\n\nAgri Qodo va configurer automatiquement les automatisations Odoo (3 base.automation + 1 ir.actions.server) pour qu'Odoo notifie Agri Qodo à chaque création/modification/suppression de produit.",
+        )
+      )
+        return;
+      try {
+        const r = await enableWebhook.mutateAsync();
+        alert(
+          `Sync temps réel activée !\n\nOdoo va maintenant POST sur :\n${r.publicUrl}\n\nToken : ${r.tokenPreview} (caché ensuite).`,
+        );
+      } catch (err) {
+        alert(
+          `Erreur lors de l'activation : ${err instanceof Error ? err.message : String(err)}\n\nVérifie que ton utilisateur Odoo a les droits sur base.automation (groupe "Administration / Settings").`,
+        );
+      }
+    }
+  };
 
   const handleSyncAllOdoo = () => {
     setSyncResult(null);
@@ -474,6 +515,34 @@ export default function ProduitsPage() {
                   }`}
                 />
                 {pushAllProduits.isPending || pushAllMateriels.isPending ? "Push…" : "Pousser tout"}
+              </Button>
+              <Button
+                onClick={handleToggleWebhook}
+                disabled={enableWebhook.isPending || disableWebhook.isPending}
+                size="sm"
+                variant="secondary"
+                className={
+                  webhookStatus.data?.enabled
+                    ? "border border-green/40 bg-green/10 text-green-dark hover:bg-green/20"
+                    : "border border-amber-700/40 bg-white text-amber-900 hover:bg-amber-100"
+                }
+                title={
+                  webhookStatus.data?.enabled
+                    ? "Sync temps réel active — clique pour désactiver."
+                    : "Active la sync temps réel via webhooks Odoo."
+                }
+              >
+                {webhookStatus.data?.enabled ? (
+                  <>
+                    <Zap className="mr-1 h-4 w-4" />
+                    Temps réel actif
+                  </>
+                ) : (
+                  <>
+                    <ZapOff className="mr-1 h-4 w-4" />
+                    {enableWebhook.isPending ? "Activation…" : "Activer temps réel"}
+                  </>
+                )}
               </Button>
             </div>
           </div>
