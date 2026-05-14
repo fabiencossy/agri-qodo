@@ -162,11 +162,19 @@ export function useCreateTravail() {
   });
 }
 
+/** Réponse PATCH /api/travaux/:id — Travail + push Odoo result éventuel. */
+export type UpdateTravailResponse = Travail & {
+  /** Résultat du push Odoo déclenché automatiquement lors de l'update,
+   *  si le travail n'avait pas encore été poussé et avait au moins
+   *  une ligne. null si pas push tenté ou push échoué. */
+  lastPushResult: PushTravailResult | null;
+};
+
 export function useUpdateTravail() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, ...input }: CreateTravailInput & { id: string }) =>
-      api<Travail>(`/api/travaux/${id}`, { method: "PATCH", body: input }),
+      api<UpdateTravailResponse>(`/api/travaux/${id}`, { method: "PATCH", body: input }),
     onSuccess: (t) => {
       void qc.invalidateQueries({ queryKey: KEY });
       void qc.invalidateQueries({ queryKey: ["travaux", t.id] });
