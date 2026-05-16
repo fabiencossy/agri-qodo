@@ -11,7 +11,18 @@ import RHLayout from './modules/rh/RHLayout';
 import MesHeuresPage from './modules/rh/MesHeuresPage';
 import SaisirPresencePage from './modules/rh/SaisirPresencePage';
 import MesCongesPage from './modules/rh/MesCongesPage';
-import ParametresPage from './modules/parametres/ParametresPage';
+import ParametresLayout from './modules/parametres/ParametresLayout';
+import FumureExploitationPage from './modules/fumure/FumureExploitationPage';
+import { ExploitationSection } from './modules/parametres/sections/ExploitationSection';
+import { UtilisateursSection } from './modules/parametres/sections/UtilisateursSection';
+import { UtilisateurDetailPage } from './modules/parametres/sections/UtilisateurDetailPage';
+import { PreferencesSection } from './modules/parametres/sections/PreferencesSection';
+import { CulturesSection } from './modules/parametres/sections/CulturesSection';
+import { ProduitsSection } from './modules/parametres/sections/ProduitsSection';
+import { CheptelSection } from './modules/parametres/sections/CheptelSection';
+import { TravauxConfigSection } from './modules/parametres/sections/TravauxConfigSection';
+import { OdooSection } from './modules/parametres/sections/OdooSection';
+import { MeteoSection } from './modules/parametres/sections/MeteoSection';
 import LoginPage from './modules/auth/LoginPage';
 import ResetPasswordPage from './modules/auth/ResetPasswordPage';
 import AcceptInvitePage from './modules/auth/AcceptInvitePage';
@@ -106,6 +117,7 @@ export default function App() {
           <Route path="/carnet" element={<CarnetPage />} />
           <Route path="/travaux" element={<TravauxPage />} />
           <Route path="/troupeau" element={<TroupeauPage />} />
+          <Route path="/fumure" element={<FumureExploitationPage />} />
 
           <Route path="/rh" element={<RHLayout />}>
             <Route index element={<Navigate to="/rh/heures" replace />} />
@@ -114,7 +126,19 @@ export default function App() {
             <Route path="conges" element={<MesCongesPage />} />
           </Route>
 
-          <Route path="/parametres" element={<ParametresPage />} />
+          <Route path="/parametres" element={<ParametresLayout />}>
+            <Route index element={<Navigate to="/parametres/exploitation" replace />} />
+            <Route path="exploitation" element={<ExploitationSection />} />
+            <Route path="utilisateurs" element={<UtilisateursSection />} />
+            <Route path="utilisateurs/:id" element={<UtilisateurDetailPage />} />
+            <Route path="preferences" element={<PreferencesSection />} />
+            <Route path="cultures" element={<CulturesSection />} />
+            <Route path="produits" element={<ProduitsSection />} />
+            <Route path="cheptel" element={<CheptelSection />} />
+            <Route path="travaux" element={<TravauxConfigSection />} />
+            <Route path="odoo" element={<OdooSection />} />
+            <Route path="meteo" element={<MeteoSection />} />
+          </Route>
         </Route>
 
         <Route path="*" element={<Navigate to="/" replace />} />

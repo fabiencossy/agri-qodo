@@ -34,7 +34,8 @@ NewagriQodo/
 | **Session 3 (2026-05-16)** — Nettoyage docs, hooks Claude Code, agents, store partagé | ✅ |
 | **Session 3 (suite)** — Module Carnet des champs (interventions, fumure réelle base) | ✅ |
 | **Session 3 (suite)** — Module Fumure OEngrais (palier 2), onglets parcelle, stats, paramètres CRUD | ✅ |
-| **Phase 3** — Intégration Odoo, dialog editing parcelle existante | À venir |
+| **Session 4 (2026-05-16)** — Paramètres en layout 2 colonnes, droits utilisateurs, modules Troupeau + Travaux MVP, Suisse-Bilanz, mapping Odoo FSM via étiquettes | ✅ |
+| **Phase 3** — Sync Odoo XML-RPC (push tasks FSM / sale.order / timesheets), dialog editing parcelle existante | À venir |
 
 ## Modules implémentés
 
@@ -81,10 +82,18 @@ NewagriQodo/
 - Cards **N / P / K cliquables** → drawer détail (`FumureDrawer`) : besoin/apports/solde, historique chronologique des apports, fenêtres BBCH conseillées, bouton "Ajouter un apport" → ouvre InterventionForm en mode fertilisation
 - Reste à apporter **décomposé par élément** (plus de total flou)
 
-### Page Paramètres (`/parametres`) — CRUD
-- **Onglet Utilisateurs** : liste avec avatar coloré + édition/suppression + bouton "+ Nouvel utilisateur" → `UserEditModal` (nom, email, rôle Admin/Editor/Viewer, couleur avatar)
-- **Onglet Catalogue produits** : filtrable par type (phyto/engrais/semences) + édition/suppression + bouton "+ Nouveau produit" → `ProductEditModal` (champs adaptés au type : n° OFAG pour phyto, composition N/P/K pour engrais, variété pour semence)
-- **Onglet Sync Odoo** : à venir Phase 3
+### Page Paramètres (`/parametres`) — layout 2 colonnes style Odoo (session 4)
+- **Sidebar gauche** : 3 groupes (Général / Données de référence / Intégrations) avec 9 sections — `parametres.sections.tsx` source de vérité
+- **Routes nestées** : `/parametres/{exploitation,utilisateurs,utilisateurs/:id,preferences,cultures,produits,cheptel,travaux,odoo,meteo}`
+- **Exploitation** : édition farm (nom, localité, n° cantonal, surface, notes)
+- **Utilisateurs** : liste + recherche + filtre archivés + détail (`UtilisateurDetailPage` style Odoo : Informations / Accès par module / Synchronisation Odoo avec étiquettes Field Service)
+- **Préférences** : langue, format date, devise, unités, notifications (stocké localStorage via `preferences.store`)
+- **Cultures** : catalogue Agridéa lecture seule, recherche + filtre catégorie
+- **Catalogue produits** : phyto/engrais/semences, CRUD via `ProductEditModal`
+- **Cheptel** : référentiel 21 catégories animales (DBF Agroscope 2017) + récap effectifs Darval
+- **Travaux pour tiers** : catalogue 21 prestations (tarifs Agridéa 2024) + CRUD clients
+- **Intégration Odoo** : XML-RPC settings + mapping 6 entités + audit Mapping employés ↔ étiquettes FSM
+- **MétéoSuisse** : settings station + auto-fill météo intervention (Phase 3)
 
 ### Carnet des champs (`/carnet`)
 - Modèle : **interventions datées** par parcelle, 9 catégories (semis, fertilisation, phyto, travail du sol, travaux culturaux, récolte, observation, irrigation, autre).
@@ -98,9 +107,62 @@ NewagriQodo/
 - Section "Carnet des champs" intégrée dans `ParcelleDetailPage` : 8 dernières interventions + bouton "Voir le carnet complet" (→ `/carnet?parcel=ID`).
 - FAB ParcelleDetailPage → ouvre `InterventionForm` (avec parcelle verrouillée), pas plus d'`alert()`.
 
+### Troupeau (`/troupeau`) — session 4
+- Modèle simple : **effectifs annuels moyens par catégorie**, pas d'animaux individuels (Phase 3 = import BDTA).
+- Catalogue **21 catégories** (`livestock.catalog.ts`) selon DBF Agroscope 2017 / OEngrais 2024 : bovins laitiers (3 niveaux production), allaitants, jeunes, ovins, caprins, porcins, équins, volailles.
+- Pour chaque catégorie : UGB/tête, excrétion N/P₂O₅/K₂O kg/an, volume effluents m³ ou t/an, type effluent (lisier/fumier-frais/composté/fientes).
+- 2 vues : Table (groupée par espèce, cliquable entière) / Dashboard (KPIs + production effluents par type).
+- Effectifs Darval mocks : 42 vaches laitières, 28 génisses, 12 jeunes, 80 poules.
+- Alerte UGB/ha si > 3.0 (limite OPD art. 47 zone plaine).
+- Squelette standard : SearchBar (espèce, type d'effluent) + ViewSwitcher + ExportButton + useFabActions.
+
+### Travaux pour tiers (`/travaux`) — session 4, aligné Odoo Field Service
+- **Modèle multi-lignes + multi-saisies temps** (1 bon ≠ 1 prestation) :
+  - `WorkOrder` = header (date, client, machine, parcelles multi, statut, **priority** 0-3, **userIds**, **tagIds**, fsmDone) ↔ `project.task` (is_fsm=True)
+  - `WorkOrderLine[]` (1..N) = prestations avec type/durée/surface/tarif/total ↔ `sale.order.line` (chacune avec son `product.product`)
+  - `WorkTimeEntry[]` (0..N) = saisies temps avec opérateur/date/start/end/durée, optionnellement liées à une ligne ↔ `account.analytic.line`
+- **La task FSM n'a pas de product** : les products (services) sont uniquement sur les sale.order.line — c'est la sémantique Odoo native.
+- **Assignation par étiquettes** : `WorkOrder.userIds` mappé vers `task.tag_ids` (pas `task.user_ids`) via `AppUser.odooTagId`. Convention du projet (employés sans licence Odoo). Helper `users/odoo-mapping.ts`.
+- 3 vues : Table (cliquable entière) / Timeline (groupé par mois, cliquable) / Dashboard (par catégorie, par client, par statut).
+- Catalogue 21 prestations (tarifs Agridéa Coûts-machines 2024) avec auto-fill tarif depuis type.
+- `ParcelMultiPicker` réutilisé (avec `allowEmpty`) pour sélection multi-parcelles dans le modal.
+- 4 clients Darval mock + 5 bons multi-lignes.
+
+### Plan de fumure exploitation (`/fumure`) — Suisse-Bilanz v1.16 simplifié (session 4)
+- Méthode OEngrais 2024 — couvre modules 1 (besoins) et 2 (apports), module 3 (transferts DIGIFLUX) en saisie libre.
+- 2 vues : Dashboard (KPIs N/P, décomposition apports, alertes non-conformité) / Table (besoins par parcelle exportable).
+- Inputs : SAU active × culture (via segments d'assolement) × normes besoins. Effluents troupeau × coef efficacité 1re année. Apport atmosphérique 17 kg N/ha (OFEV 2018). Résidus culturaux saisie libre. Imports/exports DIGIFLUX avec type d'effluent configurable.
+- Conformité Suisse-Bilanz : ±10% (couverture 90-110%). Warnings auto si dépassement ou si UGB/ha > 3.0.
+- Auto-fill apports minéraux depuis carnet (interventions catégorie='fertilization' produit type='fertilizer' catégorie='mineral').
+- Squelette standard : SearchBar (culture, conformité) + ViewSwitcher + ExportButton + useFabActions.
+
 ### Modules secondaires
 - RH (`/rh/heures`, `/rh/saisir`, `/rh/conges`) — Phase 2, inchangé
-- Travaux, Troupeau, Paramètres — stubs
+
+## Système de droits par utilisateur (session 4, style Odoo)
+
+- **`AppUser.permissions?: Record<ModuleKey, PermissionLevel>`** (optionnel — override les défauts du rôle).
+- 8 modules : `parcellaire / assolement / carnet / fumure / troupeau / travaux / rh / parametres`.
+- 4 niveaux : `none / read / write / admin` (cumulatifs, comparables via `meetsLevel`).
+- 3 rôles défauts (`ROLE_DEFAULTS`) : Admin (all admin), Editor (write métier + read RH/paramètres), Viewer (read partout, none paramètres).
+- Helper principal `canAccess(user, module, level)` + hook React `useCan(module, level)`.
+- `useCurrentUser()` — placeholder MVP (1er admin actif), Phase 3 ↔ `auth.users.id` ↔ `farm_workers.user_id`.
+- UI : `UtilisateurDetailPage` avec tableau matrice radio "défaut du rôle vs override fin par module".
+
+### Mapping Odoo Field Service (session 4)
+
+Convention : les employés AgriQodo sont représentés en Odoo par des **étiquettes `project.tags`** (pas par `res.users`), car la plupart n'ont pas de licence Odoo.
+
+- `AppUser.odooTagId?: number` — référence à l'étiquette `project.tags` dédiée à cet employé
+- `AppUser.odooEmployeeId?: number` — `hr.employee.id` pour les timesheets
+- `AppUser.odooUserId?: number` — `res.users.id` (optionnel, uniquement employés avec licence)
+- Helpers `users/odoo-mapping.ts` : `userIdsToOdooTagIds()` / `userIdsToOdooUserIds()` / `userIdToOdooEmployeeId()` / `listUsersMissingOdooTag()`
+- UI : audit "Mapping employés ↔ étiquettes" dans `/parametres/odoo` listant les employés actifs sans tag avec lien direct vers leur fiche.
+- Mapping côté `WorkOrder` :
+  - `WorkOrder.userIds` (AppUser.id[]) → `task.tag_ids` au sync
+  - `WorkOrderLine.workType` → `product.product` (type 'service') sur `sale.order.line`
+  - `WorkTimeEntry.operatorId` → `hr.employee.id` (via `AppUser.odooEmployeeId`) sur `account.analytic.line.employee_id`
+  - Mapping statut : `WO_STATUS_TO_STAGE` Record exporté
 
 ## Composants Phase 1 partagés
 
@@ -297,6 +359,60 @@ Détail complet : `SECURITY.md`. Les hooks `block-*.sh` (PreToolUse) bloquent le
 - **Tests visuels prioritaires** : Fabien valide via screenshots. Lancer `npm run dev` et synchroniser les attentes par captures.
 - **Bascule de techno > patch infini** : si une lib pose 3 problèmes d'affilée, considérer un switch (cf. Maplibre → Leaflet en session 1).
 - **Toutes les tables/listes futures** : prévoir d'emblée multi-sélection + actions groupées (cf. mémoire `feedback_tables_multi_select`).
+- **Cards entièrement cliquables** (session 4) : pour toute liste / table mobile / vue timeline, la zone entière est cliquable (`role="button" tabIndex={0}` + handler clavier). Plus de bouton "Modifier" séparé. Seul un bouton supprimer reste, avec `stopPropagation`. Cf. mémoire `feedback_cards_full_clickable`.
+- **Dev server** : port verrouillé via `strictPort: true` dans `vite.config.ts` — toujours sur **http://localhost:5173**, ne dérive plus.
+
+## Fait en session 4 (2026-05-16)
+
+### Système de droits & utilisateurs (style Odoo)
+- `AppUser` enrichi : `phone`, `jobTitle`, `hireDate`, `language`, `permissions`, `odooUserId`, `odooTagId`.
+- `users/permissions.ts` : 8 modules × 4 niveaux, défauts par rôle, hook `useCan()`, helper `canAccess()`.
+- `UtilisateurDetailPage` style Odoo : Informations / Accès par module (matrice radio avec override fin) / Synchronisation Odoo.
+- `users/odoo-mapping.ts` : helpers `userIdsToOdoo{Tag,User,Employee}Ids()` pour le sync Phase 3.
+
+### Refonte Paramètres en layout 2 colonnes
+- `ParametresLayout.tsx` + sidebar gauche groupée (Général / Données / Intégrations).
+- Routes nestées `/parametres/{section}` avec 9 sections.
+- `parametres.sections.tsx` source de vérité (slug, icône, group, permission requise).
+- Sections : Exploitation, Utilisateurs, Préférences (`preferences.store` localStorage), Cultures, Produits, Cheptel, Travaux config, Intégration Odoo (avec audit étiquettes FSM), MétéoSuisse.
+- `integrations.store.ts` (Odoo + Météo settings + statut sync par entité).
+
+### Module Troupeau MVP
+- `livestock.types.ts` + `livestock.catalog.ts` (21 catégories DBF Agroscope 2017) + `livestock.mocks.ts` (cheptel Darval) + `livestock.helpers.ts` + `livestock.store.ts` (localStorage).
+- `TroupeauPage` : table groupée par espèce / Dashboard avec KPIs + production effluents par type. Alerte UGB/ha.
+- `LivestockEntryModal` : sélecteur catégorie groupé par espèce, auto-fill des normes.
+
+### Module Travaux pour tiers (aligné Odoo Field Service)
+- Modèle **multi-lignes + multi-saisies temps** : `WorkOrder` (header) + `WorkOrderLine[]` + `WorkTimeEntry[]`.
+- Doc explicite du mapping Odoo FSM en tête de `travaux.types.ts` (task SANS product, products sur sale.order.line uniquement, assignation via tag_ids).
+- 21 prestations catalogue (`travaux.catalog.ts`) avec tarifs Agridéa 2024.
+- `WorkOrderModal` : sections Informations / Prestations (add/remove dynamiques) / Saisies de temps (add/remove dynamiques) / Facturation / Notes. Champs Odoo : priority, deadline, userIds (chips toggle), tagIds, fsmDone.
+- `ParcelMultiPicker` réutilisé avec nouvelle prop `allowEmpty` (un bon peut n'avoir aucune parcelle).
+- Helpers `computeLineTotal / computeWorkOrderTotal / computeWorkOrderDuration / computeWorkOrderSurface / durationFromTimes`.
+- `WO_STATUS_TO_STAGE` Record exporté pour mapping vers `task.stage_id`.
+
+### Plan de fumure exploitation (Suisse-Bilanz v1.16)
+- `suisse-bilanz.helpers.ts` : `computeSuisseBilanz()` consomme parcelles + segments + livestock + imports, retourne besoins par parcelle, décomposition apports N, soldes, couverture %, conformité ±10%, warnings.
+- Constantes : `ORGANIC_FIRST_YEAR_EFFICIENCY` (lisier 0.5 / fumier-frais 0.35 / composté 0.2 / fientes 0.6 / compost 0.15), `ATMOSPHERIC_N_KG_HA = 17` (OFEV 2018), `UGB_HA_LIMIT_PLAIN = 3.0` (OPD art. 47).
+- `FumureExploitationPage` : Dashboard avec KPIs N/P (BalanceKpi colorée selon conformité) + décomposition apports / Table besoins par parcelle exportable.
+- Auto-fill apports minéraux depuis carnet.
+- Import DIGIFLUX (HODOFLUX rebrand 2024) avec choix du type d'effluent (coefficient correct selon lisier/fumier/compost).
+
+### Corrections agronomiques (validées par agronome-validator)
+- Veau d'engraissement UGB 0.13 → 0.15 (Suisse-Bilanz Annexe 2).
+- Truie d'élevage P 19 → 13 kg P₂O₅/an (DBF 2017 alimentation phasée).
+- Coefficient HODOFLUX/DIGIFLUX import : configurable selon type effluent (était fixé à 0.5).
+- Seuil sous-fertilisation `fumure.helpers.ts` : 80% → 90% (cohérence Suisse-Bilanz v1.16).
+
+### Refonte squelette pages (réponse PO "pages pas user-friendly")
+- Les 3 nouvelles pages (Troupeau, Travaux, FumureExploitation) refondues au pattern standard : `flex h-full flex-col` + topbar sticky avec SearchBar + ViewSwitcher + ExportButton + useFabActions.
+- Hook `check-page-consistency.sh` validé sans warning sur les 3.
+- Cards entièrement cliquables (toute la card = clic), bouton "Modifier" supprimé, seul bouton ⨯ supprimer reste (avec stopPropagation).
+
+### Infra
+- Port dev verrouillé `strictPort: true` dans `vite.config.ts` (toujours 5173).
+- `useCurrentFarm()` ajouté au store farms + `updateCurrentFarm()` (mutation locale).
+- `_styles.ts` séparé de `_shared.tsx` pour Fast Refresh.
 
 ## Références
 

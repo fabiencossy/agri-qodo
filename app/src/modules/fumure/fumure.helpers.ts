@@ -196,8 +196,10 @@ export function computeFumureBalance(
     k: needsTotal.kKg > 0 ? (applied.kKg / needsTotal.kKg) * 100 : 0,
   };
 
+  // Seuils Suisse-Bilanz v1.16 : couverture < 90% = sous-fertilisation,
+  // > 110% = sur-fertilisation (limite légale OEngrais 2024).
   const status: FumureBalance['status'] =
-    coverage.n < 80 ? 'sous-fertilisé' : coverage.n > 110 ? 'sur-fertilisé' : 'équilibré';
+    coverage.n < 90 ? 'sous-fertilisé' : coverage.n > 110 ? 'sur-fertilisé' : 'équilibré';
 
   return {
     culture,

@@ -1,28 +1,714 @@
-import { useMemo } from 'react';
-import { StubPage } from '../_shared/StubPage';
-import { useFabActions } from '../../layouts/useFab';
+import { useMemo, useState } from 'react';
+import { SearchBar, type FieldDescriptor, type SearchState } from '../../components/SearchBar';
+import { ViewSwitcher, type ViewKey } from '../../components/ViewSwitcher';
+import { ExportButton, type ExportColumn } from '../../components/ExportButton';
+import { useFabActions, useHideFab } from '../../layouts/useFab';
+import { useStandardFabActions } from '../../layouts/useStandardFabActions';
+import { useClients, useWorkOrders, removeWorkOrder } from './travaux.store';
+import { WorkOrderModal } from './WorkOrderModal';
+import { getWorkType, WORK_CATEGORY_LABELS } from './travaux.catalog';
+import {
+  computeWorkOrderTotal,
+  computeWorkOrderDuration,
+  computeWorkOrderSurface,
+  type WorkOrder,
+  type WorkOrderStatus,
+} from './travaux.types';
+import { getUserById } from '../users/users.store';
+import { useCan } from '../users/permissions';
+
+const STATUS_LABELS: Record<WorkOrderStatus, string> = {
+  planned: 'Planifié',
+  'in-progress': 'En cours',
+  done: 'Réalisé',
+  invoiced: 'Facturé',
+  cancelled: 'Annulé',
+};
+
+const STATUS_COLORS: Record<WorkOrderStatus, string> = {
+  planned: 'bg-[#f1f1ee] text-(--color-text)',
+  'in-progress': 'bg-[#fef3c7] text-[#92400e]',
+  done: 'bg-[#dcfce7] text-[#166534]',
+  invoiced: 'bg-(--color-primary)/15 text-(--color-primary)',
+  cancelled: 'bg-[#fee2e2] text-[#991b1b]',
+};
+
+type TravauxView = Extract<ViewKey, 'table' | 'timeline' | 'dashboard'>;
+
+const EXPORT_COLUMNS: ExportColumn[] = [
+  { key: 'date', label: 'Date' },
+  { key: 'clientName', label: 'Client' },
+  { key: 'prestations', label: 'Prestations' },
+  { key: 'durationHours', label: 'Durée (h)' },
+  { key: 'surfaceHa', label: 'Surface (ha)' },
+  { key: 'totalChf', label: 'Total HT (CHF)' },
+  { key: 'status', label: 'Statut' },
+  { key: 'invoiceRef', label: 'Facture' },
+];
 
 export default function TravauxPage() {
-  useFabActions(
-    useMemo(
-      () => [
-        {
-          id: 'nouvelle-tache',
-          label: 'Nouvelle tâche',
-          onClick: () => {
-            alert("Création d'une tâche (à brancher Phase 2.5 avec Odoo).");
-          },
-        },
-      ],
-      [],
-    ),
+  const orders = useWorkOrders();
+  const clients = useClients();
+  const canWrite = useCan('travaux', 'write');
+  const [editing, setEditing] = useState<Partial<WorkOrder> | null>(null);
+  const [year, setYear] = useState<number>(new Date().getFullYear());
+  const [view, setView] = useState<TravauxView>('table');
+  const [searchState, setSearchState] = useState<SearchState>({ facets: [], groupBy: [] });
+
+  // ─── FAB ───────────────────────────────────────────────────────────────
+  const onAddWorkOrder = useMemo(() => () => setEditing({}), []);
+  const extraActions = useMemo(
+    () =>
+      canWrite
+        ? [
+            {
+              id: 'add-work-order',
+              label: 'Nouveau bon de travail',
+              variant: 'primary' as const,
+              onClick: onAddWorkOrder,
+            },
+          ]
+        : [],
+    [canWrite, onAddWorkOrder],
+  );
+  const standardActions = useStandardFabActions({ extraActions });
+  useFabActions(standardActions);
+  useHideFab(editing !== null);
+
+  // ─── SearchBar fields ──────────────────────────────────────────────────
+  const fields: FieldDescriptor[] = useMemo(
+    () => [
+      {
+        id: 'client',
+        label: 'Client',
+        type: 'select',
+        options: clients.filter((c) => c.active).map((c) => ({ label: c.name, value: c.id })),
+        groupable: true,
+      },
+      {
+        id: 'workType',
+        label: 'Prestation',
+        type: 'text',
+      },
+      {
+        id: 'status',
+        label: 'Statut',
+        type: 'select',
+        options: (Object.keys(STATUS_LABELS) as WorkOrderStatus[]).map((s) => ({
+          label: STATUS_LABELS[s],
+          value: s,
+        })),
+        groupable: true,
+      },
+      {
+        id: 'category',
+        label: 'Catégorie',
+        type: 'select',
+        options: Object.entries(WORK_CATEGORY_LABELS).map(([k, v]) => ({
+          label: v,
+          value: k,
+        })),
+      },
+    ],
+    [clients],
+  );
+
+  // ─── Filtrage ──────────────────────────────────────────────────────────
+  const filtered = useMemo(() => {
+    return orders
+      .filter((o) => {
+        if (year && !o.date.startsWith(String(year))) return false;
+        if (searchState.query) {
+          const q = searchState.query.toLowerCase();
+          const client = clients.find((c) => c.id === o.clientId)?.name ?? '';
+          const types = o.lines.map((l) => getWorkType(l.workType)?.label ?? '').join(' ');
+          const hay = `${client} ${types} ${o.description ?? ''} ${o.machine ?? ''}`.toLowerCase();
+          if (!hay.includes(q)) return false;
+        }
+        for (const facet of searchState.facets) {
+          if (facet.values.length === 0) continue;
+          if (facet.fieldId === 'client') {
+            if (!facet.values.includes(o.clientId)) return false;
+          } else if (facet.fieldId === 'status') {
+            if (!facet.values.includes(o.status)) return false;
+          } else if (facet.fieldId === 'category') {
+            const cats = o.lines
+              .map((l) => getWorkType(l.workType)?.category)
+              .filter((c): c is NonNullable<typeof c> => Boolean(c));
+            const catStrings = cats as ReadonlyArray<string>;
+            if (!facet.values.some((v) => catStrings.includes(String(v)))) return false;
+          } else if (facet.fieldId === 'workType') {
+            const labels = o.lines
+              .map((l) => (getWorkType(l.workType)?.label ?? '').toLowerCase())
+              .join(' ');
+            if (!facet.values.some((v) => labels.includes(String(v).toLowerCase()))) return false;
+          }
+        }
+        return true;
+      })
+      .sort((a, b) => (a.date < b.date ? 1 : -1));
+  }, [orders, clients, year, searchState]);
+
+  // ─── KPIs ──────────────────────────────────────────────────────────────
+  const totals = useMemo(() => {
+    let count = 0;
+    let totalChf = 0;
+    let invoicedChf = 0;
+    let hours = 0;
+    for (const o of filtered) {
+      count++;
+      const t = computeWorkOrderTotal(o);
+      totalChf += t;
+      if (o.status === 'invoiced') invoicedChf += t;
+      hours += computeWorkOrderDuration(o);
+    }
+    return { count, totalChf, invoicedChf, hours: Math.round(hours * 10) / 10 };
+  }, [filtered]);
+
+  const availableYears = useMemo(() => {
+    const set = new Set<number>();
+    for (const o of orders) set.add(Number(o.date.slice(0, 4)));
+    set.add(new Date().getFullYear());
+    return [...set].sort((a, b) => b - a);
+  }, [orders]);
+
+  const exportData = useMemo(() => {
+    return filtered.map((o) => {
+      const client = clients.find((c) => c.id === o.clientId);
+      const prestations = o.lines
+        .map((l) => getWorkType(l.workType)?.label ?? l.workType)
+        .join(' + ');
+      return {
+        date: formatDate(o.date),
+        clientName: client?.name ?? '—',
+        prestations,
+        durationHours: computeWorkOrderDuration(o),
+        surfaceHa: computeWorkOrderSurface(o),
+        totalChf: computeWorkOrderTotal(o),
+        status: STATUS_LABELS[o.status],
+        invoiceRef: o.invoiceRef ?? '',
+      } as unknown as Record<string, unknown>;
+    });
+  }, [filtered, clients]);
+
+  const handleDelete = (wo: WorkOrder) => {
+    if (confirm(`Supprimer le bon de travail du ${formatDate(wo.date)} ?`)) {
+      removeWorkOrder(wo.id);
+    }
+  };
+
+  const summary = `${totals.count} bon${totals.count > 1 ? 's' : ''} · ${totals.hours} h · ${totals.totalChf.toLocaleString('fr-CH')} CHF`;
+
+  const topBar = (
+    <div className="flex w-full items-center gap-2">
+      <div className="hidden shrink-0 items-baseline gap-2 md:flex">
+        <h1 className="m-0 truncate text-base font-semibold">Travaux pour tiers</h1>
+        <span className="truncate text-xs text-(--color-muted)">{summary}</span>
+      </div>
+      <div className="min-w-0 flex-1">
+        <SearchBar
+          fields={fields}
+          value={searchState}
+          onChange={setSearchState}
+          ariaLabel="Rechercher dans les bons de travaux"
+        />
+      </div>
+      <div className="shrink-0">
+        <select
+          aria-label="Année"
+          value={year}
+          onChange={(e) => setYear(Number(e.target.value))}
+          className="h-9 rounded-(--radius) border border-(--color-border) bg-(--color-surface) px-2 text-sm font-medium text-(--color-text) hover:bg-[#f8f8f5]"
+        >
+          {availableYears.map((y) => (
+            <option key={y} value={y}>
+              {y}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="shrink-0 md:hidden">
+        <ViewSwitcher
+          views={['table', 'timeline', 'dashboard']}
+          activeView={view}
+          onChange={(v) => setView(v as TravauxView)}
+          layout="dropdown"
+          display="icon-only"
+        />
+      </div>
+      <div className="hidden shrink-0 md:block">
+        <ViewSwitcher
+          views={['table', 'timeline', 'dashboard']}
+          activeView={view}
+          onChange={(v) => setView(v as TravauxView)}
+          layout="segmented"
+        />
+      </div>
+      <div className="shrink-0">
+        <ExportButton
+          data={exportData}
+          columns={EXPORT_COLUMNS}
+          filenameBase={`travaux-${year}`}
+          pdfMeta={{ title: `Travaux pour tiers ${year} — Domaine Darval` }}
+        />
+      </div>
+    </div>
   );
 
   return (
-    <StubPage
-      title="Travaux"
-      subtitle="Gestion des tâches pour tiers"
-      description="Création, assignation et suivi des travaux. Liaison Odoo obligatoire (employés + analytics)."
-    />
+    <div className="flex h-full flex-col overflow-hidden">
+      <div className="flex-shrink-0 border-b border-(--color-border) bg-(--color-surface) px-3 py-2">
+        {topBar}
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-4">
+        {view === 'table' && (
+          <WorkOrderTable
+            orders={filtered}
+            clients={clients}
+            canWrite={canWrite}
+            onEdit={setEditing}
+            onDelete={handleDelete}
+          />
+        )}
+        {view === 'timeline' && (
+          <TimelineView orders={filtered} clients={clients} onEdit={setEditing} />
+        )}
+        {view === 'dashboard' && (
+          <DashboardView orders={filtered} totals={totals} clients={clients} />
+        )}
+      </div>
+
+      {editing && <WorkOrderModal initial={editing} onClose={() => setEditing(null)} />}
+    </div>
+  );
+}
+
+/* ─── Vue Table ────────────────────────────────────────────────────────── */
+
+function WorkOrderTable({
+  orders,
+  clients,
+  canWrite,
+  onEdit,
+  onDelete,
+}: {
+  orders: ReadonlyArray<WorkOrder>;
+  clients: ReadonlyArray<{ id: string; name: string; city?: string }>;
+  canWrite: boolean;
+  onEdit: (wo: WorkOrder) => void;
+  onDelete: (wo: WorkOrder) => void;
+}) {
+  if (orders.length === 0) {
+    return (
+      <p className="m-0 py-10 text-center text-sm text-(--color-muted)">Aucun bon de travail.</p>
+    );
+  }
+  return (
+    <>
+      <div className="hidden overflow-x-auto md:block">
+        <table className="w-full min-w-[860px] border-collapse text-sm">
+          <thead>
+            <tr className="border-b border-(--color-border) text-left text-[10px] font-semibold tracking-wider text-(--color-muted) uppercase">
+              <th className="py-2 pr-2">Date</th>
+              <th className="py-2 pr-2">Client</th>
+              <th className="py-2 pr-2">Prestations</th>
+              <th className="px-2 py-2 text-right">Durée</th>
+              <th className="px-2 py-2 text-right">Surface</th>
+              <th className="px-2 py-2 text-right">Total HT</th>
+              <th className="px-2 py-2">Statut</th>
+              <th className="px-2 py-2"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {orders.map((wo) => {
+              const client = clients.find((c) => c.id === wo.clientId);
+              const total = computeWorkOrderTotal(wo);
+              const duration = computeWorkOrderDuration(wo);
+              const surface = computeWorkOrderSurface(wo);
+              const operatorIds = Array.from(
+                new Set(wo.timeEntries.map((t) => t.operatorId).filter(Boolean)),
+              );
+              return (
+                <tr
+                  key={wo.id}
+                  onClick={() => onEdit(wo)}
+                  className="cursor-pointer border-b border-(--color-border) hover:bg-[#fbfbf9]"
+                >
+                  <td className="py-2 pr-2 tabular-nums">{formatDate(wo.date)}</td>
+                  <td className="py-2 pr-2">
+                    <div className="font-medium">{client?.name ?? '—'}</div>
+                    {client?.city && (
+                      <div className="text-[11px] text-(--color-muted)">{client.city}</div>
+                    )}
+                  </td>
+                  <td className="py-2 pr-2">
+                    <div className="font-medium">
+                      {wo.lines.length} prestation{wo.lines.length > 1 ? 's' : ''}
+                    </div>
+                    <div className="truncate text-[11px] text-(--color-muted)">
+                      {wo.lines
+                        .slice(0, 2)
+                        .map((l) => getWorkType(l.workType)?.label ?? l.workType)
+                        .join(' · ')}
+                      {wo.lines.length > 2 && ` · +${wo.lines.length - 2}`}
+                    </div>
+                    {operatorIds.length > 0 && (
+                      <div className="text-[11px] text-(--color-muted)">
+                        par {operatorIds.map((id) => getUserById(id)?.displayName ?? id).join(', ')}
+                      </div>
+                    )}
+                  </td>
+                  <td className="px-2 py-2 text-right tabular-nums">
+                    {duration ? `${duration.toFixed(1)} h` : '—'}
+                  </td>
+                  <td className="px-2 py-2 text-right tabular-nums">
+                    {surface ? `${surface.toFixed(2)} ha` : '—'}
+                  </td>
+                  <td className="px-2 py-2 text-right tabular-nums font-medium">
+                    {total ? `${total.toLocaleString('fr-CH')} CHF` : '—'}
+                  </td>
+                  <td className="px-2 py-2">
+                    <span
+                      className={[
+                        'inline-flex items-center rounded-(--radius-pill) px-2 py-0.5 text-[10px] font-medium',
+                        STATUS_COLORS[wo.status],
+                      ].join(' ')}
+                    >
+                      {STATUS_LABELS[wo.status]}
+                    </span>
+                  </td>
+                  <td className="px-2 py-2 text-right" onClick={(e) => e.stopPropagation()}>
+                    {canWrite && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDelete(wo);
+                        }}
+                        aria-label="Supprimer"
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-(--radius-sm) text-(--color-error) hover:bg-[#fef2f2]"
+                      >
+                        ×
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Cards mobile : toute la card est cliquable (avec bouton supprimer interne) */}
+      <ul className="m-0 list-none space-y-2 p-0 md:hidden">
+        {orders.map((wo) => {
+          const client = clients.find((c) => c.id === wo.clientId);
+          const total = computeWorkOrderTotal(wo);
+          const duration = computeWorkOrderDuration(wo);
+          const surface = computeWorkOrderSurface(wo);
+          return (
+            <li
+              key={wo.id}
+              role="button"
+              tabIndex={0}
+              onClick={() => onEdit(wo)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  onEdit(wo);
+                }
+              }}
+              aria-label={`Ouvrir le bon ${formatDate(wo.date)} — ${client?.name ?? ''}`}
+              className="cursor-pointer rounded-(--radius-sm) border border-(--color-border) bg-(--color-surface) p-3 transition-colors hover:border-(--color-primary) hover:bg-[#fbfbf9] focus:outline-none focus-visible:ring-2 focus-visible:ring-(--color-primary)/40"
+            >
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="text-sm font-medium">
+                  {wo.lines.length} prestation{wo.lines.length > 1 ? 's' : ''}
+                </span>
+                <span className="text-xs tabular-nums">{formatDate(wo.date)}</span>
+              </div>
+              <div className="text-[11px] text-(--color-muted)">{client?.name ?? '—'}</div>
+              <div className="text-[11px] text-(--color-muted)">
+                {duration ? `${duration.toFixed(1)} h` : ''}
+                {surface ? ` · ${surface.toFixed(2)} ha` : ''}
+                {total ? ` · ${total.toLocaleString('fr-CH')} CHF` : ''}
+              </div>
+              <div className="mt-1 flex items-center justify-between gap-2">
+                <span
+                  className={[
+                    'inline-flex items-center rounded-(--radius-pill) px-2 py-0.5 text-[10px] font-medium',
+                    STATUS_COLORS[wo.status],
+                  ].join(' ')}
+                >
+                  {STATUS_LABELS[wo.status]}
+                </span>
+                {canWrite && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDelete(wo);
+                    }}
+                    aria-label="Supprimer"
+                    className="inline-flex h-7 w-7 items-center justify-center rounded-(--radius-sm) text-(--color-error) hover:bg-[#fef2f2]"
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </>
+  );
+}
+
+/* ─── Vue Timeline (groupé par mois) ───────────────────────────────────── */
+
+function TimelineView({
+  orders,
+  clients,
+  onEdit,
+}: {
+  orders: ReadonlyArray<WorkOrder>;
+  clients: ReadonlyArray<{ id: string; name: string }>;
+  onEdit: (wo: WorkOrder) => void;
+}) {
+  const months = useMemo(() => {
+    const map = new Map<string, WorkOrder[]>();
+    for (const wo of orders) {
+      const k = wo.date.slice(0, 7);
+      const arr = map.get(k) ?? [];
+      arr.push(wo);
+      map.set(k, arr);
+    }
+    return [...map.entries()].sort((a, b) => (a[0] < b[0] ? 1 : -1));
+  }, [orders]);
+
+  if (orders.length === 0) {
+    return (
+      <p className="m-0 py-10 text-center text-sm text-(--color-muted)">
+        Aucun bon dans cette période.
+      </p>
+    );
+  }
+
+  const fmtMonth = (key: string) => {
+    const [y, m] = key.split('-');
+    const date = new Date(Number(y), Number(m) - 1, 1);
+    return date.toLocaleDateString('fr-CH', { month: 'long', year: 'numeric' });
+  };
+
+  return (
+    <div className="space-y-5">
+      {months.map(([month, wos]) => (
+        <section key={month}>
+          <h2 className="m-0 mb-2 text-[11px] font-semibold tracking-wider text-(--color-muted) uppercase">
+            {fmtMonth(month)} · {wos.length} bon{wos.length > 1 ? 's' : ''}
+          </h2>
+          <ul className="m-0 list-none space-y-2 p-0">
+            {wos.map((wo) => {
+              const client = clients.find((c) => c.id === wo.clientId);
+              const total = computeWorkOrderTotal(wo);
+              return (
+                <li
+                  key={wo.id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => onEdit(wo)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      onEdit(wo);
+                    }
+                  }}
+                  className="flex cursor-pointer items-center gap-3 rounded-(--radius-sm) border border-(--color-border) bg-(--color-surface) p-3 transition-colors hover:border-(--color-primary) hover:bg-[#fbfbf9] focus:outline-none focus-visible:ring-2 focus-visible:ring-(--color-primary)/40"
+                >
+                  <div className="shrink-0 text-xs tabular-nums text-(--color-muted)">
+                    {wo.date.slice(8, 10)}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-medium">{client?.name ?? '—'}</div>
+                    <div className="truncate text-[11px] text-(--color-muted)">
+                      {wo.lines.map((l) => getWorkType(l.workType)?.label).join(' · ')}
+                    </div>
+                  </div>
+                  <span
+                    className={[
+                      'inline-flex shrink-0 items-center rounded-(--radius-pill) px-2 py-0.5 text-[10px] font-medium',
+                      STATUS_COLORS[wo.status],
+                    ].join(' ')}
+                  >
+                    {STATUS_LABELS[wo.status]}
+                  </span>
+                  <div className="shrink-0 text-sm tabular-nums font-medium">
+                    {total.toLocaleString('fr-CH')} CHF
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      ))}
+    </div>
+  );
+}
+
+/* ─── Vue Dashboard ────────────────────────────────────────────────────── */
+
+function DashboardView({
+  orders,
+  totals,
+  clients,
+}: {
+  orders: ReadonlyArray<WorkOrder>;
+  totals: { count: number; totalChf: number; invoicedChf: number; hours: number };
+  clients: ReadonlyArray<{ id: string; name: string }>;
+}) {
+  // Stats par catégorie
+  const byCategory = useMemo(() => {
+    const map = new Map<string, { count: number; totalChf: number; hours: number }>();
+    for (const o of orders) {
+      for (const l of o.lines) {
+        const cat = getWorkType(l.workType)?.category ?? 'autre';
+        const cur = map.get(cat) ?? { count: 0, totalChf: 0, hours: 0 };
+        cur.count++;
+        cur.totalChf += Math.round(l.totalChf ?? 0);
+        cur.hours += l.durationHours ?? 0;
+        map.set(cat, cur);
+      }
+    }
+    return [...map.entries()].sort((a, b) => b[1].totalChf - a[1].totalChf);
+  }, [orders]);
+
+  const byClient = useMemo(() => {
+    const map = new Map<string, { count: number; totalChf: number }>();
+    for (const o of orders) {
+      const cur = map.get(o.clientId) ?? { count: 0, totalChf: 0 };
+      cur.count++;
+      cur.totalChf += computeWorkOrderTotal(o);
+      map.set(o.clientId, cur);
+    }
+    return [...map.entries()]
+      .map(([cid, v]) => ({ client: clients.find((c) => c.id === cid)?.name ?? '—', ...v }))
+      .sort((a, b) => b.totalChf - a.totalChf);
+  }, [orders, clients]);
+
+  const byStatus = useMemo(() => {
+    const map = new Map<WorkOrderStatus, { count: number; totalChf: number }>();
+    for (const o of orders) {
+      const cur = map.get(o.status) ?? { count: 0, totalChf: 0 };
+      cur.count++;
+      cur.totalChf += computeWorkOrderTotal(o);
+      map.set(o.status, cur);
+    }
+    return [...map.entries()];
+  }, [orders]);
+
+  return (
+    <div className="space-y-5">
+      {/* KPIs */}
+      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <Kpi label="Bons" value={String(totals.count)} />
+        <Kpi label="Heures" value={totals.hours.toFixed(1)} />
+        <Kpi label="CA total" value={`${totals.totalChf.toLocaleString('fr-CH')} CHF`} />
+        <Kpi
+          label="Facturé"
+          value={`${totals.invoicedChf.toLocaleString('fr-CH')} CHF`}
+          hint={`${totals.totalChf > 0 ? Math.round((totals.invoicedChf / totals.totalChf) * 100) : 0}% du CA`}
+        />
+      </section>
+
+      {/* Par catégorie */}
+      <section className="rounded-(--radius) border border-(--color-border) bg-(--color-surface) p-5">
+        <h2 className="m-0 mb-3 text-sm font-semibold tracking-wider text-(--color-muted) uppercase">
+          Par catégorie de prestation
+        </h2>
+        {byCategory.length === 0 ? (
+          <p className="m-0 text-sm text-(--color-muted)">Aucune donnée.</p>
+        ) : (
+          <ul className="m-0 list-none space-y-1.5 p-0">
+            {byCategory.map(([cat, v]) => (
+              <li key={cat} className="flex items-center gap-3 text-sm">
+                <span className="min-w-0 flex-1 truncate">{WORK_CATEGORY_LABELS[cat] ?? cat}</span>
+                <span className="shrink-0 text-[11px] text-(--color-muted)">
+                  {v.count} lignes · {v.hours.toFixed(1)} h
+                </span>
+                <span className="shrink-0 tabular-nums font-medium">
+                  {v.totalChf.toLocaleString('fr-CH')} CHF
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      {/* Par client */}
+      <section className="rounded-(--radius) border border-(--color-border) bg-(--color-surface) p-5">
+        <h2 className="m-0 mb-3 text-sm font-semibold tracking-wider text-(--color-muted) uppercase">
+          Par client
+        </h2>
+        {byClient.length === 0 ? (
+          <p className="m-0 text-sm text-(--color-muted)">Aucune donnée.</p>
+        ) : (
+          <ul className="m-0 list-none space-y-1.5 p-0">
+            {byClient.map((row) => (
+              <li key={row.client} className="flex items-center gap-3 text-sm">
+                <span className="min-w-0 flex-1 truncate">{row.client}</span>
+                <span className="shrink-0 text-[11px] text-(--color-muted)">{row.count} bons</span>
+                <span className="shrink-0 tabular-nums font-medium">
+                  {row.totalChf.toLocaleString('fr-CH')} CHF
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      {/* Par statut */}
+      <section className="rounded-(--radius) border border-(--color-border) bg-(--color-surface) p-5">
+        <h2 className="m-0 mb-3 text-sm font-semibold tracking-wider text-(--color-muted) uppercase">
+          Par statut
+        </h2>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          {byStatus.map(([status, v]) => (
+            <div
+              key={status}
+              className={['rounded-(--radius-sm) p-3', STATUS_COLORS[status]].join(' ')}
+            >
+              <div className="text-[10px] font-semibold tracking-wider uppercase">
+                {STATUS_LABELS[status]}
+              </div>
+              <div className="mt-0.5 text-lg font-semibold tabular-nums">{v.count}</div>
+              <div className="text-[11px] tabular-nums">
+                {v.totalChf.toLocaleString('fr-CH')} CHF
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+/* ─── Helpers ──────────────────────────────────────────────────────────── */
+
+function formatDate(iso: string): string {
+  if (!iso) return '—';
+  const [y, m, d] = iso.split('-');
+  return `${d}.${m}.${y}`;
+}
+
+function Kpi({ label, value, hint }: { label: string; value: string; hint?: string }) {
+  return (
+    <div className="rounded-(--radius) border border-(--color-border) bg-(--color-surface) p-4">
+      <div className="text-[10px] font-semibold tracking-wider text-(--color-muted) uppercase">
+        {label}
+      </div>
+      <div className="mt-1 text-2xl font-semibold tabular-nums">{value}</div>
+      {hint && <div className="mt-0.5 text-[11px] text-(--color-muted)">{hint}</div>}
+    </div>
   );
 }

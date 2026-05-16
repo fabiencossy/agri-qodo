@@ -126,6 +126,15 @@ export function setCurrentFarmId(id: string): void {
   emit();
 }
 
+/**
+ * Met à jour la ferme active en local (pas de persistance Supabase pour le
+ * MVP — modif mémoire uniquement, rechargement = retour aux mocks).
+ */
+export function updateCurrentFarm(patch: Partial<Farm>): void {
+  farms = farms.map((f) => (f.id === currentFarmId ? { ...f, ...patch } : f));
+  emit();
+}
+
 export async function createFarm(input: {
   name: string;
   address?: string;
@@ -170,6 +179,10 @@ export function useFarms(): ReadonlyArray<Farm> {
 
 export function useCurrentFarmId(): string {
   return useSyncExternalStore(subscribeFarms, getCurrentFarmId, getCurrentFarmId);
+}
+
+export function useCurrentFarm(): Farm | undefined {
+  return useSyncExternalStore(subscribeFarms, getCurrentFarm, getCurrentFarm);
 }
 
 // — Bootstrap ——————————————————————————————————————————————————————————

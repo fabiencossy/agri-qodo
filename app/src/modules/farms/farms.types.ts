@@ -26,4 +26,6 @@ export interface Farm {
   color: string;
   /** Référence Odoo `agri.farm` — Phase 3. */
   odooFarmId?: number;
+  /** Notes internes libres. */
+  notes?: string;
 }

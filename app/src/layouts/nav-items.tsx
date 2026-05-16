@@ -46,6 +46,18 @@ export const NAV_ITEMS: NavItem[] = [
     ),
   },
   {
+    path: '/fumure',
+    label: 'Plan de fumure',
+    icon: (
+      <>
+        <path d="M12 22V8" />
+        <path d="M16 10c0-4 4-4 4-8-4 0-4 4-4 8z" />
+        <path d="M8 10c0-4-4-4-4-8 4 0 4 4 4 8z" />
+        <path d="M5 22h14" />
+      </>
+    ),
+  },
+  {
     path: '/rh',
     label: 'RH',
     icon: (

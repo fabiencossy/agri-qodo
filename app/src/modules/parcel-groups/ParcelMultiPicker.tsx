@@ -9,6 +9,10 @@ interface ParcelMultiPickerProps {
   /** Au moins 1 parcelle est obligatoire (la première du tableau retourné = principale). */
   onConfirm: (ids: ReadonlyArray<string>) => void;
   onClose: () => void;
+  /** Autorise une sélection vide (défaut : false, ≥1 parcelle requise). */
+  allowEmpty?: boolean;
+  /** Titre du picker (défaut : "Sélectionner les parcelles"). */
+  title?: string;
 }
 
 const TODAY = new Date().toISOString().slice(0, 10);
@@ -28,6 +32,8 @@ export function ParcelMultiPicker({
   selectedIds,
   onConfirm,
   onClose,
+  allowEmpty = false,
+  title = 'Sélectionner les parcelles',
 }: ParcelMultiPickerProps) {
   const groups = useParcelGroups();
   const [query, setQuery] = useState('');
@@ -85,7 +91,7 @@ export function ParcelMultiPicker({
       <div className="flex h-full w-full flex-col overflow-hidden bg-(--color-surface) md:h-[88vh] md:max-w-[640px] md:rounded-(--radius-lg) md:border md:border-(--color-border) md:shadow-(--shadow-popup)">
         <header className="flex items-center gap-2 border-b border-(--color-border) px-4 py-3">
           <div className="min-w-0 flex-1">
-            <h2 className="m-0 text-sm font-semibold">Sélectionner les parcelles</h2>
+            <h2 className="m-0 text-sm font-semibold">{title}</h2>
             <p className="m-0 mt-0.5 text-xs text-(--color-muted)">
               {selectedCount} sélectionnée{selectedCount > 1 ? 's' : ''}
               {selectedCount > 0 && ` · ${totalSurfaceHa.toFixed(2)} ha total`}
@@ -221,7 +227,7 @@ export function ParcelMultiPicker({
           <button
             type="button"
             onClick={() => onConfirm([...selected])}
-            disabled={selectedCount === 0}
+            disabled={!allowEmpty && selectedCount === 0}
             className="ml-auto inline-flex h-10 items-center rounded-(--radius) border border-(--color-primary) bg-(--color-primary) px-5 text-sm font-medium text-white hover:bg-(--color-primary-hover) disabled:opacity-50"
           >
             Confirmer ({selectedCount})
