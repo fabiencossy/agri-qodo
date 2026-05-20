@@ -7,6 +7,9 @@ import { getActiveSegment, getSegmentsForParcelYear } from '../assolement/assole
 import { useSegments } from '../assolement/assolement.store';
 import { cultureColor } from '../assolement/cultures';
 import type { AssolementSegment } from '../assolement/assolement.types';
+import { useIsCurrentFarmInvitee } from '../farms/farms.helpers';
+import { useWorkOrders, useClients } from '../travaux/travaux.store';
+import { getWorkType } from '../travaux/travaux.catalog';
 
 const TODAY = new Date().toISOString().slice(0, 10);
 
@@ -15,6 +18,8 @@ interface ParcelleSummaryPanelProps {
   onClose: () => void;
   onOpenFiche: () => void;
   onOpenAssolement: () => void;
+  /** Optionnel : callback pour ouvrir un travail dans le modal complet. */
+  onOpenWorkOrder?: (workOrderId: string) => void;
 }
 
 /**
@@ -31,8 +36,10 @@ export function ParcelleSummaryPanel({
   onClose,
   onOpenFiche,
   onOpenAssolement,
+  onOpenWorkOrder,
 }: ParcelleSummaryPanelProps) {
   const year = parcel.year;
+  const isInvitee = useIsCurrentFarmInvitee();
   const allSegments = useSegments();
   const segments = useMemo(
     () => getSegmentsForParcelYear(parcel.id, year, allSegments),
@@ -48,6 +55,39 @@ export function ParcelleSummaryPanel({
 
   // Mocks Phase 2.5 (interventions à brancher au Carnet réel — Phase 3)
   const interventions = mockInterventions(parcel.id);
+
+  // En mode invité, le panel est minimal :
+  //  - pas d'assolement, pas d'interventions, pas de notes (info privée du client)
+  //  - point d'attention visible (sécurité, contraintes opérationnelles)
+  //  - section "Travaux effectués" : MES bons sur cette parcelle
+  //  - footer = action principale "Nouveau travail pour tiers" (si fournie)
+  if (isInvitee) {
+    return (
+      <DetailPanel
+        title={parcel.name}
+        subtitle={`${parcel.surfaceHa.toFixed(2)} ha`}
+        onClose={onClose}
+        footer={
+          <button
+            type="button"
+            onClick={onOpenFiche}
+            className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-(--radius) border border-(--color-primary) bg-(--color-primary) px-4 text-sm font-medium text-white hover:bg-(--color-primary-hover)"
+          >
+            Ouvrir la fiche de la parcelle
+            <ArrowRightIcon />
+          </button>
+        }
+      >
+        {parcel.attentionNote && <AttentionBanner note={parcel.attentionNote} />}
+        <div className="rounded-(--radius-sm) border border-(--color-border) bg-[#fbfbf9] p-3 text-[12px] text-(--color-muted)">
+          Vous êtes invité sur cette exploitation. Seule la position de la parcelle est visible —
+          ses données agronomiques (assolement, fertilisation, traitements) appartiennent au
+          propriétaire.
+        </div>
+        <WorkOrdersForParcel parcelId={parcel.id} onOpen={onOpenWorkOrder} />
+      </DetailPanel>
+    );
+  }
 
   return (
     <DetailPanel
@@ -65,6 +105,9 @@ export function ParcelleSummaryPanel({
         </button>
       }
     >
+      {/* Point d'attention (priorité visuelle, en tête) */}
+      {parcel.attentionNote && <AttentionBanner note={parcel.attentionNote} />}
+
       {/* Assolement */}
       <Section title="Plan d'assolement">
         {/* Culture EN PLACE aujourd'hui — pas de "dominant" inutile. */}
@@ -231,6 +274,132 @@ function Section({
 
 function Empty({ children }: { children: React.ReactNode }) {
   return <p className="m-0 text-xs text-(--color-muted)">{children}</p>;
+}
+
+/** Bandeau d'attention (jaune chaud) — affiché quand parcel.attentionNote existe.
+ *  Visible côté propriétaire ET côté invité (les contraintes opérationnelles
+ *  sont importantes pour tout opérateur de terrain). */
+function AttentionBanner({ note }: { note: string }) {
+  return (
+    <div className="mb-4 flex gap-2 rounded-(--radius-sm) border border-(--color-warning)/40 bg-(--color-warning)/10 p-3">
+      <span aria-hidden className="mt-0.5 shrink-0 text-[#92400e]">
+        <AttentionIcon />
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="mb-0.5 text-[10px] font-semibold tracking-wider text-[#92400e] uppercase">
+          Point d'attention
+        </div>
+        <p className="m-0 text-[12px] whitespace-pre-line text-[#92400e]">{note}</p>
+      </div>
+    </div>
+  );
+}
+
+/** Section "Travaux effectués" — liste les WorkOrder où la parcelle est listée.
+ *  Affichée dans le panel invité pour rappeler l'historique de mes interventions
+ *  chez ce client. */
+function WorkOrdersForParcel({
+  parcelId,
+  onOpen,
+}: {
+  parcelId: string;
+  onOpen?: (workOrderId: string) => void;
+}) {
+  const orders = useWorkOrders();
+  const clients = useClients();
+  const related = useMemo(
+    () =>
+      orders
+        .filter((o) => (o.parcelIds ?? []).includes(parcelId))
+        .sort((a, b) => (a.date < b.date ? 1 : -1)),
+    [orders, parcelId],
+  );
+
+  return (
+    <Section title="Travaux effectués sur cette parcelle">
+      {related.length === 0 ? (
+        <Empty>Aucun travail enregistré pour cette parcelle.</Empty>
+      ) : (
+        <ul className="m-0 list-none space-y-1.5 p-0">
+          {related.slice(0, 8).map((wo) => {
+            const client = clients.find((c) => c.id === wo.clientId);
+            const firstLine = wo.lines[0];
+            const workTypeLabel = firstLine ? (getWorkType(firstLine.workType)?.label ?? '') : '';
+            const content = (
+              <>
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="truncate text-sm font-medium">
+                    {workTypeLabel ||
+                      `${wo.lines.length} prestation${wo.lines.length > 1 ? 's' : ''}`}
+                    {wo.lines.length > 1 && workTypeLabel && (
+                      <span className="text-(--color-muted)"> +{wo.lines.length - 1}</span>
+                    )}
+                  </span>
+                  <span className="shrink-0 font-mono text-[11px] text-(--color-muted)">
+                    {fmtDate(wo.date)}
+                  </span>
+                </div>
+                <div className="truncate text-[11px] text-(--color-muted)">
+                  {client?.name ?? '—'}
+                  {' · '}
+                  <span className="capitalize">
+                    {wo.status === 'planned'
+                      ? 'planifié'
+                      : wo.status === 'done'
+                        ? 'réalisé'
+                        : wo.status === 'invoiced'
+                          ? 'facturé'
+                          : wo.status}
+                  </span>
+                </div>
+              </>
+            );
+            return (
+              <li key={wo.id}>
+                {onOpen ? (
+                  <button
+                    type="button"
+                    onClick={() => onOpen(wo.id)}
+                    className="block w-full rounded-(--radius-sm) border border-(--color-border) bg-(--color-surface) px-2.5 py-2 text-left transition-colors hover:border-(--color-primary) hover:bg-[#fbfbf9]"
+                  >
+                    {content}
+                  </button>
+                ) : (
+                  <div className="rounded-(--radius-sm) border border-(--color-border) bg-(--color-surface) px-2.5 py-2">
+                    {content}
+                  </div>
+                )}
+              </li>
+            );
+          })}
+          {related.length > 8 && (
+            <li className="px-2.5 text-[11px] text-(--color-muted)">
+              + {related.length - 8} travaux plus anciens
+            </li>
+          )}
+        </ul>
+      )}
+    </Section>
+  );
+}
+
+function AttentionIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.75}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      width={16}
+      height={16}
+      aria-hidden="true"
+    >
+      <path d="M10.3 3.86a2 2 0 0 1 3.4 0l8.57 14.7A2 2 0 0 1 20.57 21H3.43a2 2 0 0 1-1.7-2.94z" />
+      <path d="M12 9v4M12 17h.01" />
+    </svg>
+  );
 }
 
 function ArrowRightIcon() {

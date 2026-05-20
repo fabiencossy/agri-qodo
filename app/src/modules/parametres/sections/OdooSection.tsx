@@ -12,6 +12,7 @@ import { useUsers } from '../../users/users.store';
 import { listUsersMissingOdooTag } from '../../users/odoo-mapping';
 import { Field, PrimaryButton, SecondaryButton, SectionCard } from './_shared';
 import { inputClass, selectClass } from './_styles';
+import { testOdooConnection } from '../odoo-client';
 
 interface EntityConfig {
   key: keyof OdooSettings['entities'];
@@ -90,19 +91,29 @@ export function OdooSection() {
     updateOdooSettings({ [k]: v } as Partial<OdooSettings>);
 
   const testConnection = async () => {
-    setTesting(true);
     setTestMessage(null);
-    // Simulation MVP — pas d'appel XML-RPC réel
-    await new Promise((r) => setTimeout(r, 800));
-    setTesting(false);
     if (!odoo.url || !odoo.database || !odoo.login || !odoo.apiKey) {
       setTestMessage({ ok: false, text: 'Veuillez remplir tous les champs avant de tester.' });
       return;
     }
-    setTestMessage({
-      ok: true,
-      text: 'Connexion simulée OK. L’appel XML-RPC réel sera branché en Phase 3.',
+    setTesting(true);
+    const result = await testOdooConnection({
+      url: odoo.url,
+      database: odoo.database,
+      login: odoo.login,
+      apiKey: odoo.apiKey,
     });
+    setTesting(false);
+    if (result.ok) {
+      setTestMessage({
+        ok: true,
+        text: `Connexion OK. Odoo ${result.version.serverVersion} · uid=${result.uid} authentifié sur la base "${odoo.database}".`,
+      });
+    } else {
+      const prefix =
+        result.stage === 'version' ? 'Serveur injoignable' : 'Authentification refusée';
+      setTestMessage({ ok: false, text: `${prefix} — ${result.message}` });
+    }
   };
 
   const simulateSync = async (entity: keyof OdooSettings['entities']) => {
@@ -313,48 +324,24 @@ export function OdooSection() {
         </p>
       </SectionCard>
 
-      <SectionCard
-        title="Mapping employés ↔ étiquettes Field Service"
-        description="Pour Field Service, chaque employé d'AgriQodo est représenté par une étiquette project.tags dans Odoo. Cette étiquette est ajoutée à task.tag_ids pour signaler l'assignation. Convention indispensable quand les employés n'ont pas de compte res.users."
-      >
-        {usersMissingTag.length === 0 ? (
-          <p className="m-0 rounded-(--radius-sm) bg-[#dcfce7] px-3 py-2 text-sm text-[#166534]">
-            Tous les employés actifs ont une étiquette Odoo dédiée. Le mapping Field Service est
-            complet.
+      {/* Lien d'alerte vers la liste utilisateurs si certains n'ont pas
+       * d'étiquette Odoo. Le mapping lui-même se fait dans la fiche de chaque
+       * utilisateur (Paramètres › Utilisateurs › [utilisateur] › Synchronisation Odoo). */}
+      {usersMissingTag.length > 0 && (
+        <SectionCard title="Étiquettes Field Service manquantes">
+          <p className="m-0 mb-2 rounded-(--radius-sm) bg-[#fef3c7] px-3 py-2 text-sm text-[#92400e]">
+            {usersMissingTag.length} employé{usersMissingTag.length > 1 ? 's' : ''} actif
+            {usersMissingTag.length > 1 ? 's n’ont' : ' n’a'} pas d'étiquette Odoo. À renseigner
+            depuis la fiche de chaque utilisateur avant la 1re synchronisation Field Service.
           </p>
-        ) : (
-          <div>
-            <p className="m-0 mb-2 rounded-(--radius-sm) bg-[#fef3c7] px-3 py-2 text-sm text-[#92400e]">
-              {usersMissingTag.length} employé{usersMissingTag.length > 1 ? 's' : ''} actif
-              {usersMissingTag.length > 1 ? 's n’ont' : ' n’a'} pas d'étiquette Odoo. À renseigner
-              avant la 1re synchronisation Field Service.
-            </p>
-            <ul className="m-0 list-none space-y-1 p-0">
-              {usersMissingTag.map((u) => (
-                <li
-                  key={u.id}
-                  className="flex items-center gap-2 rounded-(--radius-sm) border border-(--color-border) bg-(--color-surface) px-3 py-2 text-sm"
-                >
-                  <span
-                    aria-hidden
-                    className="inline-block h-6 w-6 shrink-0 rounded-(--radius-pill) text-center text-[10px] font-semibold leading-6 text-white"
-                    style={{ background: u.color }}
-                  >
-                    {u.initials}
-                  </span>
-                  <span className="min-w-0 flex-1 truncate">{u.fullName}</span>
-                  <Link
-                    to={`/parametres/utilisateurs/${u.id}`}
-                    className="text-xs text-(--color-primary) underline"
-                  >
-                    Définir l'étiquette
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-      </SectionCard>
+          <Link
+            to="/parametres/utilisateurs"
+            className="inline-flex h-9 items-center gap-1.5 rounded-(--radius) border border-(--color-border) bg-(--color-surface) px-3 text-xs font-medium text-(--color-text) hover:bg-[#f8f8f5]"
+          >
+            Voir les utilisateurs →
+          </Link>
+        </SectionCard>
+      )}
     </div>
   );
 }

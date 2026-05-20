@@ -279,15 +279,24 @@ export function MapView({
     };
   }, [parcels]);
 
-  /* ---------- Auto-fit aux parcelles (une seule fois) ---------- */
+  /* ---------- Auto-fit aux parcelles ----------
+   * Re-fit à chaque changement d'exploitation (signature = farmId du 1er
+   * parcel). 1ère ouverture : pas d'animation. Switch d'exploitation :
+   * animation fluide vers les nouvelles parcelles.
+   */
+  const lastFitFarmIdRef = useRef<string | null>(null);
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || hasFittedRef.current || parcels.length === 0) return;
+    if (!map || parcels.length === 0) return;
     if (!parcelLayerRef.current) return;
+    const firstFarmId = parcels[0]?.farmId ?? '__no-farm__';
+    if (hasFittedRef.current && lastFitFarmIdRef.current === firstFarmId) return;
     const bounds = parcelLayerRef.current.getBounds();
     if (bounds.isValid()) {
-      map.fitBounds(bounds, { padding: [40, 40], maxZoom: 17, animate: false });
+      const animate = hasFittedRef.current; // anime au switch, pas au 1er fit
+      map.fitBounds(bounds, { padding: [40, 40], maxZoom: 17, animate });
       hasFittedRef.current = true;
+      lastFitFarmIdRef.current = firstFarmId;
     }
   }, [parcels]);
 

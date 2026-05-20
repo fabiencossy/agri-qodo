@@ -3,6 +3,12 @@ export interface NavItem {
   label: string;
   icon: React.ReactNode;
   badge?: string;
+  /**
+   * Si false, l'entrée est masquée dans la sidebar et la route bloquée
+   * quand l'utilisateur est en mode invité sur la current farm. Defaults
+   * à true. Doit rester synchronisé avec INVITEE_ALLOWED_PATHS.
+   */
+  inviteeAllowed?: boolean;
 }
 
 export const NAV_ITEMS: NavItem[] = [
@@ -19,10 +25,24 @@ export const NAV_ITEMS: NavItem[] = [
   {
     path: '/carnet',
     label: 'Carnet des champs',
+    inviteeAllowed: false,
     icon: (
       <>
         <path d="M4 4h12a4 4 0 0 1 4 4v12H8a4 4 0 0 1-4-4V4z" />
         <path d="M4 4v16M8 8h8M8 12h8M8 16h5" />
+      </>
+    ),
+  },
+  {
+    path: '/planning',
+    label: 'Planning',
+    icon: (
+      <>
+        <rect x="3" y="4" width="18" height="18" rx="2" />
+        <path d="M16 2v4M8 2v4M3 10h18" />
+        <circle cx="8" cy="14" r="1" fill="currentColor" />
+        <circle cx="16" cy="14" r="1" fill="currentColor" />
+        <circle cx="12" cy="18" r="1" fill="currentColor" />
       </>
     ),
   },
@@ -39,6 +59,7 @@ export const NAV_ITEMS: NavItem[] = [
   {
     path: '/troupeau',
     label: 'Troupeau',
+    inviteeAllowed: false,
     icon: (
       <>
         <path d="M19 5c-1.5 0-2.8 1-3 2.5-.4-1.5-1.7-2.5-3-2.5s-2.6 1-3 2.5C9.6 6 8.3 5 7 5 5.3 5 4 6.3 4 8c0 4 4 7 8 11 4-4 8-7 8-11 0-1.7-1.3-3-3-3z" />
@@ -48,6 +69,7 @@ export const NAV_ITEMS: NavItem[] = [
   {
     path: '/fumure',
     label: 'Plan de fumure',
+    inviteeAllowed: false,
     icon: (
       <>
         <path d="M12 22V8" />
@@ -60,6 +82,7 @@ export const NAV_ITEMS: NavItem[] = [
   {
     path: '/rh',
     label: 'RH',
+    inviteeAllowed: false,
     icon: (
       <>
         <circle cx="9" cy="7" r="4" />
@@ -72,6 +95,7 @@ export const NAV_ITEMS: NavItem[] = [
   {
     path: '/parametres',
     label: 'Paramètres',
+    inviteeAllowed: false,
     icon: (
       <>
         <circle cx="12" cy="12" r="3" />

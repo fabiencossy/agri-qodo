@@ -1,9 +1,9 @@
-import { useSyncExternalStore } from 'react';
+import { useMemo, useSyncExternalStore } from 'react';
 import type { Polygon, MultiPolygon } from 'geojson';
 import { supabase } from '../../lib/supabase';
 import { onAuthFarmChange } from '../../lib/auth-farm';
 import { getAuth } from '../auth/auth.store';
-import { getCurrentFarmId } from '../farms/farms.store';
+import { getCurrentFarmId, useCurrentFarmId } from '../farms/farms.store';
 import { cultureColor, cultureKeyByLabel, cultureLabelByKey } from '../assolement/cultures';
 import { PARCELLES as MOCK_PARCELS, type ParcelDetail } from './parcellaire.mocks';
 
@@ -204,7 +204,27 @@ export async function removeParcel(id: string): Promise<void> {
   await hydrateFromSupabase(farmId);
 }
 
+/**
+ * Retourne les parcelles de l'exploitation active. Une parcelle sans
+ * `farmId` (legacy / créée avant la multi-tenancy) reste visible partout —
+ * c'est intentionnel pour ne rien casser sur les bons de travail existants.
+ * En Phase 3 (Supabase), le filtrage est déjà fait côté serveur via
+ * hydrateFromSupabase(farmId), donc le filtre client est un no-op (toutes
+ * les parcelles en mémoire matchent déjà le current farm).
+ *
+ * Mémoïsation impérative : `.filter()` crée un nouveau tableau à chaque
+ * render, ce qui faisait boucler les useEffect de MapView dépendant de
+ * `parcels` (boucle infinie => UI gelée). useMemo stabilise la référence
+ * tant que all/farmId ne changent pas.
+ */
 export function useParcels(): ReadonlyArray<ParcelDetail> {
+  const all = useSyncExternalStore(subscribeParcels, getParcels, getParcels);
+  const farmId = useCurrentFarmId();
+  return useMemo(() => all.filter((p) => !p.farmId || p.farmId === farmId), [all, farmId]);
+}
+
+/** Variante : toutes les parcelles toutes farms confondues (rare — pour exports). */
+export function useAllParcels(): ReadonlyArray<ParcelDetail> {
   return useSyncExternalStore(subscribeParcels, getParcels, getParcels);
 }
 

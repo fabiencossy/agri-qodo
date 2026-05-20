@@ -129,16 +129,30 @@ export interface ThirdPartyClient {
 
 /**
  * Ligne de prestation = sale.order.line liée à la task Odoo (via `task_id`).
+ *
+ * Deux sources possibles, mutuellement exclusives :
+ *   - `workType` : référence un WorkType du catalogue prestations (service Odoo).
+ *   - `productId` : référence un Product du catalogue (phyto/engrais/semence, consu Odoo).
+ *
+ * La quantité est unifiée via `quantity` + `quantityUnit` (string libre style
+ * "ha", "h", "kg/ha", "L/ha"). Les champs `surfaceHa` / `durationHours` restent
+ * pour la rétro-compat avec les bons existants et le mapping Odoo natif.
  */
 export interface WorkOrderLine {
   id: string;
-  /** Type de prestation (référence WorkType.key → product.product Odoo). */
+  /** Type de prestation (WorkType.key → product.product service Odoo). Vide si productId. */
   workType: string;
+  /** Référence vers Product catalogue (alternative à workType pour les fournitures). */
+  productId?: string;
   /** Description spécifique (override product.description_sale). */
   description?: string;
-  /** Surface (ha) — si billingUnit='hectare', sert de product_uom_qty. */
+  /** Quantité unifiée (surface, durée, dose). Préfill auto si unité '/ha'. */
+  quantity?: number;
+  /** Unité de la quantité (libre : 'ha', 'h', 'kg/ha', 'L/ha', 'unité', ...). */
+  quantityUnit?: string;
+  /** Surface (ha) — rétro-compat, si billingUnit='hectare'. */
   surfaceHa?: number;
-  /** Durée (h) — si billingUnit='heure', sert de product_uom_qty. */
+  /** Durée (h) — rétro-compat, si billingUnit='heure'. */
   durationHours?: number;
   /** Unité de facturation (mappée sur product.uom_id). */
   billingUnit: 'heure' | 'hectare' | 'forfait';
@@ -184,6 +198,8 @@ export interface WorkOrder {
   id: string;
   /** Date principale du bon. Mappée sur task.planned_date_begin. */
   date: string;
+  /** Heure prévue (HH:mm) — combinée à `date` pour task.planned_date_begin. */
+  scheduledTime?: string;
   /** Date d'échéance (ISO). Mappée sur task.date_deadline. */
   deadline?: string;
   /** Client tiers (res.partner). */

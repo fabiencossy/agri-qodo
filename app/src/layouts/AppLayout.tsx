@@ -1,11 +1,12 @@
 import { useState } from 'react';
-import { NavLink, Outlet, useLocation } from 'react-router-dom';
+import { Navigate, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useIsDesktop } from '../hooks/useMediaQuery';
 import { Fab } from './Fab';
 import { FabProvider } from './FabContext';
 import { InterventionFormProvider } from './InterventionFormProvider';
 import { NAV_ITEMS, type NavItem } from './nav-items';
 import { FarmSwitcher } from '../modules/farms/FarmSwitcher';
+import { isInviteeAllowedPath, useIsCurrentFarmInvitee } from '../modules/farms/farms.helpers';
 import { logout, useAuth } from '../modules/auth/auth.store';
 
 const BASE_SVG = {
@@ -37,9 +38,16 @@ export function AppLayout() {
   const isDesktop = useIsDesktop();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const location = useLocation();
+  const isInvitee = useIsCurrentFarmInvitee();
 
   // Trouver l'item actif pour le titre header mobile
   const activeItem = NAV_ITEMS.find((i) => location.pathname.startsWith(i.path));
+
+  // Route guard mode invité : redirige vers /travaux si on tente d'accéder
+  // à un module non autorisé (carnet, fumure, troupeau, paramètres, rh).
+  if (isInvitee && !isInviteeAllowedPath(location.pathname)) {
+    return <Navigate to="/travaux" replace />;
+  }
 
   return (
     <FabProvider>
@@ -96,6 +104,8 @@ export function AppLayout() {
 }
 
 function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
+  const isInvitee = useIsCurrentFarmInvitee();
+  const visibleItems = isInvitee ? NAV_ITEMS.filter((i) => i.inviteeAllowed !== false) : NAV_ITEMS;
   return (
     <nav
       aria-label="Navigation principale"
@@ -117,9 +127,14 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
         )}
       </div>
 
-      {/* Items */}
+      {/* Items — filtrés selon le rôle (invitee voit moins de modules) */}
       <ul className="m-0 flex-1 list-none space-y-0.5 overflow-y-auto p-3">
-        {NAV_ITEMS.map((item) => (
+        {isInvitee && (
+          <li className="mb-2 rounded-(--radius-sm) bg-[#fef3c7] px-3 py-2 text-[10px] font-medium text-[#92400e]">
+            Mode invité — vous voyez uniquement la carte et vos travaux pour tiers.
+          </li>
+        )}
+        {visibleItems.map((item) => (
           <li key={item.path}>
             <NavLink
               to={item.path}

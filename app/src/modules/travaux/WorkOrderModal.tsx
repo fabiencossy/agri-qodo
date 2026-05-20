@@ -1,21 +1,21 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { addWorkOrder, updateWorkOrder, useClients } from './travaux.store';
-import { WORK_CATEGORY_LABELS, WORK_TYPES, getWorkType } from './travaux.catalog';
+import { getWorkType } from './travaux.catalog';
 import {
-  computeLineTotal,
-  computeWorkOrderTotal,
-  computeWorkOrderDuration,
   durationFromTimes,
-  PRIORITY_LABELS,
   type WorkOrder,
   type WorkOrderLine,
-  type WorkOrderPriority,
   type WorkOrderStatus,
   type WorkTimeEntry,
 } from './travaux.types';
 import { useUsers } from '../users/users.store';
+import { useCurrentUser } from '../users/permissions';
 import { useParcels } from '../parcellaire/parcellaire.store';
 import { ParcelMultiPicker } from '../parcel-groups/ParcelMultiPicker';
+import { PrestationPicker } from './PrestationPicker';
+import { isPerHectareUnit, type PrestationSource } from './prestation-source';
+import { OperatorMultiPicker } from './OperatorMultiPicker';
+import { useProducts } from '../products/products.store';
 
 interface WorkOrderModalProps {
   initial?: Partial<WorkOrder>;
@@ -36,9 +36,18 @@ export function WorkOrderModal({ initial, onClose }: WorkOrderModalProps) {
   const isExisting = Boolean(initial?.id);
   const clients = useClients();
   const users = useUsers();
+  const currentUser = useCurrentUser();
   const parcels = useParcels();
+  const products = useProducts();
 
   const [parcelPickerOpen, setParcelPickerOpen] = useState(false);
+  const [operatorPickerOpen, setOperatorPickerOpen] = useState(false);
+  /** Cible du PrestationPicker : 'new' = ajout, string = édition de la ligne id. */
+  const [prestationPickerTarget, setPrestationPickerTarget] = useState<'new' | string | null>(null);
+  /** Ligne actuellement en mode édition (formulaire détaillé). Les autres sont
+   * en carte compacte. Une seule à la fois pour densifier l'affichage. */
+  const [editingLineId, setEditingLineId] = useState<string | null>(null);
+  const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
 
   const [draft, setDraft] = useState<WorkOrder>(() => ({
     id: initial?.id ?? `WO-${Date.now()}`,
@@ -50,7 +59,10 @@ export function WorkOrderModal({ initial, onClose }: WorkOrderModalProps) {
     description: initial?.description,
     status: initial?.status ?? 'planned',
     priority: initial?.priority ?? '1',
-    userIds: initial?.userIds ?? [],
+    // Préfill : l'utilisateur courant est assigné par défaut sur ses propres
+    // bons (on présume que celui qui crée fera le travail). Édition d'un bon
+    // existant : on respecte la liste actuelle.
+    userIds: initial?.userIds ?? (currentUser ? [currentUser.id] : []),
     tagIds: initial?.tagIds,
     lines: initial?.lines ?? [],
     timeEntries: initial?.timeEntries ?? [],
@@ -64,15 +76,6 @@ export function WorkOrderModal({ initial, onClose }: WorkOrderModalProps) {
     setDraft((d) => ({ ...d, [k]: v }));
 
   // ─── Lignes ────────────────────────────────────────────────────────────
-  const addLine = () => {
-    const newLine: WorkOrderLine = {
-      id: `WL-${Date.now()}-${Math.floor(performance.now())}`,
-      workType: '',
-      billingUnit: 'heure',
-    };
-    setDraft((d) => ({ ...d, lines: [...d.lines, newLine] }));
-  };
-
   const updateLine = (id: string, patch: Partial<WorkOrderLine>) => {
     setDraft((d) => ({
       ...d,
@@ -80,43 +83,68 @@ export function WorkOrderModal({ initial, onClose }: WorkOrderModalProps) {
     }));
   };
 
-  const onLineWorkTypeChange = (id: string, key: string) => {
-    const wt = getWorkType(key);
+  const removeLine = (id: string) => {
+    setDraft((d) => ({ ...d, lines: d.lines.filter((l) => l.id !== id) }));
+  };
+
+  /** Applique une source PrestationSource à une ligne (nouvelle ou existante). */
+  const applyPrestationSource = (lineId: 'new' | string, source: PrestationSource) => {
+    const totalSurfaceHa = selectedParcelsInfo.totalHa;
+    const prefillQty =
+      isPerHectareUnit(source.unit) && totalSurfaceHa > 0 ? totalSurfaceHa : undefined;
+    const base: Partial<WorkOrderLine> = {
+      workType: source.kind === 'worktype' ? source.id : '',
+      productId: source.kind === 'product' ? source.id : undefined,
+      quantity: prefillQty,
+      quantityUnit: source.unit,
+      billingUnit: source.billingUnit ?? (isPerHectareUnit(source.unit) ? 'hectare' : 'forfait'),
+      surfaceHa: isPerHectareUnit(source.unit) ? (prefillQty ?? undefined) : undefined,
+      durationHours: source.unit === 'h' ? prefillQty : undefined,
+      unitRateChf: source.defaultRateChf,
+    };
+    if (lineId === 'new') {
+      const newLine: WorkOrderLine = {
+        id: `WL-${Date.now()}-${Math.floor(performance.now())}`,
+        workType: '',
+        billingUnit: 'heure',
+        ...base,
+      };
+      setDraft((d) => ({ ...d, lines: [...d.lines, newLine] }));
+      setEditingLineId(newLine.id);
+    } else {
+      updateLine(lineId, base);
+    }
+  };
+
+  /** Met à jour la quantité (et surface/durée miroir pour rétro-compat). */
+  const setLineQuantity = (id: string, value: number | undefined) => {
     setDraft((d) => ({
       ...d,
       lines: d.lines.map((l) => {
         if (l.id !== id) return l;
-        if (!wt) return { ...l, workType: key };
-        const billing = l.billingUnit ?? wt.defaultBillingUnit;
-        const rate =
-          billing === 'hectare'
-            ? wt.defaultPerHectareRateChf
-            : billing === 'heure'
-              ? wt.defaultHourlyRateChf
-              : l.unitRateChf;
+        const unit = l.quantityUnit ?? '';
         return {
           ...l,
-          workType: key,
-          billingUnit: billing,
-          unitRateChf: l.unitRateChf ?? rate,
+          quantity: value,
+          surfaceHa: isPerHectareUnit(unit) ? value : l.surfaceHa,
+          durationHours: unit === 'h' ? value : l.durationHours,
         };
       }),
     }));
-  };
-
-  const removeLine = (id: string) => {
-    setDraft((d) => ({ ...d, lines: d.lines.filter((l) => l.id !== id) }));
   };
 
   // ─── Saisies de temps ──────────────────────────────────────────────────
   const addTimeEntry = () => {
     const newEntry: WorkTimeEntry = {
       id: `WT-${Date.now()}-${Math.floor(performance.now())}`,
-      operatorId: '',
+      // Pré-sélectionne l'utilisateur courant comme opérateur — c'est lui qui
+      // a créé le bon, c'est donc lui qui saisit ses heures par défaut.
+      operatorId: currentUser?.id ?? '',
       date: draft.date,
       durationHours: 0,
     };
     setDraft((d) => ({ ...d, timeEntries: [...d.timeEntries, newEntry] }));
+    setEditingEntryId(newEntry.id);
   };
 
   const updateTimeEntry = (id: string, patch: Partial<WorkTimeEntry>) => {
@@ -145,47 +173,97 @@ export function WorkOrderModal({ initial, onClose }: WorkOrderModalProps) {
     setDraft((d) => ({ ...d, timeEntries: d.timeEntries.filter((t) => t.id !== id) }));
   };
 
+  /**
+   * Recalcule les `quantity` des lignes /ha en fonction des parcelles
+   * sélectionnées (ajout/suppression/picker). On ne touche QUE les lignes
+   * dont l'unité indique du /ha et dont la quantité actuelle correspond au
+   * total des parcelles précédentes (signal qu'elle est issue du préfill —
+   * si l'utilisateur a saisi une valeur custom, on n'écrase pas).
+   */
+  const reapplyHectareQuantity = (
+    lines: ReadonlyArray<WorkOrderLine>,
+    previousTotalHa: number,
+    nextTotalHa: number,
+  ): WorkOrderLine[] =>
+    lines.map((l) => {
+      const unit = l.quantityUnit ?? '';
+      if (!isPerHectareUnit(unit)) return l;
+      // Si quantity correspond à l'ancien total ou n'est pas définie → préfill auto
+      const isAutofill = !l.quantity || Math.abs((l.quantity ?? 0) - previousTotalHa) < 0.01;
+      if (!isAutofill) return l;
+      return {
+        ...l,
+        quantity: nextTotalHa > 0 ? nextTotalHa : undefined,
+        surfaceHa: nextTotalHa > 0 ? nextTotalHa : undefined,
+      };
+    });
+
+  const totalHaFor = (ids: ReadonlyArray<string>): number => {
+    const items = parcels.filter((p) => ids.includes(p.id));
+    return Math.round(items.reduce((sum, p) => sum + p.surfaceHa, 0) * 100) / 100;
+  };
+
   const removeParcel = (parcelId: string) => {
-    setDraft((d) => ({
-      ...d,
-      parcelIds: (d.parcelIds ?? []).filter((id) => id !== parcelId),
-    }));
+    setDraft((d) => {
+      const previousIds = d.parcelIds ?? [];
+      const nextIds = previousIds.filter((id) => id !== parcelId);
+      const previousTotal = totalHaFor(previousIds);
+      const nextTotal = totalHaFor(nextIds);
+      return {
+        ...d,
+        parcelIds: nextIds,
+        lines: reapplyHectareQuantity(d.lines, previousTotal, nextTotal),
+      };
+    });
   };
 
   const setParcels = (ids: ReadonlyArray<string>) => {
-    setDraft((d) => ({ ...d, parcelIds: ids }));
+    setDraft((d) => {
+      const previousTotal = totalHaFor(d.parcelIds ?? []);
+      const nextTotal = totalHaFor(ids);
+      return {
+        ...d,
+        parcelIds: ids,
+        lines: reapplyHectareQuantity(d.lines, previousTotal, nextTotal),
+      };
+    });
     setParcelPickerOpen(false);
   };
 
-  // Calcul surface totale des parcelles sélectionnées (affichage chips)
-  const selectedParcelsInfo = useMemo(() => {
+  // Calcul surface totale des parcelles sélectionnées (auto-mémoïsé par React 19)
+  const selectedParcelsInfo = (() => {
     const ids = draft.parcelIds ?? [];
     const items = parcels.filter((p) => ids.includes(p.id));
     const totalHa = items.reduce((sum, p) => sum + p.surfaceHa, 0);
     return { items, totalHa: Math.round(totalHa * 100) / 100 };
-  }, [draft.parcelIds, parcels]);
+  })();
 
   // ─── Totaux dérivés ────────────────────────────────────────────────────
-  const totalChf = useMemo(() => computeWorkOrderTotal(draft), [draft]);
-  const totalDuration = useMemo(() => computeWorkOrderDuration(draft), [draft]);
 
-  const groupedTypes = useMemo(() => {
-    const map = new Map<string, (typeof WORK_TYPES)[number][]>();
-    for (const w of WORK_TYPES) {
-      if (!w.active) continue;
-      const arr = map.get(w.category) ?? [];
-      arr.push(w);
-      map.set(w.category, arr);
+  /** Résout label + unité d'affichage d'une ligne (worktype ou product). */
+  const resolveLineDisplay = (line: WorkOrderLine): { label: string; unit: string } => {
+    if (line.productId) {
+      const p = products.find((x) => x.id === line.productId);
+      return {
+        label: p?.name ?? '(produit retiré du catalogue)',
+        unit: line.quantityUnit ?? p?.defaultDoseUnit ?? '',
+      };
     }
-    return [...map.entries()];
-  }, []);
+    const wt = getWorkType(line.workType);
+    const fallbackUnit =
+      line.billingUnit === 'hectare' ? 'ha' : line.billingUnit === 'heure' ? 'h' : 'forfait';
+    return {
+      label: wt?.label ?? line.workType ?? '(prestation non définie)',
+      unit: line.quantityUnit ?? fallbackUnit,
+    };
+  };
 
   // ─── Validation & submit ───────────────────────────────────────────────
   const isValid =
     Boolean(draft.clientId) &&
     Boolean(draft.date) &&
     draft.lines.length > 0 &&
-    draft.lines.every((l) => Boolean(l.workType));
+    draft.lines.every((l) => Boolean(l.workType) || Boolean(l.productId));
 
   const submit = () => {
     if (!isValid) return;
@@ -193,6 +271,27 @@ export function WorkOrderModal({ initial, onClose }: WorkOrderModalProps) {
     else addWorkOrder(draft);
     onClose();
   };
+
+  /**
+   * Cycle de vie statut :
+   *  - planned → done (Réalisé) : tout opérateur ayant `travaux.write`
+   *  - done → invoiced (Terminé/Validé) : superviseur ayant `travaux.admin`
+   *  - invoiced est verrouillé. Pour modifier, passer par "Débloquer" qui repasse
+   *    le statut à `done` (kebab menu).
+   * Le hook `useCan` est lu via les permissions du current user.
+   */
+  const setStatus = (next: WorkOrderStatus) => {
+    if (!isValid) return;
+    const patched = { ...draft, status: next };
+    setDraft(patched);
+    if (isExisting) updateWorkOrder(patched.id, patched);
+    else addWorkOrder(patched);
+    onClose();
+  };
+
+  const isLocked = draft.status === 'invoiced';
+  // En mode mockup, on suppose admin partout. Phase 3 : useCan('travaux','admin').
+  const canValidate = isValid;
 
   const fieldClass =
     'h-10 w-full rounded-(--radius) border border-(--color-border) bg-(--color-surface) px-3 text-sm';
@@ -211,10 +310,15 @@ export function WorkOrderModal({ initial, onClose }: WorkOrderModalProps) {
           <h2 className="m-0 text-sm font-semibold">
             {isExisting ? 'Modifier le bon de travail' : 'Nouveau bon de travail'}
           </h2>
-          <span className="ml-3 text-[11px] text-(--color-muted)">
-            {draft.lines.length} prestation{draft.lines.length > 1 ? 's' : ''} · {totalDuration} h ·{' '}
-            {totalChf.toLocaleString('fr-CH')} CHF
-          </span>
+          {/* Sélecteur de statut visuel (workflow Planifié → Réalisé → Terminé).
+              Plus user-friendly que des boutons éparpillés dans le footer. */}
+          {isExisting && (
+            <StatusPicker
+              status={draft.status}
+              canValidate={canValidate}
+              onChange={(s) => setStatus(s)}
+            />
+          )}
           <button
             type="button"
             onClick={onClose}
@@ -278,19 +382,6 @@ export function WorkOrderModal({ initial, onClose }: WorkOrderModalProps) {
                   className={fieldClass}
                 />
               </Field>
-              <Field label="Priorité" hint="Mappé sur task.priority Odoo">
-                <select
-                  value={draft.priority}
-                  onChange={(e) => setField('priority', e.target.value as WorkOrderPriority)}
-                  className={fieldClass}
-                >
-                  {(['0', '1', '2', '3'] as WorkOrderPriority[]).map((p) => (
-                    <option key={p} value={p}>
-                      {PRIORITY_LABELS[p]}
-                    </option>
-                  ))}
-                </select>
-              </Field>
               <Field label="Échéance">
                 <input
                   type="date"
@@ -301,51 +392,43 @@ export function WorkOrderModal({ initial, onClose }: WorkOrderModalProps) {
               </Field>
             </div>
 
-            {/* Opérateurs assignés (task.user_ids) */}
+            {/* Opérateurs assignés (task.user_ids) — clic sur la zone =
+                ouvre le picker plein écran (même UX que les Parcelles). */}
             <div className="mt-3">
               <Field
                 label="Opérateurs assignés"
                 hint="Distinct des saisies de temps (qui a effectivement travaillé)"
               >
-                <div className="flex flex-wrap gap-1.5 rounded-(--radius) border border-(--color-border) bg-(--color-surface) p-2">
-                  {users
-                    .filter((u) => u.active)
-                    .map((u) => {
-                      const checked = draft.userIds.includes(u.id);
-                      return (
-                        <button
+                <button
+                  type="button"
+                  onClick={() => setOperatorPickerOpen(true)}
+                  className="flex w-full flex-wrap items-center gap-2 rounded-(--radius) border border-(--color-border) bg-(--color-surface) p-2 text-left hover:border-(--color-primary) hover:bg-[#fbfbf9]"
+                  title="Cliquer pour modifier les opérateurs assignés"
+                >
+                  {draft.userIds.length === 0 ? (
+                    <span className="px-1 text-[11px] text-(--color-muted)">
+                      Aucun opérateur assigné — cliquer pour sélectionner
+                    </span>
+                  ) : (
+                    users
+                      .filter((u) => draft.userIds.includes(u.id))
+                      .map((u) => (
+                        <span
                           key={u.id}
-                          type="button"
-                          onClick={() =>
-                            setField(
-                              'userIds',
-                              checked
-                                ? draft.userIds.filter((id) => id !== u.id)
-                                : [...draft.userIds, u.id],
-                            )
-                          }
-                          className={[
-                            'inline-flex items-center gap-1 rounded-(--radius-pill) px-2 py-1 text-xs',
-                            checked
-                              ? 'bg-(--color-primary) text-white'
-                              : 'border border-(--color-border) bg-(--color-surface) hover:bg-[#f8f8f5]',
-                          ].join(' ')}
+                          className="inline-flex items-center gap-1.5 rounded-(--radius-pill) border border-(--color-border) bg-(--color-surface) py-0.5 pl-1.5 pr-2 text-xs text-(--color-text)"
                         >
                           <span
                             aria-hidden
-                            className="inline-block h-4 w-4 rounded-(--radius-pill) text-center text-[9px] font-semibold leading-4"
-                            style={{
-                              background: checked ? 'rgba(255,255,255,0.25)' : u.color,
-                              color: checked ? 'white' : 'white',
-                            }}
+                            className="inline-block h-5 w-5 shrink-0 rounded-(--radius-pill) text-center text-[10px] font-semibold leading-5 text-white"
+                            style={{ background: u.color }}
                           >
                             {u.initials}
                           </span>
-                          {u.displayName}
-                        </button>
-                      );
-                    })}
-                </div>
+                          <span className="font-medium">{u.displayName}</span>
+                        </span>
+                      ))
+                  )}
+                </button>
               </Field>
             </div>
 
@@ -378,16 +461,22 @@ export function WorkOrderModal({ initial, onClose }: WorkOrderModalProps) {
                     selectedParcelsInfo.items.map((p) => (
                       <span
                         key={p.id}
-                        className="inline-flex items-center gap-1 rounded-(--radius-pill) bg-(--color-primary)/10 py-0.5 pl-2 pr-1 text-xs text-(--color-primary)"
-                        style={p.color ? { background: `${p.color}22`, color: p.color } : undefined}
+                        className="inline-flex items-center gap-1.5 rounded-(--radius-pill) border border-(--color-border) bg-(--color-surface) py-0.5 pl-1.5 pr-1 text-xs text-(--color-text)"
                       >
+                        <span
+                          aria-hidden
+                          className="inline-block h-2.5 w-2.5 shrink-0 rounded-(--radius-pill)"
+                          style={{ background: p.color ?? 'var(--color-primary)' }}
+                        />
                         <span className="max-w-[180px] truncate font-medium">{p.name}</span>
-                        <span className="text-[10px] opacity-70">{p.surfaceHa.toFixed(1)} ha</span>
+                        <span className="text-[10px] text-(--color-muted)">
+                          {p.surfaceHa.toFixed(2)} ha
+                        </span>
                         <button
                           type="button"
                           onClick={() => removeParcel(p.id)}
                           aria-label={`Retirer ${p.name}`}
-                          className="ml-0.5 inline-flex h-5 w-5 items-center justify-center rounded-(--radius-pill) hover:bg-black/10"
+                          className="ml-0.5 inline-flex h-5 w-5 items-center justify-center rounded-(--radius-pill) text-(--color-muted) hover:bg-[#f1f1ee] hover:text-(--color-text)"
                         >
                           ×
                         </button>
@@ -408,7 +497,12 @@ export function WorkOrderModal({ initial, onClose }: WorkOrderModalProps) {
             </div>
           </section>
 
-          {/* ─── Lignes de prestation ─── */}
+          {/* ─── Lignes de prestation ───
+           * Affichage dense : lignes en carte compacte (cliquables) + une seule
+           * ligne éditable à la fois (formulaire complet). Bouton header dual :
+           * "+ Ajouter une prestation" quand rien en cours, "Enregistrer la
+           * prestation" quand une ligne est en édition.
+           */}
           <section>
             <div className="mb-2 flex items-baseline justify-between">
               <h3 className="m-0 text-[10px] font-semibold tracking-wider text-(--color-muted) uppercase">
@@ -416,10 +510,21 @@ export function WorkOrderModal({ initial, onClose }: WorkOrderModalProps) {
               </h3>
               <button
                 type="button"
-                onClick={addLine}
-                className="inline-flex h-8 items-center gap-1 rounded-(--radius-sm) border border-(--color-primary) bg-(--color-primary)/10 px-2 text-xs font-medium text-(--color-primary) hover:bg-(--color-primary)/20"
+                onClick={() => {
+                  if (editingLineId) {
+                    setEditingLineId(null);
+                  } else {
+                    setPrestationPickerTarget('new');
+                  }
+                }}
+                className={[
+                  'inline-flex h-8 items-center gap-1 rounded-(--radius-sm) px-2 text-xs font-medium',
+                  editingLineId
+                    ? 'border border-(--color-primary) bg-(--color-primary) text-white hover:bg-(--color-primary-hover)'
+                    : 'border border-(--color-primary) bg-(--color-primary)/10 text-(--color-primary) hover:bg-(--color-primary)/20',
+                ].join(' ')}
               >
-                + Ajouter une prestation
+                {editingLineId ? 'Enregistrer la prestation' : '+ Ajouter une prestation'}
               </button>
             </div>
 
@@ -430,127 +535,134 @@ export function WorkOrderModal({ initial, onClose }: WorkOrderModalProps) {
             ) : (
               <ul className="m-0 list-none space-y-2 p-0">
                 {draft.lines.map((line, idx) => {
-                  const lineTotal = computeLineTotal(line);
+                  const display = resolveLineDisplay(line);
+                  const isPerHa = isPerHectareUnit(display.unit);
+                  const isEditing = editingLineId === line.id;
+
+                  if (!isEditing) {
+                    // Carte compacte : titre + quantité + unité + ✎ + ×
+                    return (
+                      <li key={line.id}>
+                        <div className="flex items-center gap-2 rounded-(--radius-sm) border border-(--color-border) bg-(--color-surface) px-3 py-2">
+                          <button
+                            type="button"
+                            onClick={() => setEditingLineId(line.id)}
+                            className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                            title="Modifier cette prestation"
+                          >
+                            <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                              {display.label}
+                            </span>
+                            <span className="shrink-0 text-xs tabular-nums text-(--color-text)">
+                              {line.quantity ?? '—'}
+                              <span className="ml-1 text-[10px] text-(--color-muted)">
+                                {display.unit || ''}
+                              </span>
+                            </span>
+                          </button>
+                          {line.description && (
+                            <span className="hidden max-w-[180px] truncate text-[11px] text-(--color-muted) md:inline">
+                              · {line.description}
+                            </span>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => setEditingLineId(line.id)}
+                            aria-label={`Modifier la ligne ${idx + 1}`}
+                            className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-(--radius-sm) text-(--color-muted) hover:bg-[#f1f1ee] hover:text-(--color-text)"
+                            title="Modifier"
+                          >
+                            <svg
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth={1.75}
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              width={14}
+                              height={14}
+                              aria-hidden="true"
+                            >
+                              <path d="M12 20h9" />
+                              <path d="M16.5 3.5a2.1 2.1 0 1 1 3 3L7 19l-4 1 1-4z" />
+                            </svg>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (editingLineId === line.id) setEditingLineId(null);
+                              removeLine(line.id);
+                            }}
+                            aria-label={`Supprimer la ligne ${idx + 1}`}
+                            className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-(--radius-sm) text-(--color-error) hover:bg-[#fef2f2]"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      </li>
+                    );
+                  }
+
+                  // Mode édition : formulaire complet
                   return (
                     <li
                       key={line.id}
-                      className="rounded-(--radius-sm) border border-(--color-border) bg-[#fbfbf9] p-3"
+                      className="rounded-(--radius-sm) border border-(--color-primary)/40 bg-(--color-primary)/5 p-3"
                     >
-                      <div className="mb-2 flex items-baseline justify-between gap-2">
-                        <span className="text-[11px] font-semibold text-(--color-muted)">
-                          Ligne {idx + 1}
-                        </span>
-                        <span className="ml-auto text-xs font-medium tabular-nums">
-                          {lineTotal.toLocaleString('fr-CH')} CHF
-                        </span>
+                      <div className="mb-2 flex items-start gap-2">
                         <button
                           type="button"
-                          onClick={() => removeLine(line.id)}
+                          onClick={() => setPrestationPickerTarget(line.id)}
+                          className="min-w-0 flex-1 rounded-(--radius-sm) border border-transparent px-2 py-1 text-left text-sm font-medium hover:border-(--color-border) hover:bg-(--color-surface)"
+                          title="Changer la prestation"
+                        >
+                          <span className="block truncate">{display.label}</span>
+                          <span className="mt-0.5 inline-flex items-center gap-1.5 text-[10px] text-(--color-muted)">
+                            <span className="rounded-(--radius-pill) bg-[#f1f1ee] px-1.5 py-0.5 font-mono tabular-nums">
+                              {display.unit || '—'}
+                            </span>
+                            <span>Cliquer pour changer</span>
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingLineId(null);
+                            removeLine(line.id);
+                          }}
                           aria-label={`Supprimer la ligne ${idx + 1}`}
-                          className="inline-flex h-7 w-7 items-center justify-center rounded-(--radius-sm) text-(--color-error) hover:bg-[#fef2f2]"
+                          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-(--radius-sm) text-(--color-error) hover:bg-[#fef2f2]"
                         >
                           ×
                         </button>
                       </div>
 
                       <div className="grid gap-2 sm:grid-cols-2">
-                        <div className="sm:col-span-2">
-                          <label className="mb-0.5 block text-[11px] font-medium">
-                            Type de prestation
-                          </label>
-                          <select
-                            value={line.workType}
-                            onChange={(e) => onLineWorkTypeChange(line.id, e.target.value)}
-                            className={smallFieldClass}
-                          >
-                            <option value="">— Sélectionner —</option>
-                            {groupedTypes.map(([cat, types]) => (
-                              <optgroup key={cat} label={WORK_CATEGORY_LABELS[cat] ?? cat}>
-                                {types.map((w) => (
-                                  <option key={w.key} value={w.key}>
-                                    {w.label}
-                                  </option>
-                                ))}
-                              </optgroup>
-                            ))}
-                          </select>
-                        </div>
-
-                        <div>
-                          <label className="mb-0.5 block text-[11px] font-medium">Durée (h)</label>
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.1"
-                            value={line.durationHours ?? ''}
-                            onChange={(e) =>
-                              updateLine(line.id, {
-                                durationHours: e.target.value
-                                  ? Math.max(0, Number(e.target.value))
-                                  : undefined,
-                              })
-                            }
-                            className={smallFieldClass}
-                          />
-                        </div>
                         <div>
                           <label className="mb-0.5 block text-[11px] font-medium">
-                            Surface (ha)
+                            Quantité{display.unit ? ` (${display.unit})` : ''}
+                            {isPerHa && selectedParcelsInfo.totalHa > 0 && (
+                              <span className="ml-1 text-[10px] font-normal text-(--color-muted)">
+                                pré-rempli depuis les parcelles
+                              </span>
+                            )}
                           </label>
                           <input
                             type="number"
                             min="0"
                             step="0.01"
-                            value={line.surfaceHa ?? ''}
+                            value={line.quantity ?? ''}
                             onChange={(e) =>
-                              updateLine(line.id, {
-                                surfaceHa: e.target.value
-                                  ? Math.max(0, Number(e.target.value))
-                                  : undefined,
-                              })
+                              setLineQuantity(
+                                line.id,
+                                e.target.value ? Math.max(0, Number(e.target.value)) : undefined,
+                              )
                             }
+                            placeholder={isPerHa ? 'ex. surface totale ha' : ''}
                             className={smallFieldClass}
                           />
                         </div>
                         <div>
-                          <label className="mb-0.5 block text-[11px] font-medium">
-                            Facturation
-                          </label>
-                          <select
-                            value={line.billingUnit}
-                            onChange={(e) =>
-                              updateLine(line.id, {
-                                billingUnit: e.target.value as WorkOrderLine['billingUnit'],
-                              })
-                            }
-                            className={smallFieldClass}
-                          >
-                            <option value="heure">À l'heure</option>
-                            <option value="hectare">À l'hectare</option>
-                            <option value="forfait">Forfait</option>
-                          </select>
-                        </div>
-                        <div>
-                          <label className="mb-0.5 block text-[11px] font-medium">
-                            Tarif unitaire (CHF)
-                          </label>
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            value={line.unitRateChf ?? ''}
-                            onChange={(e) =>
-                              updateLine(line.id, {
-                                unitRateChf: e.target.value
-                                  ? Math.max(0, Number(e.target.value))
-                                  : undefined,
-                              })
-                            }
-                            className={smallFieldClass}
-                          />
-                        </div>
-
-                        <div className="sm:col-span-2">
                           <label className="mb-0.5 block text-[11px] font-medium">
                             Description / notes
                           </label>
@@ -572,7 +684,9 @@ export function WorkOrderModal({ initial, onClose }: WorkOrderModalProps) {
             )}
           </section>
 
-          {/* ─── Saisies de temps ─── */}
+          {/* ─── Saisies de temps ───
+           * Même pattern condensé que les prestations : carte compacte par
+           * défaut, formulaire complet sur l'entrée éditée. Bouton header dual. */}
           <section>
             <div className="mb-2 flex items-baseline justify-between">
               <h3 className="m-0 text-[10px] font-semibold tracking-wider text-(--color-muted) uppercase">
@@ -580,10 +694,18 @@ export function WorkOrderModal({ initial, onClose }: WorkOrderModalProps) {
               </h3>
               <button
                 type="button"
-                onClick={addTimeEntry}
-                className="inline-flex h-8 items-center gap-1 rounded-(--radius-sm) border border-(--color-primary) bg-(--color-primary)/10 px-2 text-xs font-medium text-(--color-primary) hover:bg-(--color-primary)/20"
+                onClick={() => {
+                  if (editingEntryId) setEditingEntryId(null);
+                  else addTimeEntry();
+                }}
+                className={[
+                  'inline-flex h-8 items-center gap-1 rounded-(--radius-sm) px-2 text-xs font-medium',
+                  editingEntryId
+                    ? 'border border-(--color-primary) bg-(--color-primary) text-white hover:bg-(--color-primary-hover)'
+                    : 'border border-(--color-primary) bg-(--color-primary)/10 text-(--color-primary) hover:bg-(--color-primary)/20',
+                ].join(' ')}
               >
-                + Ajouter une saisie
+                {editingEntryId ? 'Enregistrer la saisie' : '+ Ajouter une saisie'}
               </button>
             </div>
 
@@ -593,123 +715,165 @@ export function WorkOrderModal({ initial, onClose }: WorkOrderModalProps) {
               </div>
             ) : (
               <ul className="m-0 list-none space-y-2 p-0">
-                {draft.timeEntries.map((entry, idx) => (
-                  <li
-                    key={entry.id}
-                    className="rounded-(--radius-sm) border border-(--color-border) bg-[#fbfbf9] p-3"
-                  >
-                    <div className="mb-2 flex items-baseline justify-between gap-2">
-                      <span className="text-[11px] font-semibold text-(--color-muted)">
-                        Saisie {idx + 1}
-                      </span>
-                      <span className="ml-auto text-xs font-medium tabular-nums">
-                        {entry.durationHours.toFixed(2)} h
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => removeTimeEntry(entry.id)}
-                        aria-label={`Supprimer la saisie ${idx + 1}`}
-                        className="inline-flex h-7 w-7 items-center justify-center rounded-(--radius-sm) text-(--color-error) hover:bg-[#fef2f2]"
-                      >
-                        ×
-                      </button>
-                    </div>
+                {draft.timeEntries.map((entry, idx) => {
+                  const isEditing = editingEntryId === entry.id;
+                  const operator = users.find((u) => u.id === entry.operatorId);
+                  if (!isEditing) {
+                    return (
+                      <li key={entry.id}>
+                        <div className="flex items-center gap-2 rounded-(--radius-sm) border border-(--color-border) bg-(--color-surface) px-3 py-2">
+                          <button
+                            type="button"
+                            onClick={() => setEditingEntryId(entry.id)}
+                            className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                            title="Modifier cette saisie"
+                          >
+                            <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                              {operator?.displayName ?? 'Opérateur non défini'}
+                            </span>
+                            <span className="shrink-0 text-xs text-(--color-muted)">
+                              {entry.date ?? draft.date}
+                            </span>
+                            <span className="shrink-0 text-xs tabular-nums">
+                              {entry.durationHours.toFixed(2)} h
+                            </span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setEditingEntryId(entry.id)}
+                            aria-label={`Modifier la saisie ${idx + 1}`}
+                            className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-(--radius-sm) text-(--color-muted) hover:bg-[#f1f1ee] hover:text-(--color-text)"
+                            title="Modifier"
+                          >
+                            <svg
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth={1.75}
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              width={14}
+                              height={14}
+                              aria-hidden="true"
+                            >
+                              <path d="M12 20h9" />
+                              <path d="M16.5 3.5a2.1 2.1 0 1 1 3 3L7 19l-4 1 1-4z" />
+                            </svg>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (editingEntryId === entry.id) setEditingEntryId(null);
+                              removeTimeEntry(entry.id);
+                            }}
+                            aria-label={`Supprimer la saisie ${idx + 1}`}
+                            className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-(--radius-sm) text-(--color-error) hover:bg-[#fef2f2]"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      </li>
+                    );
+                  }
+                  return (
+                    <li
+                      key={entry.id}
+                      className="rounded-(--radius-sm) border border-(--color-primary)/40 bg-(--color-primary)/5 p-3"
+                    >
+                      <div className="mb-2 flex items-baseline justify-between gap-2">
+                        <span className="text-[11px] font-semibold text-(--color-muted)">
+                          Saisie {idx + 1}
+                        </span>
+                        <span className="ml-auto text-xs font-medium tabular-nums">
+                          {entry.durationHours.toFixed(2)} h
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingEntryId(null);
+                            removeTimeEntry(entry.id);
+                          }}
+                          aria-label={`Supprimer la saisie ${idx + 1}`}
+                          className="inline-flex h-7 w-7 items-center justify-center rounded-(--radius-sm) text-(--color-error) hover:bg-[#fef2f2]"
+                        >
+                          ×
+                        </button>
+                      </div>
 
-                    <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-4">
-                      <div className="md:col-span-2">
-                        <label className="mb-0.5 block text-[11px] font-medium">Opérateur</label>
-                        <select
-                          value={entry.operatorId}
-                          onChange={(e) =>
-                            updateTimeEntry(entry.id, { operatorId: e.target.value })
-                          }
-                          className={smallFieldClass}
-                        >
-                          <option value="">— Sélectionner —</option>
-                          {users
-                            .filter((u) => u.active)
-                            .map((u) => (
-                              <option key={u.id} value={u.id}>
-                                {u.displayName}
-                              </option>
-                            ))}
-                        </select>
+                      <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-4">
+                        <div className="md:col-span-2">
+                          <label className="mb-0.5 block text-[11px] font-medium">Opérateur</label>
+                          <select
+                            value={entry.operatorId}
+                            onChange={(e) =>
+                              updateTimeEntry(entry.id, { operatorId: e.target.value })
+                            }
+                            className={smallFieldClass}
+                          >
+                            <option value="">— Sélectionner —</option>
+                            {users
+                              .filter((u) => u.active)
+                              .map((u) => (
+                                <option key={u.id} value={u.id}>
+                                  {u.displayName}
+                                </option>
+                              ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="mb-0.5 block text-[11px] font-medium">Date</label>
+                          <input
+                            type="date"
+                            value={entry.date ?? ''}
+                            onChange={(e) =>
+                              updateTimeEntry(entry.id, { date: e.target.value || undefined })
+                            }
+                            className={smallFieldClass}
+                          />
+                        </div>
+                        <div>
+                          <label className="mb-0.5 block text-[11px] font-medium">Durée (h)</label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.1"
+                            value={entry.durationHours || ''}
+                            onChange={(e) =>
+                              updateTimeEntry(entry.id, {
+                                durationHours: e.target.value
+                                  ? Math.max(0, Number(e.target.value))
+                                  : 0,
+                              })
+                            }
+                            className={smallFieldClass}
+                          />
+                        </div>
+                        <div>
+                          <label className="mb-0.5 block text-[11px] font-medium">Début</label>
+                          <input
+                            type="time"
+                            value={entry.startTime ?? ''}
+                            onChange={(e) =>
+                              updateTimeEntry(entry.id, { startTime: e.target.value || undefined })
+                            }
+                            className={smallFieldClass}
+                          />
+                        </div>
+                        <div>
+                          <label className="mb-0.5 block text-[11px] font-medium">Fin</label>
+                          <input
+                            type="time"
+                            value={entry.endTime ?? ''}
+                            onChange={(e) =>
+                              updateTimeEntry(entry.id, { endTime: e.target.value || undefined })
+                            }
+                            className={smallFieldClass}
+                          />
+                        </div>
                       </div>
-                      <div>
-                        <label className="mb-0.5 block text-[11px] font-medium">Date</label>
-                        <input
-                          type="date"
-                          value={entry.date ?? ''}
-                          onChange={(e) =>
-                            updateTimeEntry(entry.id, { date: e.target.value || undefined })
-                          }
-                          className={smallFieldClass}
-                        />
-                      </div>
-                      <div>
-                        <label className="mb-0.5 block text-[11px] font-medium">Durée (h)</label>
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.1"
-                          value={entry.durationHours || ''}
-                          onChange={(e) =>
-                            updateTimeEntry(entry.id, {
-                              durationHours: e.target.value
-                                ? Math.max(0, Number(e.target.value))
-                                : 0,
-                            })
-                          }
-                          className={smallFieldClass}
-                        />
-                      </div>
-                      <div>
-                        <label className="mb-0.5 block text-[11px] font-medium">Début</label>
-                        <input
-                          type="time"
-                          value={entry.startTime ?? ''}
-                          onChange={(e) =>
-                            updateTimeEntry(entry.id, { startTime: e.target.value || undefined })
-                          }
-                          className={smallFieldClass}
-                        />
-                      </div>
-                      <div>
-                        <label className="mb-0.5 block text-[11px] font-medium">Fin</label>
-                        <input
-                          type="time"
-                          value={entry.endTime ?? ''}
-                          onChange={(e) =>
-                            updateTimeEntry(entry.id, { endTime: e.target.value || undefined })
-                          }
-                          className={smallFieldClass}
-                        />
-                      </div>
-                      <div className="md:col-span-2">
-                        <label className="mb-0.5 block text-[11px] font-medium">
-                          Liée à la prestation
-                        </label>
-                        <select
-                          value={entry.lineId ?? ''}
-                          onChange={(e) =>
-                            updateTimeEntry(entry.id, { lineId: e.target.value || undefined })
-                          }
-                          className={smallFieldClass}
-                        >
-                          <option value="">— Bon entier —</option>
-                          {draft.lines.map((l, i) => {
-                            const wt = getWorkType(l.workType);
-                            return (
-                              <option key={l.id} value={l.id}>
-                                Ligne {i + 1} : {wt?.label ?? l.workType ?? '(non défini)'}
-                              </option>
-                            );
-                          })}
-                        </select>
-                      </div>
-                    </div>
-                  </li>
-                ))}
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </section>
@@ -753,25 +917,18 @@ export function WorkOrderModal({ initial, onClose }: WorkOrderModalProps) {
           </Field>
         </div>
 
-        <footer className="flex items-center gap-2 border-t border-(--color-border) p-3">
-          <div className="text-sm">
-            Total :{' '}
-            <span className="font-semibold tabular-nums">
-              {totalChf.toLocaleString('fr-CH')} CHF
-            </span>{' '}
-            · {totalDuration} h
-          </div>
+        <footer className="flex items-center justify-end gap-2 border-t border-(--color-border) p-3">
           <button
             type="button"
             onClick={onClose}
-            className="ml-auto inline-flex h-10 items-center rounded-(--radius) border border-(--color-border) bg-(--color-surface) px-4 text-sm font-medium hover:bg-[#f8f8f5]"
+            className="inline-flex h-10 items-center rounded-(--radius) border border-(--color-border) bg-(--color-surface) px-4 text-sm font-medium hover:bg-[#f8f8f5]"
           >
             Annuler
           </button>
           <button
             type="button"
             onClick={submit}
-            disabled={!isValid}
+            disabled={!isValid || isLocked}
             className="inline-flex h-10 items-center rounded-(--radius) border border-(--color-primary) bg-(--color-primary) px-5 text-sm font-medium text-white hover:bg-(--color-primary-hover) disabled:opacity-50"
           >
             {isExisting ? 'Enregistrer' : 'Créer'}
@@ -787,6 +944,27 @@ export function WorkOrderModal({ initial, onClose }: WorkOrderModalProps) {
           onClose={() => setParcelPickerOpen(false)}
           allowEmpty
           title="Parcelles concernées par le bon"
+        />
+      )}
+
+      {operatorPickerOpen && (
+        <OperatorMultiPicker
+          users={users}
+          selectedIds={draft.userIds}
+          onConfirm={(ids) => setField('userIds', ids)}
+          onClose={() => setOperatorPickerOpen(false)}
+        />
+      )}
+
+      {prestationPickerTarget !== null && (
+        <PrestationPicker
+          currentValue={(() => {
+            if (prestationPickerTarget === 'new') return undefined;
+            const l = draft.lines.find((x) => x.id === prestationPickerTarget);
+            return l ? { workType: l.workType, productId: l.productId } : undefined;
+          })()}
+          onSelect={(source) => applyPrestationSource(prestationPickerTarget, source)}
+          onClose={() => setPrestationPickerTarget(null)}
         />
       )}
     </div>
@@ -812,6 +990,117 @@ function Field({
       </label>
       {children}
       {hint && <p className="m-0 mt-1 text-[11px] text-(--color-muted)">{hint}</p>}
+    </div>
+  );
+}
+
+/**
+ * Sélecteur de statut visuel dans le header — workflow Planifié → Réalisé → Terminé.
+ * Plus user-friendly que des boutons éparpillés en footer. Cf. mémoire
+ * project-workflow-validation-travaux.
+ *
+ * Comportement :
+ *  - Affiche le chip du statut courant
+ *  - Click → menu déroulant avec actions disponibles selon le statut
+ *  - Si Terminé (verrouillé), seule action visible = Débloquer
+ */
+function StatusPicker({
+  status,
+  canValidate,
+  onChange,
+}: {
+  status: WorkOrderStatus;
+  canValidate: boolean;
+  onChange: (next: WorkOrderStatus) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [open]);
+
+  const meta: Record<WorkOrderStatus, { label: string; bg: string; text: string }> = {
+    planned: { label: 'Planifié', bg: 'bg-[#f1f1ee]', text: 'text-(--color-text)' },
+    'in-progress': { label: 'En cours', bg: 'bg-[#fef3c7]', text: 'text-[#92400e]' },
+    done: { label: 'Réalisé', bg: 'bg-[#dcfce7]', text: 'text-[#166534]' },
+    invoiced: { label: 'Terminé', bg: 'bg-(--color-primary)/15', text: 'text-(--color-primary)' },
+    cancelled: { label: 'Annulé', bg: 'bg-[#fee2e2]', text: 'text-[#991b1b]' },
+  };
+  const m = meta[status];
+
+  const options: Array<{ value: WorkOrderStatus; label: string; isPrimary?: boolean }> = [];
+  if (status === 'planned') {
+    options.push({ value: 'done', label: 'Marquer comme Réalisé' });
+    if (canValidate)
+      options.push({ value: 'invoiced', label: 'Marquer comme Terminé', isPrimary: true });
+  } else if (status === 'done') {
+    options.push({ value: 'planned', label: 'Repasser en Planifié' });
+    if (canValidate)
+      options.push({ value: 'invoiced', label: 'Marquer comme Terminé', isPrimary: true });
+  } else if (status === 'invoiced') {
+    options.push({ value: 'done', label: 'Débloquer (repasser en Réalisé)' });
+  }
+
+  return (
+    <div ref={ref} className="relative ml-2">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className={[
+          'inline-flex items-center gap-1.5 rounded-(--radius-pill) px-2.5 py-1 text-[11px] font-semibold tracking-wide uppercase',
+          m.bg,
+          m.text,
+        ].join(' ')}
+      >
+        {m.label}
+        {options.length > 0 && (
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            width={12}
+            height={12}
+            aria-hidden="true"
+          >
+            <path d="m6 9 6 6 6-6" />
+          </svg>
+        )}
+      </button>
+      {open && options.length > 0 && (
+        <ul
+          role="menu"
+          className="absolute left-0 top-full z-[1300] mt-1 min-w-[220px] rounded-(--radius) border border-(--color-border) bg-(--color-surface) p-1 shadow-(--shadow-popup)"
+        >
+          {options.map((o) => (
+            <li key={o.value}>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  onChange(o.value);
+                  setOpen(false);
+                }}
+                className={[
+                  'flex h-9 w-full items-center rounded-(--radius-sm) px-2.5 text-sm hover:bg-[#f8f8f5]',
+                  o.isPrimary ? 'font-semibold text-(--color-primary)' : 'text-(--color-text)',
+                ].join(' ')}
+              >
+                {o.label}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

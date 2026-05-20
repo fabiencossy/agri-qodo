@@ -4,8 +4,12 @@ import { ViewSwitcher, type ViewKey } from '../../components/ViewSwitcher';
 import { ExportButton, type ExportColumn } from '../../components/ExportButton';
 import { useFabActions, useHideFab } from '../../layouts/useFab';
 import { useStandardFabActions } from '../../layouts/useStandardFabActions';
-import { useClients, useWorkOrders, removeWorkOrder } from './travaux.store';
+import { useClients, useWorkOrders } from './travaux.store';
+import { useParcels } from '../parcellaire/parcellaire.store';
 import { WorkOrderModal } from './WorkOrderModal';
+import { QuickWorkOrderModal } from './QuickWorkOrderModal';
+import { useCurrentFarm } from '../farms/farms.store';
+import { findClientForFarm, useIsCurrentFarmInvitee } from '../farms/farms.helpers';
 import { getWorkType, WORK_CATEGORY_LABELS } from './travaux.catalog';
 import {
   computeWorkOrderTotal,
@@ -14,16 +18,19 @@ import {
   type WorkOrder,
   type WorkOrderStatus,
 } from './travaux.types';
-import { getUserById } from '../users/users.store';
 import { useCan } from '../users/permissions';
 
 const STATUS_LABELS: Record<WorkOrderStatus, string> = {
   planned: 'Planifié',
   'in-progress': 'En cours',
   done: 'Réalisé',
-  invoiced: 'Facturé',
+  invoiced: 'Validé',
   cancelled: 'Annulé',
 };
+
+/** Statuts visibles dans /travaux. Les bons planifiés vont dans la vue
+ * Planning (à venir), pas dans la liste des travaux réalisés. */
+const TRAVAUX_VISIBLE_STATUSES: ReadonlyArray<WorkOrderStatus> = ['done', 'invoiced'];
 
 const STATUS_COLORS: Record<WorkOrderStatus, string> = {
   planned: 'bg-[#f1f1ee] text-(--color-text)',
@@ -49,14 +56,48 @@ const EXPORT_COLUMNS: ExportColumn[] = [
 export default function TravauxPage() {
   const orders = useWorkOrders();
   const clients = useClients();
+  const parcels = useParcels();
   const canWrite = useCan('travaux', 'write');
   const [editing, setEditing] = useState<Partial<WorkOrder> | null>(null);
+  const [quickCreating, setQuickCreating] = useState(false);
   const [year, setYear] = useState<number>(new Date().getFullYear());
   const [view, setView] = useState<TravauxView>('table');
-  const [searchState, setSearchState] = useState<SearchState>({ facets: [], groupBy: [] });
+
+  // Mode invité : on pré-coche le filtre client au client correspondant à la
+  // current farm — l'utilisateur ne voit que ses bons chez ce client.
+  const currentFarm = useCurrentFarm();
+  const isInvitee = useIsCurrentFarmInvitee();
+  const matchedClient = isInvitee ? findClientForFarm(currentFarm, clients) : undefined;
+  const inviteeClientId = matchedClient?.id ?? null;
+
+  const [searchState, setSearchState] = useState<SearchState>({
+    facets: [],
+    groupBy: [],
+  });
+
+  // Mode invité : on injecte le filtre client de force dans le searchState
+  // affiché à la SearchBar (et utilisé pour le filtrage), sans toucher au
+  // state. Pas de setState pendant le render → pas de boucle infinie. L'user
+  // peut quand même ajouter/retirer ses propres facets, le filtre invité
+  // reste persistant tant que la current farm est invitée.
+  const effectiveSearchState: SearchState = inviteeClientId
+    ? {
+        ...searchState,
+        facets: [
+          ...searchState.facets.filter((f) => f.fieldId !== 'client'),
+          {
+            id: `facet-client-${inviteeClientId}`,
+            fieldId: 'client',
+            operator: 'eq' as const,
+            values: [inviteeClientId],
+            customLabel: `Client : ${matchedClient?.name ?? inviteeClientId}`,
+          },
+        ],
+      }
+    : searchState;
 
   // ─── FAB ───────────────────────────────────────────────────────────────
-  const onAddWorkOrder = useMemo(() => () => setEditing({}), []);
+  const onAddWorkOrder = useMemo(() => () => setQuickCreating(true), []);
   const extraActions = useMemo(
     () =>
       canWrite
@@ -73,7 +114,7 @@ export default function TravauxPage() {
   );
   const standardActions = useStandardFabActions({ extraActions });
   useFabActions(standardActions);
-  useHideFab(editing !== null);
+  useHideFab(editing !== null || quickCreating);
 
   // ─── SearchBar fields ──────────────────────────────────────────────────
   const fields: FieldDescriptor[] = useMemo(
@@ -94,7 +135,9 @@ export default function TravauxPage() {
         id: 'status',
         label: 'Statut',
         type: 'select',
-        options: (Object.keys(STATUS_LABELS) as WorkOrderStatus[]).map((s) => ({
+        // Seuls Réalisé + Validé sont sélectionnables ici — les autres statuts
+        // (Planifié, En cours, Annulé) ne sont pas visibles dans /travaux.
+        options: TRAVAUX_VISIBLE_STATUSES.map((s) => ({
           label: STATUS_LABELS[s],
           value: s,
         })),
@@ -114,18 +157,22 @@ export default function TravauxPage() {
   );
 
   // ─── Filtrage ──────────────────────────────────────────────────────────
+  // NB : les bons "Planifié" ont leur propre page /planning (PlanningPage).
   const filtered = useMemo(() => {
     return orders
       .filter((o) => {
+        // Page Travaux = uniquement les bons réalisés ou validés.
+        // Les bons planifiés sont visibles dans la vue Planning (à venir).
+        if (!TRAVAUX_VISIBLE_STATUSES.includes(o.status)) return false;
         if (year && !o.date.startsWith(String(year))) return false;
-        if (searchState.query) {
-          const q = searchState.query.toLowerCase();
+        if (effectiveSearchState.query) {
+          const q = effectiveSearchState.query.toLowerCase();
           const client = clients.find((c) => c.id === o.clientId)?.name ?? '';
           const types = o.lines.map((l) => getWorkType(l.workType)?.label ?? '').join(' ');
           const hay = `${client} ${types} ${o.description ?? ''} ${o.machine ?? ''}`.toLowerCase();
           if (!hay.includes(q)) return false;
         }
-        for (const facet of searchState.facets) {
+        for (const facet of effectiveSearchState.facets) {
           if (facet.values.length === 0) continue;
           if (facet.fieldId === 'client') {
             if (!facet.values.includes(o.clientId)) return false;
@@ -147,7 +194,7 @@ export default function TravauxPage() {
         return true;
       })
       .sort((a, b) => (a.date < b.date ? 1 : -1));
-  }, [orders, clients, year, searchState]);
+  }, [orders, clients, year, effectiveSearchState]);
 
   // ─── KPIs ──────────────────────────────────────────────────────────────
   const totals = useMemo(() => {
@@ -191,12 +238,6 @@ export default function TravauxPage() {
     });
   }, [filtered, clients]);
 
-  const handleDelete = (wo: WorkOrder) => {
-    if (confirm(`Supprimer le bon de travail du ${formatDate(wo.date)} ?`)) {
-      removeWorkOrder(wo.id);
-    }
-  };
-
   const summary = `${totals.count} bon${totals.count > 1 ? 's' : ''} · ${totals.hours} h · ${totals.totalChf.toLocaleString('fr-CH')} CHF`;
 
   const topBar = (
@@ -208,7 +249,7 @@ export default function TravauxPage() {
       <div className="min-w-0 flex-1">
         <SearchBar
           fields={fields}
-          value={searchState}
+          value={effectiveSearchState}
           onChange={setSearchState}
           ariaLabel="Rechercher dans les bons de travaux"
         />
@@ -266,9 +307,8 @@ export default function TravauxPage() {
           <WorkOrderTable
             orders={filtered}
             clients={clients}
-            canWrite={canWrite}
+            parcels={parcels}
             onEdit={setEditing}
-            onDelete={handleDelete}
           />
         )}
         {view === 'timeline' && (
@@ -280,6 +320,18 @@ export default function TravauxPage() {
       </div>
 
       {editing && <WorkOrderModal initial={editing} onClose={() => setEditing(null)} />}
+      {quickCreating && (
+        <QuickWorkOrderModal
+          // Sur une farm invitée, préremplit automatiquement le client lié.
+          // L'utilisateur n'a pas à le re-sélectionner manuellement.
+          initialClientId={inviteeClientId ?? undefined}
+          onClose={() => setQuickCreating(false)}
+          onSwitchToFull={(draft) => {
+            setQuickCreating(false);
+            setEditing(draft);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -289,16 +341,22 @@ export default function TravauxPage() {
 function WorkOrderTable({
   orders,
   clients,
-  canWrite,
+  parcels,
   onEdit,
-  onDelete,
 }: {
   orders: ReadonlyArray<WorkOrder>;
   clients: ReadonlyArray<{ id: string; name: string; city?: string }>;
-  canWrite: boolean;
+  parcels: ReadonlyArray<{ id: string; name: string }>;
   onEdit: (wo: WorkOrder) => void;
-  onDelete: (wo: WorkOrder) => void;
 }) {
+  /** Résume les parcelles d'un bon en string lisible : "Nom1 + N autres" si plusieurs. */
+  const parcelsLabel = (wo: WorkOrder): string => {
+    const ids = wo.parcelIds ?? [];
+    if (ids.length === 0) return '—';
+    const names = ids.map((id) => parcels.find((p) => p.id === id)?.name ?? id);
+    if (names.length === 1) return names[0]!;
+    return `${names[0]} +${names.length - 1}`;
+  };
   if (orders.length === 0) {
     return (
       <p className="m-0 py-10 text-center text-sm text-(--color-muted)">Aucun bon de travail.</p>
@@ -307,28 +365,23 @@ function WorkOrderTable({
   return (
     <>
       <div className="hidden overflow-x-auto md:block">
-        <table className="w-full min-w-[860px] border-collapse text-sm">
+        <table className="w-full min-w-[680px] border-collapse text-sm">
           <thead>
             <tr className="border-b border-(--color-border) text-left text-[10px] font-semibold tracking-wider text-(--color-muted) uppercase">
               <th className="py-2 pr-2">Date</th>
               <th className="py-2 pr-2">Client</th>
-              <th className="py-2 pr-2">Prestations</th>
-              <th className="px-2 py-2 text-right">Durée</th>
-              <th className="px-2 py-2 text-right">Surface</th>
-              <th className="px-2 py-2 text-right">Total HT</th>
+              <th className="py-2 pr-2">Prestation</th>
+              <th className="py-2 pr-2">Parcelle</th>
               <th className="px-2 py-2">Statut</th>
-              <th className="px-2 py-2"></th>
             </tr>
           </thead>
           <tbody>
             {orders.map((wo) => {
               const client = clients.find((c) => c.id === wo.clientId);
-              const total = computeWorkOrderTotal(wo);
-              const duration = computeWorkOrderDuration(wo);
-              const surface = computeWorkOrderSurface(wo);
-              const operatorIds = Array.from(
-                new Set(wo.timeEntries.map((t) => t.operatorId).filter(Boolean)),
-              );
+              const first = wo.lines[0];
+              const firstLabel = first
+                ? (getWorkType(first.workType)?.label ?? first.workType ?? '—')
+                : '—';
               return (
                 <tr
                   key={wo.id}
@@ -338,36 +391,13 @@ function WorkOrderTable({
                   <td className="py-2 pr-2 tabular-nums">{formatDate(wo.date)}</td>
                   <td className="py-2 pr-2">
                     <div className="font-medium">{client?.name ?? '—'}</div>
-                    {client?.city && (
-                      <div className="text-[11px] text-(--color-muted)">{client.city}</div>
-                    )}
                   </td>
                   <td className="py-2 pr-2">
-                    <div className="font-medium">
-                      {wo.lines.length} prestation{wo.lines.length > 1 ? 's' : ''}
+                    <div className="truncate">
+                      {wo.lines.length > 1 ? `${firstLabel}…` : firstLabel}
                     </div>
-                    <div className="truncate text-[11px] text-(--color-muted)">
-                      {wo.lines
-                        .slice(0, 2)
-                        .map((l) => getWorkType(l.workType)?.label ?? l.workType)
-                        .join(' · ')}
-                      {wo.lines.length > 2 && ` · +${wo.lines.length - 2}`}
-                    </div>
-                    {operatorIds.length > 0 && (
-                      <div className="text-[11px] text-(--color-muted)">
-                        par {operatorIds.map((id) => getUserById(id)?.displayName ?? id).join(', ')}
-                      </div>
-                    )}
                   </td>
-                  <td className="px-2 py-2 text-right tabular-nums">
-                    {duration ? `${duration.toFixed(1)} h` : '—'}
-                  </td>
-                  <td className="px-2 py-2 text-right tabular-nums">
-                    {surface ? `${surface.toFixed(2)} ha` : '—'}
-                  </td>
-                  <td className="px-2 py-2 text-right tabular-nums font-medium">
-                    {total ? `${total.toLocaleString('fr-CH')} CHF` : '—'}
-                  </td>
+                  <td className="py-2 pr-2 text-[12px] text-(--color-muted)">{parcelsLabel(wo)}</td>
                   <td className="px-2 py-2">
                     <span
                       className={[
@@ -378,21 +408,6 @@ function WorkOrderTable({
                       {STATUS_LABELS[wo.status]}
                     </span>
                   </td>
-                  <td className="px-2 py-2 text-right" onClick={(e) => e.stopPropagation()}>
-                    {canWrite && (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onDelete(wo);
-                        }}
-                        aria-label="Supprimer"
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-(--radius-sm) text-(--color-error) hover:bg-[#fef2f2]"
-                      >
-                        ×
-                      </button>
-                    )}
-                  </td>
                 </tr>
               );
             })}
@@ -400,13 +415,15 @@ function WorkOrderTable({
         </table>
       </div>
 
-      {/* Cards mobile : toute la card est cliquable (avec bouton supprimer interne) */}
+      {/* Cards mobile : prestation + client + parcelle + statut. Pas d'heures
+          ni prix ni surface — le PO ne veut que l'essentiel sur la liste. */}
       <ul className="m-0 list-none space-y-2 p-0 md:hidden">
         {orders.map((wo) => {
           const client = clients.find((c) => c.id === wo.clientId);
-          const total = computeWorkOrderTotal(wo);
-          const duration = computeWorkOrderDuration(wo);
-          const surface = computeWorkOrderSurface(wo);
+          const first = wo.lines[0];
+          const firstLabel = first
+            ? (getWorkType(first.workType)?.label ?? first.workType ?? '—')
+            : '—';
           return (
             <li
               key={wo.id}
@@ -423,18 +440,14 @@ function WorkOrderTable({
               className="cursor-pointer rounded-(--radius-sm) border border-(--color-border) bg-(--color-surface) p-3 transition-colors hover:border-(--color-primary) hover:bg-[#fbfbf9] focus:outline-none focus-visible:ring-2 focus-visible:ring-(--color-primary)/40"
             >
               <div className="flex items-baseline justify-between gap-2">
-                <span className="text-sm font-medium">
-                  {wo.lines.length} prestation{wo.lines.length > 1 ? 's' : ''}
+                <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                  {wo.lines.length > 1 ? `${firstLabel}…` : firstLabel}
                 </span>
-                <span className="text-xs tabular-nums">{formatDate(wo.date)}</span>
+                <span className="shrink-0 text-xs tabular-nums">{formatDate(wo.date)}</span>
               </div>
               <div className="text-[11px] text-(--color-muted)">{client?.name ?? '—'}</div>
-              <div className="text-[11px] text-(--color-muted)">
-                {duration ? `${duration.toFixed(1)} h` : ''}
-                {surface ? ` · ${surface.toFixed(2)} ha` : ''}
-                {total ? ` · ${total.toLocaleString('fr-CH')} CHF` : ''}
-              </div>
-              <div className="mt-1 flex items-center justify-between gap-2">
+              <div className="text-[11px] text-(--color-muted)">{parcelsLabel(wo)}</div>
+              <div className="mt-1">
                 <span
                   className={[
                     'inline-flex items-center rounded-(--radius-pill) px-2 py-0.5 text-[10px] font-medium',
@@ -443,19 +456,6 @@ function WorkOrderTable({
                 >
                   {STATUS_LABELS[wo.status]}
                 </span>
-                {canWrite && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onDelete(wo);
-                    }}
-                    aria-label="Supprimer"
-                    className="inline-flex h-7 w-7 items-center justify-center rounded-(--radius-sm) text-(--color-error) hover:bg-[#fef2f2]"
-                  >
-                    ×
-                  </button>
-                )}
               </div>
             </li>
           );

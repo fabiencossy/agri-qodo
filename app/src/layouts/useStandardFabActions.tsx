@@ -40,6 +40,13 @@ export interface StandardFabOpts {
   onAddObservation?: () => void;
   /** Actions supplémentaires (en tête de liste) — ex: "Ouvrir la fiche" sur la carte avec sélection. */
   extraActions?: ReadonlyArray<FabAction>;
+  /**
+   * Si vrai, **n'affiche QUE les `extraActions`** (en mode invité/managed, où
+   * Intervention / Observation / Segment / Présence renvoient à des modules
+   * bloqués et seraient trompeurs). La page parent doit fournir au moins une
+   * extraAction (typiquement "Nouveau bon de travail").
+   */
+  onlyExtraActions?: boolean;
 }
 
 /**
@@ -63,9 +70,16 @@ export function useStandardFabActions(opts: StandardFabOpts = {}): FabAction[] {
     onAddIntervention,
     onAddObservation,
     extraActions,
+    onlyExtraActions,
   } = opts;
 
   return useMemo<FabAction[]>(() => {
+    // Mode invité/managed : on n'expose QUE les extraActions de la page.
+    // Évite d'afficher "Créer une intervention", "Ajouter un segment", etc.
+    // qui pointeraient vers Carnet/Assolement/RH bloqués → trompeur.
+    if (onlyExtraActions) {
+      return extraActions ? [...extraActions] : [];
+    }
     const assolementUrl = parcelId ? `/assolement?parcel=${parcelId}` : '/assolement';
     const primary = (h: FabHighlight) =>
       h === highlight ? ('primary' as const) : ('secondary' as const);
@@ -136,6 +150,7 @@ export function useStandardFabActions(opts: StandardFabOpts = {}): FabAction[] {
     onAddSegment,
     onNewParcel,
     extraActions,
+    onlyExtraActions,
   ]);
 }
 

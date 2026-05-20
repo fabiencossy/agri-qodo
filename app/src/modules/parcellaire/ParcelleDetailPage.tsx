@@ -26,6 +26,14 @@ import {
 } from '../carnet/carnet.store';
 import { getInterventionsForParcel } from '../carnet/carnet.helpers';
 import type { Intervention } from '../carnet/carnet.types';
+import { findClientForFarm, useIsCurrentFarmInvitee } from '../farms/farms.helpers';
+import { useCurrentFarm } from '../farms/farms.store';
+import { useClients } from '../travaux/travaux.store';
+import { QuickWorkOrderModal } from '../travaux/QuickWorkOrderModal';
+import { WorkOrderModal } from '../travaux/WorkOrderModal';
+import { useWorkOrders } from '../travaux/travaux.store';
+import { getWorkType } from '../travaux/travaux.catalog';
+import type { WorkOrder } from '../travaux/travaux.types';
 
 const TODAY = new Date().toISOString().slice(0, 10);
 
@@ -59,8 +67,16 @@ const STATUS_LABELS: Record<NonNullable<ParcelDetail['status']>, string> = {
   archived: 'Archivé',
 };
 
-/** Liste des onglets de la fiche parcelle. Ordre = priorité d'usage. */
-function parcelleTabs(_parcelId: string): ReadonlyArray<TabDescriptor> {
+/** Liste des onglets de la fiche parcelle. Ordre = priorité d'usage.
+ *  En mode invité, seuls Aperçu (simplifié) + Localisation restent —
+ *  les données agronomiques du client ne sont pas partagées. */
+function parcelleTabs(_parcelId: string, isInvitee: boolean): ReadonlyArray<TabDescriptor> {
+  if (isInvitee) {
+    return [
+      { key: 'overview', label: 'Aperçu' },
+      { key: 'map', label: 'Localisation' },
+    ];
+  }
   return [
     { key: 'overview', label: 'Aperçu' },
     { key: 'carnet', label: 'Carnet' },
@@ -82,6 +98,7 @@ export default function ParcelleDetailPage() {
   const navigate = useNavigate();
 
   const parcels = useParcels();
+  const isInvitee = useIsCurrentFarmInvitee();
   const initial = useMemo(() => parcels.find((p) => p.id === id), [parcels, id]);
   const [draft, setDraft] = useState<ParcelDetail | undefined>(initial);
   const [saving, setSaving] = useState(false);
@@ -91,19 +108,48 @@ export default function ParcelleDetailPage() {
   >(null);
   const [activeTab, setActiveTab] = useState<string>('overview');
   const [mapFullscreen, setMapFullscreen] = useState(false);
+  const [quickWorkOrder, setQuickWorkOrder] = useState<{
+    clientId?: string;
+    parcelId?: string;
+  } | null>(null);
+  const [fullWorkOrder, setFullWorkOrder] = useState<Partial<WorkOrder> | null>(null);
+
+  const currentFarm = useCurrentFarm();
+  const allClients = useClients();
+  const matchedClient = isInvitee ? findClientForFarm(currentFarm, allClients) : undefined;
 
   // FAB unifié — la fiche met en avant "Créer une intervention" (action principale
-  // sur une parcelle). Les overrides ouvrent le formulaire inline plutôt que de
-  // naviguer vers /carnet, et la création de segment ouvre l'éditeur inline aussi.
+  // sur une parcelle). En mode invité, on n'expose PAS d'actions standard
+  // (Carnet/Fumure/Troupeau bloqués) ; un bouton "Nouveau travail pour tiers"
+  // dans le header de la page sert de CTA principal à la place.
   const onAddIntervention = useMemo(() => () => setEditingIntervention('new'), []);
   const onAddObservation = useMemo(() => () => setEditingIntervention('observation'), []);
   useFabActions(
-    useStandardFabActions({
-      highlight: 'intervention',
-      parcelId: id,
-      onAddIntervention,
-      onAddObservation,
-    }),
+    useStandardFabActions(
+      isInvitee
+        ? {
+            highlight: 'parcelle',
+            parcelId: id,
+            // En mode invité/managed : SEULE action = nouveau bon de travail.
+            // onlyExtraActions=true masque intervention/observation/segment/présence
+            // qui pointeraient vers des modules bloqués (trompeur).
+            onlyExtraActions: true,
+            extraActions: [
+              {
+                id: 'invitee-travaux-tiers',
+                label: 'Nouveau bon de travail',
+                variant: 'primary' as const,
+                onClick: () => setQuickWorkOrder({ clientId: matchedClient?.id, parcelId: id }),
+              },
+            ],
+          }
+        : {
+            highlight: 'intervention',
+            parcelId: id,
+            onAddIntervention,
+            onAddObservation,
+          },
+    ),
   );
 
   const dirty = JSON.stringify(draft) !== JSON.stringify(initial);
@@ -215,7 +261,7 @@ export default function ParcelleDetailPage() {
       </header>
 
       <Tabs
-        tabs={parcelleTabs(draft.id)}
+        tabs={parcelleTabs(draft.id, isInvitee)}
         activeKey={activeTab}
         onChange={setActiveTab}
         className="mb-5"
@@ -313,21 +359,71 @@ export default function ParcelleDetailPage() {
           </section>
 
           {/* Résumés cliquables — naviguent vers l'onglet correspondant */}
-          <OverviewSummaries parcel={draft} onNavigate={setActiveTab} />
+          {!isInvitee && <OverviewSummaries parcel={draft} onNavigate={setActiveTab} />}
 
-          {/* Notes */}
-          <section className="rounded-(--radius) border border-(--color-border) bg-(--color-surface) p-5 lg:col-span-3">
-            <h2 className="m-0 mb-4 text-sm font-semibold tracking-wider text-(--color-muted) uppercase">
-              Notes
-            </h2>
-            <textarea
-              value={draft.notes ?? ''}
-              onChange={(e) => setField('notes', e.target.value)}
-              placeholder="Observations, contexte, voisins…"
-              rows={4}
-              className={inputClass.replace('h-10', 'min-h-[96px] py-2')}
+          {/* En mode invité, on remplace les cards agronomiques par un résumé
+           * des travaux que J'AI effectués sur cette parcelle (cliquables). */}
+          {isInvitee && (
+            <InviteeWorkOrdersSection
+              parcelId={draft.id}
+              onOpenWorkOrder={(wo) => setFullWorkOrder(wo)}
             />
-          </section>
+          )}
+
+          {/* Point d'attention (parcelle) — visible aussi en mode invité (lecture
+           * seule via le panel carte), éditable uniquement par le propriétaire ici */}
+          {!isInvitee && (
+            <section className="rounded-(--radius) border border-(--color-warning)/40 bg-(--color-warning)/5 p-5 lg:col-span-3">
+              <div className="mb-3 flex items-center gap-2">
+                <span aria-hidden className="text-[#92400e]">
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={1.75}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    width={16}
+                    height={16}
+                  >
+                    <path d="M10.3 3.86a2 2 0 0 1 3.4 0l8.57 14.7A2 2 0 0 1 20.57 21H3.43a2 2 0 0 1-1.7-2.94z" />
+                    <path d="M12 9v4M12 17h.01" />
+                  </svg>
+                </span>
+                <h2 className="m-0 text-sm font-semibold tracking-wider text-[#92400e] uppercase">
+                  Point d'attention
+                </h2>
+              </div>
+              <p className="m-0 mb-2 text-[11px] text-(--color-muted)">
+                Visible sur la carte (pastille), dans le panel de sélection et au moment de créer un
+                travail — y compris pour les prestataires invités. Limite-toi à 1-3 phrases
+                factuelles (drainage, captage d'eau, pente, jeunes arbres, parcelle bio voisine…).
+              </p>
+              <textarea
+                value={draft.attentionNote ?? ''}
+                onChange={(e) => setField('attentionNote', e.target.value || undefined)}
+                placeholder="Ex. Drainage tous les 12 m — pas de sous-solage. Captage à 30 m côté est."
+                rows={3}
+                className={inputClass.replace('h-10', 'min-h-[80px] py-2')}
+              />
+            </section>
+          )}
+
+          {/* Notes (interne, jamais affichées à un invité) */}
+          {!isInvitee && (
+            <section className="rounded-(--radius) border border-(--color-border) bg-(--color-surface) p-5 lg:col-span-3">
+              <h2 className="m-0 mb-4 text-sm font-semibold tracking-wider text-(--color-muted) uppercase">
+                Notes
+              </h2>
+              <textarea
+                value={draft.notes ?? ''}
+                onChange={(e) => setField('notes', e.target.value)}
+                placeholder="Observations, contexte, voisins…"
+                rows={4}
+                className={inputClass.replace('h-10', 'min-h-[96px] py-2')}
+              />
+            </section>
+          )}
         </div>
       </TabPanel>
 
@@ -438,12 +534,31 @@ export default function ParcelleDetailPage() {
         />
       )}
 
+      {/* Création rapide d'un travail pour tiers — déclenché depuis le FAB
+       * en mode invité (cf. extraActions ci-dessus). "Aller plus loin"
+       * ouvre directement WorkOrderModal complet avec préfill. */}
+      {quickWorkOrder && (
+        <QuickWorkOrderModal
+          initialClientId={quickWorkOrder.clientId}
+          initialParcelId={quickWorkOrder.parcelId}
+          onClose={() => setQuickWorkOrder(null)}
+          onSwitchToFull={(draft) => {
+            setQuickWorkOrder(null);
+            setFullWorkOrder(draft);
+          }}
+        />
+      )}
+
+      {fullWorkOrder && (
+        <WorkOrderModal initial={fullWorkOrder} onClose={() => setFullWorkOrder(null)} />
+      )}
+
       {/* Sticky footer save — visible UNIQUEMENT sur l'onglet Aperçu (seul onglet avec
        * champs éditables directs : identification, statut, notes). Les autres onglets
        * (Carnet, Assolement, Fumure, Stats, Localisation) sont des vues / éditeurs
        * spécialisés qui gèrent leur propre persistance via stores.
        * Boutons inversés : Enregistrer à gauche (action principale), Annuler juste à droite. */}
-      {activeTab === 'overview' && (
+      {activeTab === 'overview' && !isInvitee && (
         <footer className="sticky bottom-0 z-[1000] mt-6 -mx-4 flex items-center gap-2 border-t border-(--color-border) bg-(--color-surface) px-4 py-3 sm:-mx-6">
           <button
             type="button"
@@ -782,6 +897,78 @@ function AssolementSection({ parcelId, year }: { parcelId: string; year: number 
 function fmtDate(date: string): string {
   const [y, m, d] = date.split('-');
   return `${d}/${m}/${y}`;
+}
+
+/**
+ * Section "Travaux effectués sur cette parcelle" — affichée dans l'onglet
+ * Aperçu en mode invité. Liste les bons cliquables (clic → ouvre WorkOrderModal).
+ */
+function InviteeWorkOrdersSection({
+  parcelId,
+  onOpenWorkOrder,
+}: {
+  parcelId: string;
+  onOpenWorkOrder: (wo: WorkOrder) => void;
+}) {
+  const orders = useWorkOrders();
+  const related = useMemo(
+    () =>
+      orders
+        .filter((o) => (o.parcelIds ?? []).includes(parcelId))
+        .sort((a, b) => (a.date < b.date ? 1 : -1)),
+    [orders, parcelId],
+  );
+
+  return (
+    <section className="rounded-(--radius) border border-(--color-border) bg-(--color-surface) p-5 lg:col-span-3">
+      <h2 className="m-0 mb-3 text-sm font-semibold tracking-wider text-(--color-muted) uppercase">
+        Travaux effectués sur cette parcelle ({related.length})
+      </h2>
+      {related.length === 0 ? (
+        <p className="m-0 text-sm text-(--color-muted)">
+          Aucun travail enregistré pour cette parcelle. Créez-en un depuis le bouton flottant.
+        </p>
+      ) : (
+        <ul className="m-0 list-none space-y-2 p-0">
+          {related.map((wo) => {
+            const firstLine = wo.lines[0];
+            const workTypeLabel = firstLine ? (getWorkType(firstLine.workType)?.label ?? '') : '';
+            const statusLabel =
+              wo.status === 'planned'
+                ? 'planifié'
+                : wo.status === 'done'
+                  ? 'réalisé'
+                  : wo.status === 'invoiced'
+                    ? 'facturé'
+                    : wo.status;
+            return (
+              <li key={wo.id}>
+                <button
+                  type="button"
+                  onClick={() => onOpenWorkOrder(wo)}
+                  className="flex w-full items-center justify-between gap-3 rounded-(--radius-sm) border border-(--color-border) bg-(--color-surface) px-3 py-2 text-left transition-colors hover:border-(--color-primary) hover:bg-[#fbfbf9]"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-medium">
+                      {workTypeLabel ||
+                        `${wo.lines.length} prestation${wo.lines.length > 1 ? 's' : ''}`}
+                      {wo.lines.length > 1 && workTypeLabel && (
+                        <span className="text-(--color-muted)"> +{wo.lines.length - 1}</span>
+                      )}
+                    </div>
+                    <div className="text-[11px] text-(--color-muted) capitalize">{statusLabel}</div>
+                  </div>
+                  <span className="shrink-0 font-mono text-xs text-(--color-muted)">
+                    {wo.date.split('-').reverse().join('.')}
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
+  );
 }
 
 const inputClass =

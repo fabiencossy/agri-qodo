@@ -6,6 +6,7 @@ import ParcelleDetailPage from './modules/parcellaire/ParcelleDetailPage';
 import AssolementPage from './modules/assolement/AssolementPage';
 import CarnetPage from './modules/carnet/CarnetPage';
 import TravauxPage from './modules/travaux/TravauxPage';
+import PlanningPage from './modules/planning/PlanningPage';
 import TroupeauPage from './modules/troupeau/TroupeauPage';
 import RHLayout from './modules/rh/RHLayout';
 import MesHeuresPage from './modules/rh/MesHeuresPage';
@@ -115,6 +116,7 @@ export default function App() {
           <Route path="/parcellaire/:id" element={<ParcelleDetailPage />} />
           <Route path="/assolement" element={<AssolementPage />} />
           <Route path="/carnet" element={<CarnetPage />} />
+          <Route path="/planning" element={<PlanningPage />} />
           <Route path="/travaux" element={<TravauxPage />} />
           <Route path="/troupeau" element={<TroupeauPage />} />
           <Route path="/fumure" element={<FumureExploitationPage />} />

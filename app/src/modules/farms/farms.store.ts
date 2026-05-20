@@ -166,6 +166,19 @@ export async function createFarm(input: {
   return farm;
 }
 
+/**
+ * Ajoute une exploitation dans le store local (mode demo/mocks). À la
+ * différence de createFarm() ci-dessus qui passe par Supabase, cette version
+ * fonctionne hors-ligne pour les démos et le bootstrap de compte. La nouvelle
+ * exploitation devient automatiquement la current farm.
+ */
+export function addFarmLocal(farm: Farm): void {
+  farms = [...farms, farm];
+  currentFarmId = farm.id;
+  persistCurrentFarmId();
+  emit();
+}
+
 export function subscribeFarms(listener: () => void): () => void {
   listeners.add(listener);
   return () => {

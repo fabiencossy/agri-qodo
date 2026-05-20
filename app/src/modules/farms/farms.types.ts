@@ -28,4 +28,27 @@ export interface Farm {
   odooFarmId?: number;
   /** Notes internes libres. */
   notes?: string;
+  /**
+   * ID de l'utilisateur propriétaire de l'exploitation (= celui qui paie
+   * l'abonnement). Pour les exploitations où l'utilisateur courant est juste
+   * invité (lecture seule + droit cross-farm Travaux), ownerUserId pointe vers
+   * un autre AppUser. Phase 3 : table farm_members(role='owner') sur Supabase.
+   */
+  ownerUserId?: string;
+  /**
+   * Vrai si l'utilisateur courant **gère** cette exploitation pour le compte
+   * d'un client externe qui n'a pas (ou pas encore) l'app. Cas d'usage :
+   * entrepreneur agricole qui saisit les parcelles, l'assolement, le carnet
+   * de son client pour lui. Droits complets côté UI (édition tout), mais
+   * **ne compte pas dans le forfait Solo/Multi** — c'est le client qui paiera
+   * éventuellement plus tard quand il ouvrira son propre compte.
+   */
+  managedByCurrentUser?: boolean;
+  /**
+   * Lien vers `ThirdPartyClient.id` (catalogue Travaux pour tiers) quand
+   * managedByCurrentUser === true. Permet de retrouver le client réel Odoo
+   * (res.partner) auquel l'exploitation appartient, et de prérenseigner ce
+   * client dans les bons de travaux concernant cette exploitation.
+   */
+  linkedClientId?: string;
 }

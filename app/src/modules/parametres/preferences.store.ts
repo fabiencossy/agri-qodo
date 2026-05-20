@@ -13,6 +13,17 @@ export type DateFormat = 'dd.MM.yyyy' | 'dd/MM/yyyy' | 'yyyy-MM-dd';
 export type SurfaceUnit = 'ha' | 'a' | 'm2';
 export type UnitSystem = 'metric' | 'imperial';
 
+/**
+ * Plan d'abonnement de l'utilisateur courant :
+ *  - 'solo'  : 1 seule exploitation possédée autorisée
+ *  - 'multi' : nombre illimité d'exploitations possédées
+ *
+ * Le mode "invité" (lecture seule sur exploitations tierces + droit
+ * cross-farm Travaux) est gratuit, indépendant du plan ci-dessus.
+ * Phase 3 : Stripe + table `subscriptions` côté Supabase.
+ */
+export type SubscriptionPlan = 'solo' | 'multi';
+
 export interface AppPreferences {
   language: Language;
   currency: Currency;
@@ -23,6 +34,7 @@ export interface AppPreferences {
   notifyOnBalanceOver: boolean;
   notifyOnWithholdingViolation: boolean;
   notifyOnLowDosage: boolean;
+  subscriptionPlan: SubscriptionPlan;
 }
 
 const DEFAULTS: AppPreferences = {
@@ -35,6 +47,7 @@ const DEFAULTS: AppPreferences = {
   notifyOnBalanceOver: true,
   notifyOnWithholdingViolation: true,
   notifyOnLowDosage: false,
+  subscriptionPlan: 'multi',
 };
 
 const STORAGE_KEY = 'newagriqodo-preferences';

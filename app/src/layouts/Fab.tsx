@@ -42,7 +42,7 @@ export function Fab() {
         onClick={() => setOpen((o) => !o)}
         className={[
           'fixed right-5 bottom-5 z-[1050] inline-flex h-14 w-14 items-center justify-center',
-          'rounded-(--radius-pill) border border-(--color-primary) bg-(--color-primary) text-white',
+          'rounded-(--radius-pill) border border-(--color-highlight) bg-(--color-highlight) text-white',
           'shadow-(--shadow-fab) transition-all hover:scale-105',
           open ? 'rotate-45' : '',
         ].join(' ')}

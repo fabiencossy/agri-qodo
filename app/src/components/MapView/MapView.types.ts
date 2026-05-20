@@ -23,6 +23,9 @@ export interface ParcelProperties {
   color?: string;
   status?: 'active' | 'fallow' | 'archived';
   groupId?: string;
+  /** Exploitation à laquelle la parcelle appartient. Utilisé par MapView pour
+   * détecter un changement d'exploitation et re-fit la vue automatiquement. */
+  farmId?: string;
 }
 
 export interface Parcel extends ParcelProperties {

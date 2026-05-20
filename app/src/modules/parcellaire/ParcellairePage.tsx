@@ -1,9 +1,9 @@
 import { useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { Polygon } from 'geojson';
-import { useFabActions, useHideFab } from '../../layouts/useFab';
+import { useFabActions } from '../../layouts/useFab';
 import { openFicheAction, useStandardFabActions } from '../../layouts/useStandardFabActions';
-import { useIsDesktop } from '../../hooks/useMediaQuery';
+import { FabDrawIcon } from '../../layouts/fab-icons';
 import { SearchBar, type FieldDescriptor, type SearchState } from '../../components/SearchBar';
 import { ViewSwitcher, type ViewKey } from '../../components/ViewSwitcher';
 import { ExportButton, type ExportColumn } from '../../components/ExportButton';
@@ -30,6 +30,12 @@ import { AssolementTimeline } from '../assolement/AssolementTimeline';
 import { AssolementSegmentModal } from '../assolement/AssolementSegmentModal';
 import type { AssolementSegment } from '../assolement/assolement.types';
 import { cultureColor, listCultureGroups } from '../assolement/cultures';
+import { useCurrentFarm } from '../farms/farms.store';
+import { useIsCurrentFarmInvitee, findClientForFarm } from '../farms/farms.helpers';
+import { useClients, useWorkOrders } from '../travaux/travaux.store';
+import { QuickWorkOrderModal } from '../travaux/QuickWorkOrderModal';
+import { WorkOrderModal } from '../travaux/WorkOrderModal';
+import type { WorkOrder } from '../travaux/travaux.types';
 
 const TODAY = new Date().toISOString().slice(0, 10);
 
@@ -90,11 +96,21 @@ const EXPORT_COLUMNS: ExportColumn[] = [
 
 export default function ParcellairePage() {
   const navigate = useNavigate();
-  const isDesktop = useIsDesktop();
   const [view, setView] = useState<ViewKey>('map');
   const [activeTool, setActiveTool] = useState<MapTool>('select');
   const [searchState, setSearchState] = useState<SearchState>({ facets: [], groupBy: [] });
   const [selectedId, setSelectedId] = useState<string | undefined>(undefined);
+  const [quickWorkOrder, setQuickWorkOrder] = useState<{
+    clientId?: string;
+    parcelId?: string;
+  } | null>(null);
+  const [fullWorkOrder, setFullWorkOrder] = useState<Partial<WorkOrder> | null>(null);
+
+  const currentFarm = useCurrentFarm();
+  const isInvitee = useIsCurrentFarmInvitee();
+  const allClients = useClients();
+  const orders = useWorkOrders();
+  const matchedClient = isInvitee ? findClientForFarm(currentFarm, allClients) : undefined;
   const parcels = useParcels();
   const allSegments = useSegments();
   // Année / campagne : visible uniquement en vue Timeline (assolement).
@@ -142,7 +158,9 @@ export default function ParcellairePage() {
 
   // Masque le FAB sur mobile quand le bottom sheet de sélection est ouvert
   // (sinon le `+` chevauche le bouton Enregistrer du sheet).
-  useHideFab(!isDesktop && Boolean(selectedId));
+  // FAB toujours visible, même quand un panel parcelle est ouvert (mobile
+  // ou desktop). Le user a explicitement demandé que le FAB reste accessible
+  // partout pour ne pas perdre l'action principale de la page.
 
   // Enrichissement : culture / variété / couleur dérivées du segment d'assolement
   // ACTIF à la date du jour. L'entité AssolementSegment (module dédié) pilote ces
@@ -175,13 +193,17 @@ export default function ParcellairePage() {
   const summary = `${filtered.length} parcelles · ${totalSurface.toFixed(1)} ha`;
 
   // FAB unifié : 5 actions standards toujours présentes, avec mise en avant
-  // contextuelle. Quand une parcelle est sélectionnée, "Ouvrir la fiche" est
-  // ajoutée en tête de liste avec variant primary.
-  const extraActions = useMemo(
-    () =>
-      selectedId ? [openFicheAction(selectedId, () => navigate(`/parcellaire/${selectedId}`))] : [],
-    [selectedId, navigate],
+  // contextuelle. Sur farm invitée, on remplace l'action "Créer une intervention"
+  // par "Nouveau travail pour tiers" (seule action métier autorisée).
+  const onCreateTravailTiers = useMemo(
+    () => () =>
+      setQuickWorkOrder({
+        clientId: matchedClient?.id,
+        parcelId: selectedId,
+      }),
+    [matchedClient?.id, selectedId],
   );
+
   const onNewParcel = useMemo(
     () => () => {
       setView('map');
@@ -189,12 +211,54 @@ export default function ParcellairePage() {
     },
     [],
   );
+
+  const extraActions = useMemo(() => {
+    if (isInvitee) {
+      // En mode invité/géré : actions = bon de travail + nouvelle parcelle
+      // (essentiel pour gérer un client sans app) + ouvrir la fiche si parcelle
+      // sélectionnée. Pas d'intervention/observation/segment (modules bloqués).
+      const selectedName = selectedId
+        ? (parcels.find((p) => p.id === selectedId)?.name ?? selectedId)
+        : undefined;
+      const actions = [
+        {
+          id: 'create-travaux-tiers',
+          label: selectedName
+            ? `Nouveau bon de travail sur ${selectedName}`
+            : 'Nouveau bon de travail',
+          variant: 'primary' as const,
+          onClick: onCreateTravailTiers,
+        },
+        {
+          id: 'invitee-new-parcel',
+          label: 'Nouvelle parcelle (dessin)',
+          variant: 'secondary' as const,
+          icon: <FabDrawIcon />,
+          onClick: onNewParcel,
+        },
+      ];
+      if (selectedId) {
+        actions.push(
+          openFicheAction(selectedId, () => navigate(`/parcellaire/${selectedId}`)) as never,
+        );
+      }
+      return actions;
+    }
+    return selectedId
+      ? [openFicheAction(selectedId, () => navigate(`/parcellaire/${selectedId}`))]
+      : [];
+  }, [isInvitee, selectedId, navigate, onCreateTravailTiers, parcels, onNewParcel]);
+
   useFabActions(
     useStandardFabActions({
-      highlight: selectedId ? 'intervention' : 'parcelle',
+      // En mode invité/géré : SEULEMENT les extraActions (bon de travail +
+      // nouvelle parcelle + ouvrir fiche). Pas d'intervention/observation/
+      // segment/présence qui renvoient à des modules bloqués (trompeur).
+      highlight: isInvitee ? 'parcelle' : selectedId ? 'intervention' : 'parcelle',
       parcelId: selectedId,
-      onNewParcel,
+      onNewParcel: isInvitee ? undefined : onNewParcel,
       extraActions,
+      onlyExtraActions: isInvitee,
     }),
   );
 
@@ -347,6 +411,10 @@ export default function ParcellairePage() {
                 onClose={() => setSelectedId(undefined)}
                 onOpenFiche={() => navigate(`/parcellaire/${selected.id}`)}
                 onOpenAssolement={() => navigate(`/assolement?parcel=${selected.id}`)}
+                onOpenWorkOrder={(woId) => {
+                  const wo = orders.find((o) => o.id === woId);
+                  if (wo) setFullWorkOrder(wo);
+                }}
               />
             </div>
           )}
@@ -387,6 +455,26 @@ export default function ParcellairePage() {
       {/* Modal d'édition segment réutilisable (commun aux vues map / timeline / table) */}
       {editingSegment && (
         <AssolementSegmentModal target={editingSegment} onClose={() => setEditingSegment(null)} />
+      )}
+
+      {/* Création rapide d'un travail pour tiers (utilisé en mode invité depuis le FAB).
+       *  "Aller plus loin" : ferme le quick et ouvre le modal complet localement
+       *  avec les valeurs déjà saisies (pas de navigation, l'utilisateur reste
+       *  sur la carte). */}
+      {quickWorkOrder && (
+        <QuickWorkOrderModal
+          initialClientId={quickWorkOrder.clientId}
+          initialParcelId={quickWorkOrder.parcelId}
+          onClose={() => setQuickWorkOrder(null)}
+          onSwitchToFull={(draft) => {
+            setQuickWorkOrder(null);
+            setFullWorkOrder(draft);
+          }}
+        />
+      )}
+
+      {fullWorkOrder && (
+        <WorkOrderModal initial={fullWorkOrder} onClose={() => setFullWorkOrder(null)} />
       )}
     </div>
   );

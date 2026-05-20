@@ -37,6 +37,41 @@ export const CLIENTS_MOCK: ReadonlyArray<ThirdPartyClient> = [
     vatNumber: 'CHE-987.654.321',
     active: true,
   },
+  // Clients additionnels pour matcher les farms invitées du switcher
+  // (cf. farms.mocks.ts). Permet à findClientForFarm de préfiller le client
+  // dans QuickWorkOrderModal quand on est invité sur ces fermes.
+  {
+    id: 'C-005',
+    name: 'Ferme des Crausaz',
+    city: 'Cossonay, VD',
+    email: 'contact@crausaz.ch',
+    active: true,
+  },
+  {
+    id: 'C-006',
+    name: 'Ferme de la Combe',
+    city: 'Oulens-sous-Échallens, VD',
+    active: true,
+  },
+  {
+    id: 'C-007',
+    name: 'GAEC du Plateau',
+    city: 'Penthéréaz, VD',
+    vatNumber: 'CHE-555.444.333',
+    active: true,
+  },
+  {
+    id: 'C-008',
+    name: 'Domaine Beausite',
+    city: 'Bottens, VD',
+    active: true,
+  },
+  {
+    id: 'C-009',
+    name: 'Vignoble Cherpillod',
+    city: 'Chexbres, VD',
+    active: true,
+  },
 ];
 
 /**
