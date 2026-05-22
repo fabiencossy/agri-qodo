@@ -46,6 +46,7 @@ const ContactPage = lazy(() => import('./modules/marketing/ContactPage'));
 const MentionsLegalesPage = lazy(() => import('./modules/marketing/MentionsLegalesPage'));
 const ConfidentialitePage = lazy(() => import('./modules/marketing/ConfidentialitePage'));
 const OpenSourcePage = lazy(() => import('./modules/marketing/OpenSourcePage'));
+const ComposantsPage = lazy(() => import('./modules/composants/ComposantsPage'));
 
 function MarketingFallback() {
   return (
@@ -90,6 +91,7 @@ export default function App() {
       <Route path="/login" element={<LoginPage />} />
       <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route path="/accept-invite" element={<AcceptInvitePage />} />
+      <Route path="/composants" element={<ComposantsPage />} />
     </>
   );
 
