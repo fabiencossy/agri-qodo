@@ -24,10 +24,10 @@ Coût total : **~12 CHF/mois** (VPS) + 0 CHF (Vercel free tier).
 
 Manager Infomaniak → Domaines → `qodo.ch` → DNS :
 
-| Type  | Nom           | Valeur                     | TTL  |
-| ----- | ------------- | -------------------------- | ---- |
-| A     | `api.newagri` | IP du VPS (ex: 83.228.x.x) | 3600 |
-| CNAME | `newagri`     | `cname.vercel-dns.com.`    | 3600 |
+| Type  | Nom        | Valeur                     | TTL  |
+| ----- | ---------- | -------------------------- | ---- |
+| A     | `api.agri` | IP du VPS (ex: 83.228.x.x) | 3600 |
+| CNAME | `agri`     | `cname.vercel-dns.com.`    | 3600 |
 
 Propagation : généralement quelques minutes, max 24h.
 
@@ -51,7 +51,7 @@ Cloner le repo :
 
 ```bash
 mkdir -p /opt && cd /opt
-git clone https://github.com/fabiencossy/agri-qodo.git
+git clone https://github.com/Qodo-Digital/agri-qodo.git
 cd agri-qodo
 ```
 
@@ -110,7 +110,7 @@ Le compte de démo `test@test.ch / test` est maintenant accessible.
 
 1. https://vercel.com → "Sign in with GitHub" (compte fabiencossy)
 2. **Add new… → Project**
-3. Sélectionner le repo `fabiencossy/agri-qodo`
+3. Sélectionner le repo `Qodo-Digital/agri-qodo`
 4. **Configure project** :
    - Framework Preset : **Next.js** (auto-détecté)
    - Root Directory : `apps/web`
