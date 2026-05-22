@@ -47,6 +47,14 @@ export type DataTableProps<T> = {
     row: T,
     helpers: { checkbox: React.ReactNode; checked: boolean; highlighted: boolean },
   ) => React.ReactNode;
+  /**
+   * Regroupement optionnel par champ. Si fourni, les rows sont regroupées en
+   * sections avec un header par groupe. Trié alphabétiquement par label.
+   */
+  groupBy?: {
+    getKey: (row: T) => string;
+    getLabel?: (key: string) => string;
+  };
 };
 
 export function DataTable<T>({
@@ -59,12 +67,33 @@ export function DataTable<T>({
   entityLabel,
   emptyMessage,
   renderMobileCard,
+  groupBy,
 }: DataTableProps<T>) {
   const isDesktop = useIsDesktop();
   const [checked, setChecked] = useState<ReadonlySet<string>>(new Set());
 
   const allChecked = rows.length > 0 && rows.every((r) => checked.has(getId(r)));
   const someChecked = !allChecked && checked.size > 0;
+
+  // Groupement : si groupBy fourni, on partitionne rows en sections.
+  const groups: ReadonlyArray<{ key: string; label: string; rows: ReadonlyArray<T> }> = groupBy
+    ? (() => {
+        const map = new Map<string, T[]>();
+        for (const row of rows) {
+          const k = groupBy.getKey(row);
+          const arr = map.get(k) ?? [];
+          arr.push(row);
+          map.set(k, arr);
+        }
+        return [...map.entries()]
+          .map(([key, rs]) => ({
+            key,
+            label: groupBy.getLabel?.(key) ?? key,
+            rows: rs as ReadonlyArray<T>,
+          }))
+          .sort((a, b) => a.label.localeCompare(b.label, 'fr'));
+      })()
+    : [{ key: '__all', label: '', rows }];
 
   const toggleAll = () => {
     setChecked(allChecked ? new Set() : new Set(rows.map(getId)));
@@ -142,103 +171,130 @@ export function DataTable<T>({
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) => {
-                const id = getId(row);
-                const isChecked = checked.has(id);
-                const isHighlighted = highlightedId === id;
-                return (
-                  <tr
-                    key={id}
-                    onClick={() => onRowClick?.(row)}
-                    className={[
-                      'border-b border-(--color-border) last:border-b-0',
-                      onRowClick ? 'cursor-pointer hover:bg-[#fbfbf9]' : '',
-                      isChecked ? 'bg-(--color-primary)/5' : '',
-                      isHighlighted ? 'ring-1 ring-(--color-primary) ring-inset' : '',
-                    ].join(' ')}
-                  >
-                    <td className="w-10 px-3 py-2 text-center" onClick={(e) => e.stopPropagation()}>
+              {groups.map((group) => (
+                <>
+                  {groupBy && (
+                    <tr key={`hdr-${group.key}`} className="bg-[#fbfbf9]">
+                      <td
+                        colSpan={columns.length + 1}
+                        className="border-b border-(--color-border) px-3 py-1.5 text-[11px] font-semibold tracking-wider text-(--color-muted) uppercase"
+                      >
+                        {group.label} ({group.rows.length})
+                      </td>
+                    </tr>
+                  )}
+                  {group.rows.map((row) => {
+                    const id = getId(row);
+                    const isChecked = checked.has(id);
+                    const isHighlighted = highlightedId === id;
+                    return (
+                      <tr
+                        key={id}
+                        onClick={() => onRowClick?.(row)}
+                        className={[
+                          'border-b border-(--color-border) last:border-b-0',
+                          onRowClick ? 'cursor-pointer hover:bg-[#fbfbf9]' : '',
+                          isChecked ? 'bg-(--color-primary)/5' : '',
+                          isHighlighted ? 'ring-1 ring-(--color-primary) ring-inset' : '',
+                        ].join(' ')}
+                      >
+                        <td
+                          className="w-10 px-3 py-2 text-center"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <TableCheckbox
+                            checked={isChecked}
+                            onChange={(next) => toggleOne(id, next)}
+                            ariaLabel={`Sélectionner ligne`}
+                          />
+                        </td>
+                        {columns.map((col) => (
+                          <td
+                            key={col.key}
+                            className={[
+                              'px-3 py-2',
+                              col.align === 'right'
+                                ? 'text-right'
+                                : col.align === 'center'
+                                  ? 'text-center'
+                                  : '',
+                            ].join(' ')}
+                          >
+                            {col.render(row)}
+                          </td>
+                        ))}
+                      </tr>
+                    );
+                  })}
+                </>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        /* Mobile : cards verticales (groupées si groupBy) */
+        <div className="space-y-4">
+          {groups.map((group) => (
+            <div key={group.key}>
+              {groupBy && (
+                <h3 className="m-0 mb-2 px-1 text-[11px] font-semibold tracking-wider text-(--color-muted) uppercase">
+                  {group.label} ({group.rows.length})
+                </h3>
+              )}
+              <ul className="m-0 list-none space-y-2 p-0">
+                {group.rows.map((row) => {
+                  const id = getId(row);
+                  const isChecked = checked.has(id);
+                  const isHighlighted = highlightedId === id;
+                  const checkboxNode = (
+                    <div onClick={(e) => e.stopPropagation()}>
                       <TableCheckbox
                         checked={isChecked}
                         onChange={(next) => toggleOne(id, next)}
                         ariaLabel={`Sélectionner ligne`}
                       />
-                    </td>
-                    {columns.map((col) => (
-                      <td
-                        key={col.key}
+                    </div>
+                  );
+                  return (
+                    <li key={id}>
+                      <div
+                        onClick={() => onRowClick?.(row)}
                         className={[
-                          'px-3 py-2',
-                          col.align === 'right'
-                            ? 'text-right'
-                            : col.align === 'center'
-                              ? 'text-center'
-                              : '',
+                          'flex gap-3 rounded-(--radius) border border-(--color-border) bg-(--color-surface) p-3 active:bg-[#fbfbf9]',
+                          onRowClick ? 'cursor-pointer' : '',
+                          isChecked ? 'border-(--color-primary) bg-(--color-primary)/5' : '',
+                          isHighlighted ? 'ring-1 ring-(--color-primary) ring-inset' : '',
                         ].join(' ')}
                       >
-                        {col.render(row)}
-                      </td>
-                    ))}
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      ) : (
-        /* Mobile : cards verticales */
-        <ul className="m-0 list-none space-y-2 p-0">
-          {rows.map((row) => {
-            const id = getId(row);
-            const isChecked = checked.has(id);
-            const isHighlighted = highlightedId === id;
-            const checkboxNode = (
-              <div onClick={(e) => e.stopPropagation()}>
-                <TableCheckbox
-                  checked={isChecked}
-                  onChange={(next) => toggleOne(id, next)}
-                  ariaLabel={`Sélectionner ligne`}
-                />
-              </div>
-            );
-            return (
-              <li key={id}>
-                <div
-                  onClick={() => onRowClick?.(row)}
-                  className={[
-                    'flex gap-3 rounded-(--radius) border border-(--color-border) bg-(--color-surface) p-3 active:bg-[#fbfbf9]',
-                    onRowClick ? 'cursor-pointer' : '',
-                    isChecked ? 'border-(--color-primary) bg-(--color-primary)/5' : '',
-                    isHighlighted ? 'ring-1 ring-(--color-primary) ring-inset' : '',
-                  ].join(' ')}
-                >
-                  {renderMobileCard ? (
-                    renderMobileCard(row, {
-                      checkbox: checkboxNode,
-                      checked: isChecked,
-                      highlighted: isHighlighted,
-                    })
-                  ) : (
-                    /* Fallback : checkbox + render colonnes inline */
-                    <>
-                      <div className="shrink-0 pt-0.5">{checkboxNode}</div>
-                      <div className="min-w-0 flex-1 space-y-1">
-                        {columns.map((col) => (
-                          <div key={col.key} className="text-sm">
-                            <span className="text-[11px] uppercase tracking-wider text-(--color-muted)">
-                              {col.label}{' '}
-                            </span>
-                            {col.render(row)}
-                          </div>
-                        ))}
+                        {renderMobileCard ? (
+                          renderMobileCard(row, {
+                            checkbox: checkboxNode,
+                            checked: isChecked,
+                            highlighted: isHighlighted,
+                          })
+                        ) : (
+                          <>
+                            <div className="shrink-0 pt-0.5">{checkboxNode}</div>
+                            <div className="min-w-0 flex-1 space-y-1">
+                              {columns.map((col) => (
+                                <div key={col.key} className="text-sm">
+                                  <span className="text-[11px] uppercase tracking-wider text-(--color-muted)">
+                                    {col.label}{' '}
+                                  </span>
+                                  {col.render(row)}
+                                </div>
+                              ))}
+                            </div>
+                          </>
+                        )}
                       </div>
-                    </>
-                  )}
-                </div>
-              </li>
-            );
-          })}
-        </ul>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          ))}
+        </div>
       )}
 
       {bulkActions && bulkActions.length > 0 && (

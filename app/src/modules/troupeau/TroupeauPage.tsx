@@ -214,6 +214,7 @@ export default function TroupeauPage() {
             onEdit={setEditing}
             onDelete={handleDelete}
             onAdd={onAddLivestock}
+            groupBySpecies={searchState.groupBy.some((g) => g.fieldId === 'species')}
           />
         )}
       </div>
@@ -231,12 +232,14 @@ function LivestockTable({
   onEdit,
   onDelete,
   onAdd,
+  groupBySpecies,
 }: {
   entries: ReadonlyArray<LivestockEntry>;
   canWrite: boolean;
   onEdit: (e: LivestockEntry) => void;
   onDelete: (e: LivestockEntry) => void;
   onAdd: () => void;
+  groupBySpecies: boolean;
 }) {
   if (entries.length === 0) {
     return (
@@ -261,6 +264,17 @@ function LivestockTable({
       onRowClick={onEdit}
       entityLabel="catégorie"
       emptyMessage="Aucune catégorie."
+      groupBy={
+        groupBySpecies
+          ? {
+              getKey: (entry) => {
+                const cat = getCategory(entry.category);
+                return cat?.species ?? 'autre';
+              },
+              getLabel: (key) => SPECIES_LABELS[key as keyof typeof SPECIES_LABELS] ?? key,
+            }
+          : undefined
+      }
       columns={[
         {
           key: 'species',
