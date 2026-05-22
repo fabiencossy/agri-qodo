@@ -307,7 +307,7 @@ La Suisse a sa propre loi (nFADP en vigueur depuis 2023-09-01) très proche du R
 
 ### 6.5 Uptime monitoring 🟢
 
-**À faire** : Better Uptime / UptimeRobot pings sur https://newagri.qodo.ch + api.
+**À faire** : Better Uptime / UptimeRobot pings sur https://agri.qodo.ch + api.
 
 ---
 

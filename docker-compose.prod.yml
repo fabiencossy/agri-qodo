@@ -57,7 +57,7 @@ services:
       # mails sont juste écrits dans les logs au lieu d'être envoyés).
       RESEND_API_KEY: ${RESEND_API_KEY:-}
       MAIL_FROM: ${MAIL_FROM:-Agri Qodo <noreply@qodo.ch>}
-      PUBLIC_APP_URL: ${PUBLIC_APP_URL:-https://newagri.qodo.ch}
+      PUBLIC_APP_URL: ${PUBLIC_APP_URL:-https://agri.qodo.ch}
     networks:
       - agriqodo
 

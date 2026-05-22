@@ -21,7 +21,7 @@ Fusionner les 3 modules `Travail` (M6), `Intervention` (M2), `Presence` (M11) de
 
 ## 2. Reconnaissance de l'existant (différence vs PRD v0.1)
 
-La v0.1 décrivait un schéma "from scratch". La réalité prod (newagri.qodo.ch, tenant `AQ-VD-DEMO-PUBLIC`, comptes `admin@admin.ch` / `demo@demo.ch`, ~10 parcelles, ~435 animaux, plusieurs travaux + interventions + présences) impose de partir de l'existant :
+La v0.1 décrivait un schéma "from scratch". La réalité prod (agri.qodo.ch, tenant `AQ-VD-DEMO-PUBLIC`, comptes `admin@admin.ch` / `demo@demo.ch`, ~10 parcelles, ~435 animaux, plusieurs travaux + interventions + présences) impose de partir de l'existant :
 
 | PRD v0.1 (anglais, neuf)  | Réalité prod (FR, à conserver)                                                                                                                                                                                                                        |
 | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
