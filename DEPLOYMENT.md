@@ -108,7 +108,7 @@ Le compte de démo `test@test.ch / test` est maintenant accessible.
 
 ## 7. Déployer le frontend sur Vercel
 
-1. https://vercel.com → "Sign in with GitHub" (compte fabiencossy)
+1. https://vercel.com → "Sign in with GitHub" (compte avec accès à l'org Qodo-Digital)
 2. **Add new… → Project**
 3. Sélectionner le repo `Qodo-Digital/agri-qodo`
 4. **Configure project** :

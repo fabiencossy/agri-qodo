@@ -34,7 +34,7 @@ export default function CguPage() {
       </p>
       <p>
         Le Service est distribué sous licence libre <strong>AGPL v3</strong>. Le code source est
-        publié sur GitHub à l'adresse <code>github.com/fabiencossy/agri-qodo</code>.
+        publié sur GitHub à l'adresse <code>github.com/Qodo-Digital/agri-qodo</code>.
       </p>
 
       <h2>3. Création de compte</h2>

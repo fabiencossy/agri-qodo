@@ -263,7 +263,7 @@ function CallToAction() {
             <Button size="lg">Créer mon exploitation</Button>
           </Link>
           <a
-            href="https://github.com/fabiencossy/agri-qodo"
+            href="https://github.com/Qodo-Digital/agri-qodo"
             target="_blank"
             rel="noopener noreferrer"
           >
@@ -287,7 +287,7 @@ function Footer() {
         </div>
         <div className="flex gap-4">
           <a
-            href="https://github.com/fabiencossy/agri-qodo"
+            href="https://github.com/Qodo-Digital/agri-qodo"
             target="_blank"
             rel="noopener noreferrer"
             className="hover:text-foreground"

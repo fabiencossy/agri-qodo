@@ -61,11 +61,11 @@ export default function MentionsLegalesPage() {
         Le code source du Service Agri Qodo est publié sous licence libre{" "}
         <strong>GNU AGPL v3</strong> sur GitHub :{" "}
         <a
-          href="https://github.com/fabiencossy/agri-qodo"
+          href="https://github.com/Qodo-Digital/agri-qodo"
           target="_blank"
           rel="noopener noreferrer"
         >
-          github.com/fabiencossy/agri-qodo
+          github.com/Qodo-Digital/agri-qodo
         </a>
         . Les marques, logos et identité visuelle « Agri Qodo » et « Qodo » sont la propriété
         exclusive de Qodo SA.
