@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { SearchBar, type FieldDescriptor, type SearchState } from '../../components/SearchBar';
 import { ViewSwitcher, type ViewKey } from '../../components/ViewSwitcher';
 import { CalendarShowcase } from '../composants/ComposantsPage';
+import { DataTable, StatusPill, type Column } from '../../components/DataTable';
 import { ExportButton, type ExportColumn } from '../../components/ExportButton';
 import { useFabActions, useHideFab } from '../../layouts/useFab';
 import { useStandardFabActions } from '../../layouts/useStandardFabActions';
@@ -357,7 +358,6 @@ function WorkOrderTable({
   parcels: ReadonlyArray<{ id: string; name: string }>;
   onEdit: (wo: WorkOrder) => void;
 }) {
-  /** Résume les parcelles d'un bon en string lisible : "Nom1 + N autres" si plusieurs. */
   const parcelsLabel = (wo: WorkOrder): string => {
     const ids = wo.parcelIds ?? [];
     if (ids.length === 0) return '—';
@@ -365,111 +365,84 @@ function WorkOrderTable({
     if (names.length === 1) return names[0]!;
     return `${names[0]} +${names.length - 1}`;
   };
-  if (orders.length === 0) {
-    return (
-      <p className="m-0 py-10 text-center text-sm text-(--color-muted)">Aucun bon de travail.</p>
-    );
-  }
-  return (
-    <>
-      <div className="hidden overflow-x-auto md:block">
-        <table className="w-full min-w-[680px] border-collapse text-sm">
-          <thead>
-            <tr className="border-b border-(--color-border) text-left text-[10px] font-semibold tracking-wider text-(--color-muted) uppercase">
-              <th className="py-2 pr-2">Date</th>
-              <th className="py-2 pr-2">Client</th>
-              <th className="py-2 pr-2">Prestation</th>
-              <th className="py-2 pr-2">Parcelle</th>
-              <th className="px-2 py-2">Statut</th>
-            </tr>
-          </thead>
-          <tbody>
-            {orders.map((wo) => {
-              const client = clients.find((c) => c.id === wo.clientId);
-              const first = wo.lines[0];
-              const firstLabel = first
-                ? (getWorkType(first.workType)?.label ?? first.workType ?? '—')
-                : '—';
-              return (
-                <tr
-                  key={wo.id}
-                  onClick={() => onEdit(wo)}
-                  className="cursor-pointer border-b border-(--color-border) hover:bg-[#fbfbf9]"
-                >
-                  <td className="py-2 pr-2 tabular-nums">{formatDate(wo.date)}</td>
-                  <td className="py-2 pr-2">
-                    <div className="font-medium">{client?.name ?? '—'}</div>
-                  </td>
-                  <td className="py-2 pr-2">
-                    <div className="truncate">
-                      {wo.lines.length > 1 ? `${firstLabel}…` : firstLabel}
-                    </div>
-                  </td>
-                  <td className="py-2 pr-2 text-[12px] text-(--color-muted)">{parcelsLabel(wo)}</td>
-                  <td className="px-2 py-2">
-                    <span
-                      className={[
-                        'inline-flex items-center rounded-(--radius-pill) px-2 py-0.5 text-[10px] font-medium',
-                        STATUS_COLORS[wo.status],
-                      ].join(' ')}
-                    >
-                      {STATUS_LABELS[wo.status]}
-                    </span>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+  const getClient = (wo: WorkOrder) => clients.find((c) => c.id === wo.clientId);
+  const getLabel = (wo: WorkOrder) => {
+    const first = wo.lines[0];
+    return first ? (getWorkType(first.workType)?.label ?? first.workType ?? '—') : '—';
+  };
 
-      {/* Cards mobile : prestation + client + parcelle + statut. Pas d'heures
-          ni prix ni surface — le PO ne veut que l'essentiel sur la liste. */}
-      <ul className="m-0 list-none space-y-2 p-0 md:hidden">
-        {orders.map((wo) => {
-          const client = clients.find((c) => c.id === wo.clientId);
-          const first = wo.lines[0];
-          const firstLabel = first
-            ? (getWorkType(first.workType)?.label ?? first.workType ?? '—')
-            : '—';
-          return (
-            <li
-              key={wo.id}
-              role="button"
-              tabIndex={0}
-              onClick={() => onEdit(wo)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault();
-                  onEdit(wo);
-                }
-              }}
-              aria-label={`Ouvrir le bon ${formatDate(wo.date)} — ${client?.name ?? ''}`}
-              className="cursor-pointer rounded-(--radius-sm) border border-(--color-border) bg-(--color-surface) p-3 transition-colors hover:border-(--color-primary) hover:bg-[#fbfbf9] focus:outline-none focus-visible:ring-2 focus-visible:ring-(--color-primary)/40"
-            >
-              <div className="flex items-baseline justify-between gap-2">
-                <span className="min-w-0 flex-1 truncate text-sm font-medium">
-                  {wo.lines.length > 1 ? `${firstLabel}…` : firstLabel}
+  const columns: Column<WorkOrder>[] = [
+    {
+      key: 'date',
+      label: 'Date',
+      render: (wo) => (
+        <span className="font-mono text-xs whitespace-nowrap tabular-nums">
+          {formatDate(wo.date)}
+        </span>
+      ),
+    },
+    {
+      key: 'client',
+      label: 'Client',
+      render: (wo) => <span className="font-medium">{getClient(wo)?.name ?? '—'}</span>,
+    },
+    {
+      key: 'work',
+      label: 'Prestation',
+      render: (wo) => {
+        const label = getLabel(wo);
+        return <span className="truncate">{wo.lines.length > 1 ? `${label}…` : label}</span>;
+      },
+    },
+    {
+      key: 'parcel',
+      label: 'Parcelle',
+      render: (wo) => <span className="text-(--color-muted)">{parcelsLabel(wo)}</span>,
+    },
+    {
+      key: 'status',
+      label: 'Statut',
+      render: (wo) => (
+        <StatusPill label={STATUS_LABELS[wo.status]} className={STATUS_COLORS[wo.status]} />
+      ),
+    },
+  ];
+
+  return (
+    <DataTable<WorkOrder>
+      rows={orders}
+      columns={columns}
+      getId={(wo) => wo.id}
+      onRowClick={onEdit}
+      entityLabel="bon de travail"
+      emptyMessage="Aucun bon de travail."
+      renderMobileCard={(wo, { checkbox }) => {
+        const label = getLabel(wo);
+        const client = getClient(wo);
+        return (
+          <>
+            <div className="shrink-0 pt-0.5">{checkbox}</div>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-baseline gap-2">
+                <span className="min-w-0 flex-1 truncate text-sm font-semibold">
+                  {wo.lines.length > 1 ? `${label}…` : label}
                 </span>
-                <span className="shrink-0 text-xs tabular-nums">{formatDate(wo.date)}</span>
-              </div>
-              <div className="text-[11px] text-(--color-muted)">{client?.name ?? '—'}</div>
-              <div className="text-[11px] text-(--color-muted)">{parcelsLabel(wo)}</div>
-              <div className="mt-1">
-                <span
-                  className={[
-                    'inline-flex items-center rounded-(--radius-pill) px-2 py-0.5 text-[10px] font-medium',
-                    STATUS_COLORS[wo.status],
-                  ].join(' ')}
-                >
-                  {STATUS_LABELS[wo.status]}
+                <span className="shrink-0 font-mono text-[11px] text-(--color-muted)">
+                  {formatDate(wo.date)}
                 </span>
               </div>
-            </li>
-          );
-        })}
-      </ul>
-    </>
+              <div className="mt-0.5 flex flex-wrap items-baseline gap-x-2 text-xs text-(--color-muted)">
+                <span className="truncate">{client?.name ?? '—'}</span>
+                <span aria-hidden>·</span>
+                <span className="truncate">{parcelsLabel(wo)}</span>
+                <span aria-hidden>·</span>
+                <StatusPill label={STATUS_LABELS[wo.status]} className={STATUS_COLORS[wo.status]} />
+              </div>
+            </div>
+          </>
+        );
+      }}
+    />
   );
 }
 

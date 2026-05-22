@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { SearchBar, type FieldDescriptor, type SearchState } from '../../components/SearchBar';
 import { ViewSwitcher, type ViewKey } from '../../components/ViewSwitcher';
+import { DataTable } from '../../components/DataTable';
 import { ExportButton, type ExportColumn } from '../../components/ExportButton';
 import { useFabActions, useHideFab } from '../../layouts/useFab';
 import { useStandardFabActions } from '../../layouts/useStandardFabActions';
@@ -174,6 +175,7 @@ export default function TroupeauPage() {
           activeView={view}
           onChange={(v) => setView(v as TroupeauView)}
           layout="segmented"
+          display="icon-only"
         />
       </div>
       <div className="shrink-0">
@@ -273,120 +275,155 @@ function LivestockTable({
             {SPECIES_LABELS[species] ?? species} ({items.length})
           </h2>
 
-          {/* Table desktop */}
-          <div className="hidden overflow-x-auto md:block">
-            <table className="w-full min-w-[720px] border-collapse text-sm">
-              <thead>
-                <tr className="border-b border-(--color-border) text-left text-[10px] font-semibold tracking-wider text-(--color-muted) uppercase">
-                  <th className="py-2 pr-2">Catégorie</th>
-                  <th className="px-2 py-2 text-right">Têtes</th>
-                  <th className="px-2 py-2 text-right">UGB</th>
-                  <th className="px-2 py-2 text-right">N (kg/an)</th>
-                  <th className="px-2 py-2 text-right">P₂O₅ (kg/an)</th>
-                  <th className="px-2 py-2 text-right">K₂O (kg/an)</th>
-                  <th className="px-2 py-2 text-right">Effluents</th>
-                  <th className="px-2 py-2"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((entry) => {
+          <DataTable<LivestockEntry>
+            rows={items}
+            getId={(e) => e.id}
+            onRowClick={onEdit}
+            entityLabel="catégorie"
+            emptyMessage="Aucune catégorie."
+            columns={[
+              {
+                key: 'category',
+                label: 'Catégorie',
+                render: (entry) => {
                   const cat = getCategory(entry.category);
-                  if (!cat) return null;
                   return (
-                    <tr
-                      key={entry.id}
-                      onClick={() => onEdit(entry)}
-                      className="cursor-pointer border-b border-(--color-border) hover:bg-[#fbfbf9]"
-                    >
-                      <td className="py-2 pr-2">
-                        <div className="font-medium">{cat.label}</div>
-                        {entry.notes && (
-                          <div className="text-[11px] text-(--color-muted)">{entry.notes}</div>
-                        )}
-                      </td>
-                      <td className="px-2 py-2 text-right tabular-nums">{entry.count}</td>
-                      <td className="px-2 py-2 text-right tabular-nums">
-                        {(cat.ugbPerHead * entry.count).toFixed(1)}
-                      </td>
-                      <td className="px-2 py-2 text-right tabular-nums">
-                        {Math.round(cat.nKgPerHeadYear * entry.count)}
-                      </td>
-                      <td className="px-2 py-2 text-right tabular-nums">
-                        {Math.round(cat.pKgPerHeadYear * entry.count)}
-                      </td>
-                      <td className="px-2 py-2 text-right tabular-nums">
-                        {Math.round(cat.kKgPerHeadYear * entry.count)}
-                      </td>
-                      <td className="px-2 py-2 text-right tabular-nums">
-                        {(cat.manureVolumePerHeadYear * entry.count).toFixed(1)}{' '}
-                        {cat.manureVolumeUnit === 'm3' ? 'm³' : 't'}
-                      </td>
-                      <td className="px-2 py-2 text-right" onClick={(e) => e.stopPropagation()}>
-                        {canWrite && (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onDelete(entry);
-                            }}
-                            aria-label="Supprimer"
-                            className="inline-flex h-8 w-8 items-center justify-center rounded-(--radius-sm) text-(--color-error) hover:bg-[#fef2f2]"
-                          >
-                            ×
-                          </button>
-                        )}
-                      </td>
-                    </tr>
+                    <div>
+                      <div className="font-medium">{cat?.label ?? entry.category}</div>
+                      {entry.notes && (
+                        <div className="text-[11px] text-(--color-muted)">{entry.notes}</div>
+                      )}
+                    </div>
                   );
-                })}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Cards mobile : toute la card est cliquable */}
-          <ul className="m-0 list-none space-y-2 p-0 md:hidden">
-            {items.map((entry) => {
+                },
+              },
+              {
+                key: 'count',
+                label: 'Têtes',
+                align: 'right',
+                render: (entry) => <span className="tabular-nums">{entry.count}</span>,
+              },
+              {
+                key: 'ugb',
+                label: 'UGB',
+                align: 'right',
+                render: (entry) => {
+                  const cat = getCategory(entry.category);
+                  return (
+                    <span className="tabular-nums">
+                      {cat ? (cat.ugbPerHead * entry.count).toFixed(1) : '—'}
+                    </span>
+                  );
+                },
+              },
+              {
+                key: 'n',
+                label: 'N (kg/an)',
+                align: 'right',
+                render: (entry) => {
+                  const cat = getCategory(entry.category);
+                  return (
+                    <span className="tabular-nums">
+                      {cat ? Math.round(cat.nKgPerHeadYear * entry.count) : '—'}
+                    </span>
+                  );
+                },
+              },
+              {
+                key: 'p',
+                label: 'P₂O₅ (kg/an)',
+                align: 'right',
+                render: (entry) => {
+                  const cat = getCategory(entry.category);
+                  return (
+                    <span className="tabular-nums">
+                      {cat ? Math.round(cat.pKgPerHeadYear * entry.count) : '—'}
+                    </span>
+                  );
+                },
+              },
+              {
+                key: 'k',
+                label: 'K₂O (kg/an)',
+                align: 'right',
+                render: (entry) => {
+                  const cat = getCategory(entry.category);
+                  return (
+                    <span className="tabular-nums">
+                      {cat ? Math.round(cat.kKgPerHeadYear * entry.count) : '—'}
+                    </span>
+                  );
+                },
+              },
+              {
+                key: 'manure',
+                label: 'Effluents',
+                align: 'right',
+                render: (entry) => {
+                  const cat = getCategory(entry.category);
+                  if (!cat) return '—';
+                  return (
+                    <span className="tabular-nums">
+                      {(cat.manureVolumePerHeadYear * entry.count).toFixed(1)}{' '}
+                      {cat.manureVolumeUnit === 'm3' ? 'm³' : 't'}
+                    </span>
+                  );
+                },
+              },
+            ]}
+            renderMobileCard={(entry, { checkbox }) => {
               const cat = getCategory(entry.category);
               if (!cat) return null;
               return (
-                <li
-                  key={entry.id}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => onEdit(entry)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      onEdit(entry);
-                    }
-                  }}
-                  aria-label={`Ouvrir ${cat.label}`}
-                  className="cursor-pointer rounded-(--radius-sm) border border-(--color-border) bg-(--color-surface) p-3 transition-colors hover:border-(--color-primary) hover:bg-[#fbfbf9] focus:outline-none focus-visible:ring-2 focus-visible:ring-(--color-primary)/40"
-                >
-                  <div className="flex items-baseline justify-between gap-2">
-                    <span className="text-sm font-medium">{cat.label}</span>
-                    <span className="text-sm tabular-nums">{entry.count} têtes</span>
+                <>
+                  <div className="shrink-0 pt-0.5">{checkbox}</div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="truncate text-sm font-semibold">{cat.label}</span>
+                      <span className="shrink-0 font-mono text-[11px] text-(--color-muted) tabular-nums">
+                        {entry.count} têtes
+                      </span>
+                    </div>
+                    <div className="mt-0.5 flex flex-wrap items-baseline gap-x-2 text-xs text-(--color-muted)">
+                      <span className="tabular-nums">
+                        {(cat.ugbPerHead * entry.count).toFixed(1)} UGB
+                      </span>
+                      <span aria-hidden>·</span>
+                      <span className="tabular-nums">
+                        {Math.round(cat.nKgPerHeadYear * entry.count)} kg N/an
+                      </span>
+                      <span aria-hidden>·</span>
+                      <span className="tabular-nums">
+                        {(cat.manureVolumePerHeadYear * entry.count).toFixed(1)}{' '}
+                        {cat.manureVolumeUnit === 'm3' ? 'm³' : 't'}
+                      </span>
+                    </div>
+                    {entry.notes && (
+                      <div className="mt-0.5 truncate text-[11px] italic text-(--color-muted)">
+                        {entry.notes}
+                      </div>
+                    )}
                   </div>
-                  <div className="text-[11px] text-(--color-muted)">
-                    {(cat.ugbPerHead * entry.count).toFixed(1)} UGB ·{' '}
-                    {Math.round(cat.nKgPerHeadYear * entry.count)} kg N/an
-                  </div>
-                  <div className="text-[11px] text-(--color-muted)">
-                    {(cat.manureVolumePerHeadYear * entry.count).toFixed(1)}{' '}
-                    {cat.manureVolumeUnit === 'm3' ? 'm³' : 't'} de{' '}
-                    {cat.manureType === 'lisier'
-                      ? 'lisier'
-                      : cat.manureType === 'fientes'
-                        ? 'fientes'
-                        : 'fumier'}
-                  </div>
-                  <div className="text-[11px] text-(--color-muted)">
-                    {entry.notes ?? <span className="text-[#fbfbf9]">—</span>}
-                  </div>
-                </li>
+                </>
               );
-            })}
-          </ul>
+            }}
+            bulkActions={
+              canWrite
+                ? [
+                    {
+                      id: 'delete',
+                      label: 'Supprimer',
+                      variant: 'danger',
+                      onClick: () => {
+                        if (confirm('Supprimer les catégories sélectionnées ?')) {
+                          items.forEach(onDelete);
+                        }
+                      },
+                    },
+                  ]
+                : []
+            }
+          />
         </section>
       ))}
 
