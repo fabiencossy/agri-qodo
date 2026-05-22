@@ -340,7 +340,7 @@ function buildMockEvents(parcels: ReadonlyArray<ParcelDetail>): CalEvent[] {
     const offset = (i % 21) - 10;
     const d = new Date(today);
     d.setDate(d.getDate() + offset);
-    const type = EVENT_TYPES[i % EVENT_TYPES.length];
+    const type = EVENT_TYPES[i % EVENT_TYPES.length]!;
     const startHour = 8 + (i % 9);
     return {
       id: `ev-${p.id}-${i}`,
@@ -356,7 +356,7 @@ function buildMockEvents(parcels: ReadonlyArray<ParcelDetail>): CalEvent[] {
   // Démo : journée chargée aujourd'hui avec chevauchements pour tester lanes
   const todayIso = today.toISOString().slice(0, 10);
   const cramped: CalEvent[] = parcels.slice(0, 8).map((p, i) => {
-    const type = EVENT_TYPES[i % EVENT_TYPES.length];
+    const type = EVENT_TYPES[i % EVENT_TYPES.length]!;
     return {
       id: `cramp-${p.id}-${i}`,
       date: todayIso,
@@ -666,8 +666,6 @@ function DetailRow({ label, value }: { label: string; value: string }) {
 
 const navBtn =
   'inline-flex h-8 w-8 items-center justify-center rounded-(--radius) border border-(--color-border) bg-(--color-surface) text-sm hover:bg-[#f8f8f5]';
-const todayBtn =
-  'inline-flex h-8 items-center rounded-(--radius) border border-(--color-border) bg-(--color-surface) px-3 text-xs font-medium hover:bg-[#f8f8f5]';
 
 /* ============ Mode JOUR : strip semaine + grille heures draggable ============ */
 
@@ -849,7 +847,7 @@ function HourGrid({
       const colDelta = Math.round(dx / drag.colWidthPx);
       const startIdx = drag.daysIsos.indexOf(drag.startEvent.date);
       const targetIdx = Math.max(0, Math.min(drag.daysIsos.length - 1, startIdx + colDelta));
-      newDate = drag.daysIsos[targetIdx];
+      newDate = drag.daysIsos[targetIdx] ?? drag.startEvent.date;
     }
     updateEvent(drag.id, { startHour: newStart, date: newDate });
   };

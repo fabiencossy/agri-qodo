@@ -357,7 +357,7 @@ function fmtDate(iso: string): string {
 /* ============ Dashboard Carnet : KPI + bar chart par type ============ */
 function CarnetDashboard({ interventions }: { interventions: ReadonlyArray<Intervention> }) {
   const byType = interventions.reduce<Record<string, number>>((acc, i) => {
-    acc[i.type] = (acc[i.type] ?? 0) + 1;
+    acc[i.category] = (acc[i.category] ?? 0) + 1;
     return acc;
   }, {});
   const total = interventions.length;

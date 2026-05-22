@@ -370,19 +370,3 @@ function PlanningTable({
     </>
   );
 }
-
-function PlaceholderView({ label, count }: { label: string; count: number }) {
-  const VIEW_LABELS: Record<string, string> = {
-    calendar: 'Vue calendrier mensuel',
-    timeline: 'Vue timeline (semaine × jours)',
-    dashboard: 'Vue dashboard (statistiques planifié)',
-  };
-  return (
-    <div className="mx-auto max-w-md rounded-(--radius) border border-dashed border-(--color-border) bg-[#fbfbf9] py-10 text-center">
-      <p className="m-0 text-sm font-medium text-(--color-text)">{VIEW_LABELS[label] ?? label}</p>
-      <p className="m-0 mt-1 text-[11px] text-(--color-muted)">
-        À venir — {count} bon{count > 1 ? 's' : ''} planifié{count > 1 ? 's' : ''} en attente.
-      </p>
-    </div>
-  );
-}
