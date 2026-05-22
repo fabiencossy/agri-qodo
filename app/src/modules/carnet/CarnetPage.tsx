@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { useIsDesktop } from '../../hooks/useMediaQuery';
 import { SearchBar, type FieldDescriptor, type SearchState } from '../../components/SearchBar';
 import { ViewSwitcher, type ViewKey } from '../../components/ViewSwitcher';
+import { CalendarShowcase } from '../composants/ComposantsPage';
 import { ExportButton, type ExportColumn } from '../../components/ExportButton';
 import { useFabActions, useHideFab } from '../../layouts/useFab';
 import { useStandardFabActions } from '../../layouts/useStandardFabActions';
@@ -51,7 +52,7 @@ const EXPORT_COLUMNS: ExportColumn[] = [
   { key: 'notes', label: 'Notes' },
 ];
 
-type CarnetView = Extract<ViewKey, 'table' | 'timeline'>;
+type CarnetView = Extract<ViewKey, 'table' | 'calendar' | 'timeline' | 'dashboard'>;
 
 export default function CarnetPage() {
   const isDesktop = useIsDesktop();
@@ -187,7 +188,7 @@ export default function CarnetPage() {
       </div>
       <div className="shrink-0 md:hidden">
         <ViewSwitcher
-          views={['table', 'timeline']}
+          views={['table', 'calendar', 'timeline', 'dashboard']}
           activeView={view}
           onChange={(v) => setView(v as CarnetView)}
           layout="dropdown"
@@ -196,10 +197,11 @@ export default function CarnetPage() {
       </div>
       <div className="hidden shrink-0 md:block">
         <ViewSwitcher
-          views={['table', 'timeline']}
+          views={['table', 'calendar', 'timeline', 'dashboard']}
           activeView={view}
           onChange={(v) => setView(v as CarnetView)}
           layout="segmented"
+          display="icon-only"
         />
       </div>
       <div className="shrink-0">
@@ -219,13 +221,21 @@ export default function CarnetPage() {
         {topBar}
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4">
-        {view === 'table' ? (
-          <InterventionList interventions={filtered} onEdit={setEditing} />
-        ) : (
-          <TimelineView interventions={filtered} parcelsById={parcelsById} onEdit={setEditing} />
-        )}
-      </div>
+      {view === 'calendar' ? (
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-3">
+          <CalendarShowcase parcels={parcels} />
+        </div>
+      ) : (
+        <div className="flex-1 overflow-y-auto p-4">
+          {view === 'table' ? (
+            <InterventionList interventions={filtered} onEdit={setEditing} />
+          ) : view === 'timeline' ? (
+            <TimelineView interventions={filtered} parcelsById={parcelsById} onEdit={setEditing} />
+          ) : (
+            <CarnetDashboard interventions={filtered} />
+          )}
+        </div>
+      )}
 
       {editing && (
         <InterventionForm
@@ -342,4 +352,56 @@ function fmtMonth(yyyymm: string): string {
 function fmtDate(iso: string): string {
   const [y, m, d] = iso.split('-');
   return `${d}/${m}/${y!.slice(2)}`;
+}
+
+/* ============ Dashboard Carnet : KPI + bar chart par type ============ */
+function CarnetDashboard({ interventions }: { interventions: ReadonlyArray<Intervention> }) {
+  const byType = interventions.reduce<Record<string, number>>((acc, i) => {
+    acc[i.type] = (acc[i.type] ?? 0) + 1;
+    return acc;
+  }, {});
+  const total = interventions.length;
+  const currentMonth = new Date().toISOString().slice(0, 7);
+  const thisMonth = interventions.filter((i) => i.date.startsWith(currentMonth)).length;
+  return (
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className="rounded-(--radius) border border-(--color-border) bg-(--color-surface) p-5">
+        <div className="text-xs tracking-wider text-(--color-muted) uppercase">
+          Total interventions
+        </div>
+        <div className="mt-1 text-2xl font-semibold tabular-nums">{total}</div>
+      </div>
+      <div className="rounded-(--radius) border border-(--color-border) bg-(--color-surface) p-5">
+        <div className="text-xs tracking-wider text-(--color-muted) uppercase">Ce mois</div>
+        <div className="mt-1 text-2xl font-semibold tabular-nums">{thisMonth}</div>
+      </div>
+      <div className="rounded-(--radius) border border-(--color-border) bg-(--color-surface) p-5">
+        <div className="text-xs tracking-wider text-(--color-muted) uppercase">Types distincts</div>
+        <div className="mt-1 text-2xl font-semibold tabular-nums">{Object.keys(byType).length}</div>
+      </div>
+      <div className="col-span-full rounded-(--radius) border border-(--color-border) bg-(--color-surface) p-5">
+        <h3 className="m-0 mb-3 text-sm font-semibold">Par type d'intervention</h3>
+        <ul className="m-0 list-none space-y-2 p-0">
+          {Object.entries(byType)
+            .sort(([, a], [, b]) => b - a)
+            .map(([type, n]) => (
+              <li key={type}>
+                <div className="mb-1 flex items-baseline justify-between text-sm">
+                  <span>{type}</span>
+                  <span className="font-mono tabular-nums text-(--color-muted)">
+                    {n} · {total > 0 ? ((n / total) * 100).toFixed(0) : 0} %
+                  </span>
+                </div>
+                <div className="h-2 overflow-hidden rounded-(--radius-pill) bg-[#f1f1ee]">
+                  <div
+                    className="h-full bg-(--color-primary)"
+                    style={{ width: `${total > 0 ? (n / total) * 100 : 0}%` }}
+                  />
+                </div>
+              </li>
+            ))}
+        </ul>
+      </div>
+    </div>
+  );
 }

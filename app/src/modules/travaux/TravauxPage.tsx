@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { SearchBar, type FieldDescriptor, type SearchState } from '../../components/SearchBar';
 import { ViewSwitcher, type ViewKey } from '../../components/ViewSwitcher';
+import { CalendarShowcase } from '../composants/ComposantsPage';
 import { ExportButton, type ExportColumn } from '../../components/ExportButton';
 import { useFabActions, useHideFab } from '../../layouts/useFab';
 import { useStandardFabActions } from '../../layouts/useStandardFabActions';
@@ -40,7 +41,7 @@ const STATUS_COLORS: Record<WorkOrderStatus, string> = {
   cancelled: 'bg-[#fee2e2] text-[#991b1b]',
 };
 
-type TravauxView = Extract<ViewKey, 'table' | 'timeline' | 'dashboard'>;
+type TravauxView = Extract<ViewKey, 'table' | 'calendar' | 'timeline' | 'dashboard'>;
 
 const EXPORT_COLUMNS: ExportColumn[] = [
   { key: 'date', label: 'Date' },
@@ -270,7 +271,7 @@ export default function TravauxPage() {
       </div>
       <div className="shrink-0 md:hidden">
         <ViewSwitcher
-          views={['table', 'timeline', 'dashboard']}
+          views={['table', 'calendar', 'timeline', 'dashboard']}
           activeView={view}
           onChange={(v) => setView(v as TravauxView)}
           layout="dropdown"
@@ -279,10 +280,11 @@ export default function TravauxPage() {
       </div>
       <div className="hidden shrink-0 md:block">
         <ViewSwitcher
-          views={['table', 'timeline', 'dashboard']}
+          views={['table', 'calendar', 'timeline', 'dashboard']}
           activeView={view}
           onChange={(v) => setView(v as TravauxView)}
           layout="segmented"
+          display="icon-only"
         />
       </div>
       <div className="shrink-0">
@@ -302,22 +304,28 @@ export default function TravauxPage() {
         {topBar}
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4">
-        {view === 'table' && (
-          <WorkOrderTable
-            orders={filtered}
-            clients={clients}
-            parcels={parcels}
-            onEdit={setEditing}
-          />
-        )}
-        {view === 'timeline' && (
-          <TimelineView orders={filtered} clients={clients} onEdit={setEditing} />
-        )}
-        {view === 'dashboard' && (
-          <DashboardView orders={filtered} totals={totals} clients={clients} />
-        )}
-      </div>
+      {view === 'calendar' ? (
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-3">
+          <CalendarShowcase parcels={parcels} />
+        </div>
+      ) : (
+        <div className="flex-1 overflow-y-auto p-4">
+          {view === 'table' && (
+            <WorkOrderTable
+              orders={filtered}
+              clients={clients}
+              parcels={parcels}
+              onEdit={setEditing}
+            />
+          )}
+          {view === 'timeline' && (
+            <TimelineView orders={filtered} clients={clients} onEdit={setEditing} />
+          )}
+          {view === 'dashboard' && (
+            <DashboardView orders={filtered} totals={totals} clients={clients} />
+          )}
+        </div>
+      )}
 
       {editing && <WorkOrderModal initial={editing} onClose={() => setEditing(null)} />}
       {quickCreating && (

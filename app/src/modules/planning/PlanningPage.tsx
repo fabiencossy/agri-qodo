@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react';
 import { SearchBar, type FieldDescriptor, type SearchState } from '../../components/SearchBar';
 import { ViewSwitcher, type ViewKey } from '../../components/ViewSwitcher';
+import { CalendarShowcase } from '../composants/ComposantsPage';
+import { useParcels } from '../parcellaire/parcellaire.store';
 import { ExportButton, type ExportColumn } from '../../components/ExportButton';
 import { useFabActions } from '../../layouts/useFab';
 import { useStandardFabActions } from '../../layouts/useStandardFabActions';
@@ -13,7 +15,7 @@ import { QuickWorkOrderModal } from '../travaux/QuickWorkOrderModal';
 import { useCurrentFarm } from '../farms/farms.store';
 import { findClientForFarm, useIsCurrentFarmInvitee } from '../farms/farms.helpers';
 
-type PlanningView = Extract<ViewKey, 'table' | 'calendar' | 'timeline' | 'dashboard'>;
+type PlanningView = Extract<ViewKey, 'table' | 'calendar'>;
 
 const EXPORT_COLUMNS: ExportColumn[] = [
   { key: 'date', label: 'Date' },
@@ -37,6 +39,7 @@ const EXPORT_COLUMNS: ExportColumn[] = [
 export default function PlanningPage() {
   const orders = useWorkOrders();
   const clients = useClients();
+  const parcels = useParcels();
   const canWrite = useCan('travaux', 'write');
   const currentFarm = useCurrentFarm();
   const isInvitee = useIsCurrentFarmInvitee();
@@ -179,7 +182,7 @@ export default function PlanningPage() {
       </div>
       <div className="shrink-0 md:hidden">
         <ViewSwitcher
-          views={['table', 'calendar', 'timeline']}
+          views={['table', 'calendar']}
           activeView={view}
           onChange={(v) => setView(v as PlanningView)}
           layout="dropdown"
@@ -188,10 +191,11 @@ export default function PlanningPage() {
       </div>
       <div className="hidden shrink-0 md:block">
         <ViewSwitcher
-          views={['table', 'calendar', 'timeline']}
+          views={['table', 'calendar']}
           activeView={view}
           onChange={(v) => setView(v as PlanningView)}
           layout="segmented"
+          display="icon-only"
         />
       </div>
       <div className="shrink-0">
@@ -210,20 +214,24 @@ export default function PlanningPage() {
       <div className="flex-shrink-0 border-b border-(--color-border) bg-(--color-surface) px-3 py-2">
         {topBar}
       </div>
-      <div className="flex-1 overflow-y-auto p-4">
-        {plannedOrders.length === 0 ? (
-          <div className="mx-auto max-w-md rounded-(--radius) border border-dashed border-(--color-border) bg-[#fbfbf9] py-10 text-center">
-            <p className="m-0 text-sm text-(--color-muted)">Aucun travail planifié.</p>
-            <p className="m-0 mt-1 text-[11px] text-(--color-muted)">
-              Créez-en un avec le bouton « + » et choisissez « Planifier ».
-            </p>
-          </div>
-        ) : view === 'table' ? (
-          <PlanningTable orders={plannedOrders} clients={clients} onEdit={setEditing} />
-        ) : (
-          <PlaceholderView label={view} count={plannedOrders.length} />
-        )}
-      </div>
+      {view === 'calendar' ? (
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-3">
+          <CalendarShowcase parcels={parcels} />
+        </div>
+      ) : (
+        <div className="flex-1 overflow-y-auto p-4">
+          {plannedOrders.length === 0 ? (
+            <div className="mx-auto max-w-md rounded-(--radius) border border-dashed border-(--color-border) bg-[#fbfbf9] py-10 text-center">
+              <p className="m-0 text-sm text-(--color-muted)">Aucun travail planifié.</p>
+              <p className="m-0 mt-1 text-[11px] text-(--color-muted)">
+                Créez-en un avec le bouton « + » et choisissez « Planifier ».
+              </p>
+            </div>
+          ) : (
+            <PlanningTable orders={plannedOrders} clients={clients} onEdit={setEditing} />
+          )}
+        </div>
+      )}
 
       {editing && <WorkOrderModal initial={editing} onClose={() => setEditing(null)} />}
       {quickCreating && (
