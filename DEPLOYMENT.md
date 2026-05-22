@@ -5,7 +5,7 @@ Stack cible :
 - **Frontend Next.js** → Vercel (gratuit, CDN mondial, HTTPS auto)
 - **Backend NestJS + PostgreSQL/PostGIS** → VPS Infomaniak (souveraineté Suisse)
 - **Reverse proxy HTTPS** → Caddy (Let's Encrypt automatique)
-- **Domaine** : `newagri.qodo.ch` (frontend) + `api.newagri.qodo.ch` (backend)
+- **Domaine** : `agri.qodo.ch` (frontend) + `api.agri.qodo.ch` (backend)
 
 Coût total : **~12 CHF/mois** (VPS) + 0 CHF (Vercel free tier).
 
@@ -70,7 +70,7 @@ Remplir :
 - `JWT_SECRET` : `openssl rand -hex 64`
 - `JWT_REFRESH_SECRET` : `openssl rand -hex 64` (différent du JWT_SECRET)
 
-Vérifier que `DOMAIN_API=api.newagri.qodo.ch` est bien là.
+Vérifier que `DOMAIN_API=api.agri.qodo.ch` est bien là.
 
 ## 5. Premier démarrage
 
@@ -85,12 +85,12 @@ docker compose -f docker-compose.prod.yml ps
 docker compose -f docker-compose.prod.yml logs -f backend
 ```
 
-Caddy obtient automatiquement le certificat HTTPS pour `api.newagri.qodo.ch` au premier démarrage (peut prendre 1-2 min).
+Caddy obtient automatiquement le certificat HTTPS pour `api.agri.qodo.ch` au premier démarrage (peut prendre 1-2 min).
 
 Tester :
 
 ```bash
-curl https://api.newagri.qodo.ch/health
+curl https://api.agri.qodo.ch/health
 # Doit renvoyer { "status": "ok", ... }
 ```
 
@@ -117,25 +117,25 @@ Le compte de démo `test@test.ch / test` est maintenant accessible.
    - Build Command : laisser par défaut
    - Output Directory : laisser par défaut
 5. **Environment Variables** :
-   - `BACKEND_URL` = `https://api.newagri.qodo.ch`
+   - `BACKEND_URL` = `https://api.agri.qodo.ch`
    - (laisser `NEXT_PUBLIC_API_URL` vide → fallback sur proxy `/api/*`)
 6. **Deploy**
 
 Premier deploy ~3 min. Vercel fournit une URL `agri-qodo-xxxx.vercel.app`.
 
-## 8. Brancher le domaine `newagri.qodo.ch`
+## 8. Brancher le domaine `agri.qodo.ch`
 
 Vercel → Project → **Settings → Domains** :
 
-1. Ajouter `newagri.qodo.ch`
+1. Ajouter `agri.qodo.ch`
 2. Vercel vérifie que le CNAME pointe bien sur `cname.vercel-dns.com`
 3. Certificat HTTPS automatique (Let's Encrypt via Vercel)
 
-Quelques minutes plus tard : **https://newagri.qodo.ch** est en ligne.
+Quelques minutes plus tard : **https://agri.qodo.ch** est en ligne.
 
 ## 9. Tester la chaîne complète
 
-1. Aller sur https://newagri.qodo.ch
+1. Aller sur https://agri.qodo.ch
 2. Login avec `test@test.ch` / `test`
 3. Voir les 3 parcelles, le cheptel, le Suisse-Bilanz
 
@@ -178,7 +178,7 @@ docker compose -f docker-compose.prod.yml exec postgres \
 À l'arrache pour la démo :
 
 - Logs : `docker compose logs -f backend`
-- Healthcheck : `curl https://api.newagri.qodo.ch/health` depuis un cron externe (ex: UptimeRobot — gratuit jusqu'à 50 monitors)
+- Healthcheck : `curl https://api.agri.qodo.ch/health` depuis un cron externe (ex: UptimeRobot — gratuit jusqu'à 50 monitors)
 
 V2 : intégrer Grafana + Loki + Prometheus dans le compose, ou plus simple : Better Stack (Logtail) gratuit jusqu'à 1 Go/mois.
 

@@ -4,7 +4,7 @@
 # Le domaine est passé en variable d'env DOMAIN_API depuis docker-compose.
 
 {$DOMAIN_API} {
-	# CORS : on autorise newagri.qodo.ch (Vercel) — au cas où le proxy
+	# CORS : on autorise agri.qodo.ch (Vercel) — au cas où le proxy
 	# Vercel rewrite ne soit pas utilisé (ex: appel direct depuis le mobile).
 	@cors_preflight method OPTIONS
 	header @cors_preflight Access-Control-Allow-Origin "{header.Origin}"

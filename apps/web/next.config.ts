@@ -2,7 +2,7 @@ import type { NextConfig } from "next";
 
 /**
  * En prod (Vercel), on proxy `/api/*` vers le backend Railway pour avoir
- * un seul domaine côté navigateur (newagri.qodo.ch) — donc pas de CORS,
+ * un seul domaine côté navigateur (agri.qodo.ch) — donc pas de CORS,
  * pas de pré-flight, et on peut garder `NEXT_PUBLIC_API_URL` vide.
  *
  * En dev local, ces rewrites ne s'appliquent pas car le frontend tape

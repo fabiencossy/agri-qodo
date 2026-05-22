@@ -37,10 +37,10 @@ export const envSchema = z.object({
   RESEND_API_KEY: z.string().optional(),
   MAIL_FROM: z.string().default("Agri Qodo <noreply@qodo.ch>"),
   // URL publique du frontend pour générer les liens dans les mails
-  // (reset password, vérification email…). Ex prod : https://newagri.qodo.ch
+  // (reset password, vérification email…). Ex prod : https://agri.qodo.ch
   PUBLIC_APP_URL: z.string().url().default("http://localhost:3000"),
   // URL publique du backend pour les webhooks entrants Odoo → AQ. En
-  // prod : https://newagri.qodo.ch (ou un sous-domaine api dédié). En
+  // prod : https://agri.qodo.ch (ou un sous-domaine api dédié). En
   // dev : http://localhost:3001, mais inaccessible depuis Odoo cloud
   // sauf via tunnel (ngrok, cloudflare tunnel…).
   AGRIQODO_PUBLIC_URL: z.string().url().default("http://localhost:3001"),
