@@ -83,7 +83,7 @@ export function AppLayout() {
                   <MenuIcon />
                 </button>
                 <h1 className="m-0 flex-1 text-base font-semibold">
-                  {activeItem?.label ?? 'NewagriQodo'}
+                  {activeItem?.label ?? 'AgriQodo'}
                 </h1>
                 <img src="/agriqodo-mark.svg" alt="Qodo" className="h-7 w-7" />
               </header>

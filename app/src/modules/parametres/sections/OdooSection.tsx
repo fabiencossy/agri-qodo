@@ -249,7 +249,7 @@ export function OdooSection() {
 
       <SectionCard
         title="Mapping & synchronisation par entité"
-        description="Modèles Odoo synchronisés avec NewagriQodo. Bouton Synchroniser = simulation MVP."
+        description="Modèles Odoo synchronisés avec AgriQodo. Bouton Synchroniser = simulation MVP."
       >
         <div className="overflow-x-auto">
           <table className="w-full min-w-[680px] border-collapse text-sm">

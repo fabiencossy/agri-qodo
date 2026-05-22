@@ -78,7 +78,7 @@ export default function AcceptInvitePage() {
 
       <main className="flex flex-1 items-center justify-center p-4 sm:p-8">
         <div className="w-full max-w-sm">
-          <h1 className="m-0 text-2xl font-semibold">Bienvenue sur NewagriQodo</h1>
+          <h1 className="m-0 text-2xl font-semibold">Bienvenue sur AgriQodo</h1>
           <p className="m-0 mt-1 text-sm text-(--color-muted)">
             Vous êtes invité·e à rejoindre une exploitation. Choisissez un mot de passe pour
             finaliser votre compte.

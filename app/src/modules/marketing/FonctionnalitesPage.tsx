@@ -118,7 +118,7 @@ export default function FonctionnalitesPage() {
             >
               Odoo
             </a>{' '}
-            pour la gestion de votre exploitation, NewagriQodo s'y branche directement.
+            pour la gestion de votre exploitation, AgriQodo s'y branche directement.
           </p>
         </div>
       </section>

@@ -245,7 +245,7 @@ export default function LoginPage() {
       </main>
 
       <footer className="border-t border-(--color-border) bg-(--color-surface) px-4 py-3 text-center text-xs text-(--color-muted)">
-        NewagriQodo v2 ·{' '}
+        AgriQodo v2 ·{' '}
         <a href="https://qodo.ch" className="hover:underline">
           Qodo Digital
         </a>

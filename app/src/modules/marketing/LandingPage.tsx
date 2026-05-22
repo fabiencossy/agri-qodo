@@ -34,7 +34,7 @@ export default function LandingPage() {
           <div className="rounded-(--radius-lg) border border-(--color-border) bg-(--color-surface) p-2 shadow-(--shadow-card)">
             <img
               src="/screenshots/01_Hero/H1_Hero_Desktop_-_Carte_dzoome.png"
-              alt="Vue d'ensemble de NewagriQodo avec carte satellite des parcelles"
+              alt="Vue d'ensemble de AgriQodo avec carte satellite des parcelles"
               className="w-full rounded-[4px]"
               loading="eager"
             />
@@ -181,7 +181,7 @@ function FeatureGrid() {
       <div className="mx-auto max-w-6xl">
         <div className="mx-auto max-w-2xl text-center">
           <h2 className="m-0 text-3xl leading-tight font-bold tracking-tight sm:text-4xl">
-            Ce que NewagriQodo fait pour vous
+            Ce que AgriQodo fait pour vous
           </h2>
           <p className="m-0 mt-4 text-base text-(--color-muted)">
             Conçue avec un exploitant suisse, pour les exploitants suisses.

@@ -38,8 +38,8 @@ export default function MentionsLegalesPage() {
           <div>
             <h2 className="m-0 text-2xl font-bold">Hébergement</h2>
             <p className="mt-2">
-              L'application NewagriQodo et l'instance Supabase associée sont hébergées sur les
-              serveurs de :
+              L'application AgriQodo et l'instance Supabase associée sont hébergées sur les serveurs
+              de :
             </p>
             <p>
               <strong>Infomaniak Network SA</strong>
@@ -64,25 +64,25 @@ export default function MentionsLegalesPage() {
           <div>
             <h2 className="m-0 text-2xl font-bold">Données des exploitations</h2>
             <p className="mt-2">
-              Les données saisies dans NewagriQodo restent la propriété de l'exploitation cliente.
-              Qodo Digital n'en fait aucun usage commercial et ne les transmet à aucun tiers, sauf
-              sur demande explicite ou obligation légale.
+              Les données saisies dans AgriQodo restent la propriété de l'exploitation cliente. Qodo
+              Digital n'en fait aucun usage commercial et ne les transmet à aucun tiers, sauf sur
+              demande explicite ou obligation légale.
             </p>
           </div>
 
           <div>
             <h2 className="m-0 text-2xl font-bold">Responsabilité</h2>
             <p className="mt-2">
-              NewagriQodo est un outil d'aide à la gestion. Les décisions agronomiques, sanitaires
-              et réglementaires restent sous la responsabilité de l'exploitation cliente.
+              AgriQodo est un outil d'aide à la gestion. Les décisions agronomiques, sanitaires et
+              réglementaires restent sous la responsabilité de l'exploitation cliente.
             </p>
           </div>
 
           <div>
             <h2 className="m-0 text-2xl font-bold">Droit applicable</h2>
             <p className="mt-2">
-              Le présent site et l'application NewagriQodo sont régis par le droit suisse. Tout
-              litige relève de la juridiction des tribunaux du canton de Vaud.
+              Le présent site et l'application AgriQodo sont régis par le droit suisse. Tout litige
+              relève de la juridiction des tribunaux du canton de Vaud.
             </p>
           </div>
         </div>
