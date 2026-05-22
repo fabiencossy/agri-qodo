@@ -12,9 +12,9 @@ import {
   ugbHaLegalLimit,
   ugbPerHectare,
 } from './livestock.helpers';
-import { LIVESTOCK_CATALOG, SPECIES_LABELS, getCategory } from './livestock.catalog';
+import { SPECIES_LABELS, getCategory } from './livestock.catalog';
 import { LivestockEntryModal } from './LivestockEntryModal';
-import type { LivestockEntry, LivestockSpecies } from './livestock.types';
+import type { LivestockEntry } from './livestock.types';
 import { useCurrentFarm } from '../farms/farms.store';
 import { useCan } from '../users/permissions';
 
@@ -238,19 +238,6 @@ function LivestockTable({
   onDelete: (e: LivestockEntry) => void;
   onAdd: () => void;
 }) {
-  // Group by species (toujours appelé en haut — règle des hooks)
-  const groups = useMemo(() => {
-    const map = new Map<LivestockSpecies, LivestockEntry[]>();
-    for (const e of entries) {
-      const cat = getCategory(e.category);
-      if (!cat) continue;
-      const arr = map.get(cat.species) ?? [];
-      arr.push(e);
-      map.set(cat.species, arr);
-    }
-    return [...map.entries()];
-  }, [entries]);
-
   if (entries.length === 0) {
     return (
       <p className="m-0 py-10 text-center text-sm text-(--color-muted)">
@@ -268,170 +255,152 @@ function LivestockTable({
   }
 
   return (
-    <div className="space-y-5">
-      {groups.map(([species, items]) => (
-        <section key={species}>
-          <h2 className="m-0 mb-2 text-[11px] font-semibold tracking-wider text-(--color-muted) uppercase">
-            {SPECIES_LABELS[species] ?? species} ({items.length})
-          </h2>
-
-          <DataTable<LivestockEntry>
-            rows={items}
-            getId={(e) => e.id}
-            onRowClick={onEdit}
-            entityLabel="catégorie"
-            emptyMessage="Aucune catégorie."
-            columns={[
+    <DataTable<LivestockEntry>
+      rows={entries}
+      getId={(e) => e.id}
+      onRowClick={onEdit}
+      entityLabel="catégorie"
+      emptyMessage="Aucune catégorie."
+      columns={[
+        {
+          key: 'species',
+          label: 'Espèce',
+          render: (entry) => {
+            const cat = getCategory(entry.category);
+            return (
+              <span className="text-(--color-muted)">
+                {cat ? (SPECIES_LABELS[cat.species] ?? cat.species) : '—'}
+              </span>
+            );
+          },
+        },
+        {
+          key: 'category',
+          label: 'Catégorie',
+          render: (entry) => {
+            const cat = getCategory(entry.category);
+            return <span className="font-medium">{cat?.label ?? entry.category}</span>;
+          },
+        },
+        {
+          key: 'count',
+          label: 'Têtes',
+          align: 'right',
+          render: (entry) => <span className="tabular-nums">{entry.count}</span>,
+        },
+        {
+          key: 'ugb',
+          label: 'UGB',
+          align: 'right',
+          render: (entry) => {
+            const cat = getCategory(entry.category);
+            return (
+              <span className="tabular-nums">
+                {cat ? (cat.ugbPerHead * entry.count).toFixed(1) : '—'}
+              </span>
+            );
+          },
+        },
+        {
+          key: 'n',
+          label: 'N (kg/an)',
+          align: 'right',
+          render: (entry) => {
+            const cat = getCategory(entry.category);
+            return (
+              <span className="tabular-nums">
+                {cat ? Math.round(cat.nKgPerHeadYear * entry.count) : '—'}
+              </span>
+            );
+          },
+        },
+        {
+          key: 'p',
+          label: 'P₂O₅ (kg/an)',
+          align: 'right',
+          render: (entry) => {
+            const cat = getCategory(entry.category);
+            return (
+              <span className="tabular-nums">
+                {cat ? Math.round(cat.pKgPerHeadYear * entry.count) : '—'}
+              </span>
+            );
+          },
+        },
+        {
+          key: 'k',
+          label: 'K₂O (kg/an)',
+          align: 'right',
+          render: (entry) => {
+            const cat = getCategory(entry.category);
+            return (
+              <span className="tabular-nums">
+                {cat ? Math.round(cat.kKgPerHeadYear * entry.count) : '—'}
+              </span>
+            );
+          },
+        },
+        {
+          key: 'manure',
+          label: 'Effluents',
+          align: 'right',
+          render: (entry) => {
+            const cat = getCategory(entry.category);
+            if (!cat) return '—';
+            return (
+              <span className="tabular-nums">
+                {(cat.manureVolumePerHeadYear * entry.count).toFixed(1)}{' '}
+                {cat.manureVolumeUnit === 'm3' ? 'm³' : 't'}
+              </span>
+            );
+          },
+        },
+      ]}
+      renderMobileCard={(entry, { checkbox }) => {
+        const cat = getCategory(entry.category);
+        if (!cat) return null;
+        return (
+          <>
+            <div className="shrink-0 pt-0.5">{checkbox}</div>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-baseline gap-2">
+                <span className="min-w-0 flex-1 truncate text-sm font-semibold">{cat.label}</span>
+                <span className="shrink-0 font-mono text-[11px] text-(--color-muted) tabular-nums">
+                  {entry.count} têtes
+                </span>
+              </div>
+              <div className="mt-0.5 flex flex-wrap items-baseline gap-x-2 text-xs text-(--color-muted)">
+                <span>{SPECIES_LABELS[cat.species] ?? cat.species}</span>
+                <span aria-hidden>·</span>
+                <span className="tabular-nums">
+                  {(cat.ugbPerHead * entry.count).toFixed(1)} UGB
+                </span>
+                <span aria-hidden>·</span>
+                <span className="tabular-nums">
+                  {Math.round(cat.nKgPerHeadYear * entry.count)} kg N/an
+                </span>
+              </div>
+            </div>
+          </>
+        );
+      }}
+      bulkActions={
+        canWrite
+          ? [
               {
-                key: 'category',
-                label: 'Catégorie',
-                render: (entry) => {
-                  const cat = getCategory(entry.category);
-                  return (
-                    <div>
-                      <div className="font-medium">{cat?.label ?? entry.category}</div>
-                      {entry.notes && (
-                        <div className="text-[11px] text-(--color-muted)">{entry.notes}</div>
-                      )}
-                    </div>
-                  );
+                id: 'delete',
+                label: 'Supprimer',
+                variant: 'danger',
+                onClick: () => {
+                  if (confirm('Supprimer les catégories sélectionnées ?')) {
+                    entries.forEach(onDelete);
+                  }
                 },
               },
-              {
-                key: 'count',
-                label: 'Têtes',
-                align: 'right',
-                render: (entry) => <span className="tabular-nums">{entry.count}</span>,
-              },
-              {
-                key: 'ugb',
-                label: 'UGB',
-                align: 'right',
-                render: (entry) => {
-                  const cat = getCategory(entry.category);
-                  return (
-                    <span className="tabular-nums">
-                      {cat ? (cat.ugbPerHead * entry.count).toFixed(1) : '—'}
-                    </span>
-                  );
-                },
-              },
-              {
-                key: 'n',
-                label: 'N (kg/an)',
-                align: 'right',
-                render: (entry) => {
-                  const cat = getCategory(entry.category);
-                  return (
-                    <span className="tabular-nums">
-                      {cat ? Math.round(cat.nKgPerHeadYear * entry.count) : '—'}
-                    </span>
-                  );
-                },
-              },
-              {
-                key: 'p',
-                label: 'P₂O₅ (kg/an)',
-                align: 'right',
-                render: (entry) => {
-                  const cat = getCategory(entry.category);
-                  return (
-                    <span className="tabular-nums">
-                      {cat ? Math.round(cat.pKgPerHeadYear * entry.count) : '—'}
-                    </span>
-                  );
-                },
-              },
-              {
-                key: 'k',
-                label: 'K₂O (kg/an)',
-                align: 'right',
-                render: (entry) => {
-                  const cat = getCategory(entry.category);
-                  return (
-                    <span className="tabular-nums">
-                      {cat ? Math.round(cat.kKgPerHeadYear * entry.count) : '—'}
-                    </span>
-                  );
-                },
-              },
-              {
-                key: 'manure',
-                label: 'Effluents',
-                align: 'right',
-                render: (entry) => {
-                  const cat = getCategory(entry.category);
-                  if (!cat) return '—';
-                  return (
-                    <span className="tabular-nums">
-                      {(cat.manureVolumePerHeadYear * entry.count).toFixed(1)}{' '}
-                      {cat.manureVolumeUnit === 'm3' ? 'm³' : 't'}
-                    </span>
-                  );
-                },
-              },
-            ]}
-            renderMobileCard={(entry, { checkbox }) => {
-              const cat = getCategory(entry.category);
-              if (!cat) return null;
-              return (
-                <>
-                  <div className="shrink-0 pt-0.5">{checkbox}</div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-baseline justify-between gap-2">
-                      <span className="truncate text-sm font-semibold">{cat.label}</span>
-                      <span className="shrink-0 font-mono text-[11px] text-(--color-muted) tabular-nums">
-                        {entry.count} têtes
-                      </span>
-                    </div>
-                    <div className="mt-0.5 flex flex-wrap items-baseline gap-x-2 text-xs text-(--color-muted)">
-                      <span className="tabular-nums">
-                        {(cat.ugbPerHead * entry.count).toFixed(1)} UGB
-                      </span>
-                      <span aria-hidden>·</span>
-                      <span className="tabular-nums">
-                        {Math.round(cat.nKgPerHeadYear * entry.count)} kg N/an
-                      </span>
-                      <span aria-hidden>·</span>
-                      <span className="tabular-nums">
-                        {(cat.manureVolumePerHeadYear * entry.count).toFixed(1)}{' '}
-                        {cat.manureVolumeUnit === 'm3' ? 'm³' : 't'}
-                      </span>
-                    </div>
-                    {entry.notes && (
-                      <div className="mt-0.5 truncate text-[11px] italic text-(--color-muted)">
-                        {entry.notes}
-                      </div>
-                    )}
-                  </div>
-                </>
-              );
-            }}
-            bulkActions={
-              canWrite
-                ? [
-                    {
-                      id: 'delete',
-                      label: 'Supprimer',
-                      variant: 'danger',
-                      onClick: () => {
-                        if (confirm('Supprimer les catégories sélectionnées ?')) {
-                          items.forEach(onDelete);
-                        }
-                      },
-                    },
-                  ]
-                : []
-            }
-          />
-        </section>
-      ))}
-
-      <p className="m-0 text-[11px] text-(--color-muted)">
-        {LIVESTOCK_CATALOG.length} catégories disponibles selon DBF Agroscope 2017 / OEngrais 2024.
-        Phase 3 : import BDTA (animaux individuels avec ID éléctronique et événements de vie).
-      </p>
-    </div>
+            ]
+          : []
+      }
+    />
   );
 }
 

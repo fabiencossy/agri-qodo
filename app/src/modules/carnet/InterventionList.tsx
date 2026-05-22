@@ -43,9 +43,6 @@ export function InterventionList({
             render: (i: Intervention) => (
               <span onClick={(e) => e.stopPropagation()}>
                 <ParcelLink parcelId={i.parcelId} variant="chip" />
-                <div className="mt-0.5 font-mono text-[10px] text-(--color-muted)">
-                  {i.parcelId}
-                </div>
               </span>
             ),
           } as Column<Intervention>,
@@ -55,10 +52,7 @@ export function InterventionList({
       key: 'product',
       label: 'Produit / opération',
       render: (i) => (
-        <div>
-          <div className="truncate font-medium">{i.productName ?? subTypeLabel(i)}</div>
-          {i.notes && <div className="truncate text-[11px] text-(--color-muted)">{i.notes}</div>}
-        </div>
+        <span className="truncate font-medium">{i.productName ?? subTypeLabel(i)}</span>
       ),
     },
     {
