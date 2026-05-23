@@ -79,6 +79,7 @@ export interface MapViewProps {
   enabledTools?: ReadonlyArray<MapTool>;
 
   onDrawComplete?: (event: DrawEvent) => void;
+  onMarkerClick?: (markerId: string) => void;
   onCreateGroup?: (parcelIds: string[]) => void;
   onDissolveGroup?: (groupId: string) => void;
 

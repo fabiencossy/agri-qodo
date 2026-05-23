@@ -19,6 +19,8 @@ export interface ExportColumn {
   format?: (value: unknown, row: Record<string, unknown>) => string;
   /** Largeur en px (Excel/PDF). */
   widthPx?: number;
+  /** Alignement (PDF/Excel). Défaut 'left'. */
+  align?: 'left' | 'right' | 'center';
 }
 
 export interface ExportPdfMeta {

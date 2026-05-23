@@ -1,5 +1,5 @@
-import { useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { Polygon } from 'geojson';
 import { useFabActions } from '../../layouts/useFab';
 import { openFicheAction, useStandardFabActions } from '../../layouts/useStandardFabActions';
@@ -7,7 +7,14 @@ import { FabDrawIcon } from '../../layouts/fab-icons';
 import { SearchBar, type FieldDescriptor, type SearchState } from '../../components/SearchBar';
 import { ViewSwitcher, type ViewKey } from '../../components/ViewSwitcher';
 import { ExportButton, type ExportColumn } from '../../components/ExportButton';
-import { MapView, type MapTool } from '../../components/MapView';
+import { MapView, type MapMarker, type MapTool } from '../../components/MapView';
+import {
+  addUserMarker,
+  useUserMarkers,
+  USER_MARKER_KIND_COLORS,
+  type UserMarkerKind,
+} from './userMarkers.store';
+import { UserMarkerModal } from './UserMarkerModal';
 import type { ParcelDetail } from './parcellaire.mocks';
 import { addParcels, useParcels } from './parcellaire.store';
 import {
@@ -36,6 +43,7 @@ import { useClients, useWorkOrders } from '../travaux/travaux.store';
 import { QuickWorkOrderModal } from '../travaux/QuickWorkOrderModal';
 import { WorkOrderModal } from '../travaux/WorkOrderModal';
 import type { WorkOrder } from '../travaux/travaux.types';
+import { notify } from '../../layouts/notice.store';
 
 const TODAY = new Date().toISOString().slice(0, 10);
 
@@ -123,6 +131,66 @@ export default function ParcellairePage() {
   const shapefileInputRef = useRef<HTMLInputElement>(null);
   // Polygon dessiné en attente de configuration (dialog post draw-parcel).
   const [drawnDraft, setDrawnDraft] = useState<Polygon | null>(null);
+
+  // Balises GPS utilisateur (observation / danger / borne / regard / piquet / note).
+  const userMarkers = useUserMarkers();
+  const [editingMarkerId, setEditingMarkerId] = useState<string | null>(null);
+  // Kind à appliquer au prochain marker posé (récupéré depuis ?kind=... du FAB).
+  const [pendingMarkerKind, setPendingMarkerKind] = useState<UserMarkerKind>('observation');
+  const editingMarker = useMemo(
+    () => (editingMarkerId ? (userMarkers.find((m) => m.id === editingMarkerId) ?? null) : null),
+    [userMarkers, editingMarkerId],
+  );
+
+  // Consomme actions FAB (add-marker / draw / import / export / group-select).
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    const action = searchParams.get('action');
+    if (!action) return;
+    if (action === 'add-marker') {
+      const kindParam = searchParams.get('kind');
+      const validKinds: UserMarkerKind[] = ['observation', 'danger', 'note'];
+      const kind = validKinds.includes(kindParam as UserMarkerKind)
+        ? (kindParam as UserMarkerKind)
+        : 'observation';
+      setPendingMarkerKind(kind);
+      setView('map');
+      setActiveTool('add-marker');
+    } else if (action === 'draw') {
+      setView('map');
+      setActiveTool('draw-parcel');
+      notify('Outil dessin activé : cliquez sur la carte pour créer les sommets.', 'info');
+    } else if (action === 'import-geojson') {
+      setView('map');
+      geojsonInputRef.current?.click();
+    } else if (action === 'import-cadastre') {
+      notify('Import cadastre cantonal : disponible Phase 3 (API GELAN VD).', 'info');
+    } else if (action === 'group-select') {
+      setView('table');
+      notify('Cochez les parcelles à grouper dans le tableau.', 'info');
+    } else if (action === 'export') {
+      setView('table');
+      notify('Utilisez le bouton "Exporter" dans la barre d\'outils.', 'info');
+    }
+    const next = new URLSearchParams(searchParams);
+    next.delete('action');
+    next.delete('kind');
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
+
+  // Conversion UserMarker → MapMarker pour le rendu carte. On force le kind
+  // 'custom' avec override de couleur depuis le palette utilisateur.
+  const mapMarkers = useMemo<MapMarker[]>(
+    () =>
+      userMarkers.map((m) => ({
+        id: m.id,
+        kind: 'custom',
+        color: USER_MARKER_KIND_COLORS[m.kind],
+        position: [m.lng, m.lat],
+        label: m.label,
+      })),
+    [userMarkers],
+  );
 
   const handleGeojsonFile = async (file: File) => {
     try {
@@ -390,6 +458,7 @@ export default function ParcellairePage() {
         <div className="relative flex-1 overflow-hidden">
           <MapView
             parcels={filtered}
+            markers={mapMarkers}
             selectedId={selectedId}
             onSelectionChange={(ids) => setSelectedId(ids[0])}
             activeTool={activeTool}
@@ -398,8 +467,23 @@ export default function ParcellairePage() {
               if (e.tool === 'draw-parcel' && e.geometry.type === 'Polygon') {
                 setDrawnDraft(e.geometry as Polygon);
                 setActiveTool('select');
+              } else if (e.tool === 'add-marker' && e.geometry.type === 'Point') {
+                const [lng, lat] = e.geometry.coordinates as [number, number];
+                // Détection auto : la balise se rattache à la parcelle dont
+                // le polygone contient le clic. Fallback : parcelle sélectionnée.
+                const matchedParcelId = findParcelAtPoint(filtered, lng, lat) ?? selectedId;
+                const created = addUserMarker({
+                  kind: pendingMarkerKind,
+                  lng,
+                  lat,
+                  parcelId: matchedParcelId,
+                });
+                if (matchedParcelId && !selectedId) setSelectedId(matchedParcelId);
+                setEditingMarkerId(created.id);
+                setActiveTool('select');
               }
             }}
+            onMarkerClick={(id) => setEditingMarkerId(id)}
             height="100%"
             className="!rounded-none !border-0"
           />
@@ -475,6 +559,14 @@ export default function ParcellairePage() {
 
       {fullWorkOrder && (
         <WorkOrderModal initial={fullWorkOrder} onClose={() => setFullWorkOrder(null)} />
+      )}
+
+      {editingMarker && (
+        <UserMarkerModal
+          key={editingMarker.id}
+          marker={editingMarker}
+          onClose={() => setEditingMarkerId(null)}
+        />
       )}
     </div>
   );
@@ -755,6 +847,53 @@ function NewParcelDialog({
 
 const dialogInput =
   'h-10 w-full rounded-(--radius) border border-(--color-border) bg-(--color-surface) px-3 text-sm focus:border-(--color-primary) focus:outline-none focus:ring-2 focus:ring-(--color-primary)/15';
+
+/** Point-in-polygon (ray casting). Coordinates en degrés WGS84. */
+function pointInRing(lng: number, lat: number, ring: ReadonlyArray<readonly number[]>): boolean {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const xi = ring[i]![0]!;
+    const yi = ring[i]![1]!;
+    const xj = ring[j]![0]!;
+    const yj = ring[j]![1]!;
+    const intersect =
+      yi > lat !== yj > lat && lng < ((xj - xi) * (lat - yi)) / (yj - yi + 1e-18) + xi;
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
+function pointInPolygonRings(
+  lng: number,
+  lat: number,
+  rings: ReadonlyArray<ReadonlyArray<readonly number[]>>,
+): boolean {
+  if (rings.length === 0) return false;
+  // Premier ring = extérieur, suivants = trous.
+  if (!pointInRing(lng, lat, rings[0]!)) return false;
+  for (let i = 1; i < rings.length; i++) {
+    if (pointInRing(lng, lat, rings[i]!)) return false;
+  }
+  return true;
+}
+
+function findParcelAtPoint(
+  parcels: ReadonlyArray<ParcelDetail>,
+  lng: number,
+  lat: number,
+): string | undefined {
+  for (const p of parcels) {
+    const g = p.geometry;
+    if (g.type === 'Polygon') {
+      if (pointInPolygonRings(lng, lat, g.coordinates)) return p.id;
+    } else if (g.type === 'MultiPolygon') {
+      for (const poly of g.coordinates) {
+        if (pointInPolygonRings(lng, lat, poly)) return p.id;
+      }
+    }
+  }
+  return undefined;
+}
 
 function DialogField({ label, children }: { label: string; children: React.ReactNode }) {
   return (

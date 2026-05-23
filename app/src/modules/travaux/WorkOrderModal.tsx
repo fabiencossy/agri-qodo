@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { addWorkOrder, updateWorkOrder, useClients } from './travaux.store';
 import { getWorkType } from './travaux.catalog';
 import {
@@ -10,7 +10,9 @@ import {
 } from './travaux.types';
 import { useUsers } from '../users/users.store';
 import { useCurrentUser } from '../users/permissions';
-import { useParcels } from '../parcellaire/parcellaire.store';
+import { useAllParcels } from '../parcellaire/parcellaire.store';
+import { useFarms } from '../farms/farms.store';
+import { findFarmForClient } from '../farms/farms.helpers';
 import { ParcelMultiPicker } from '../parcel-groups/ParcelMultiPicker';
 import { PrestationPicker } from './PrestationPicker';
 import { isPerHectareUnit, type PrestationSource } from './prestation-source';
@@ -37,7 +39,8 @@ export function WorkOrderModal({ initial, onClose }: WorkOrderModalProps) {
   const clients = useClients();
   const users = useUsers();
   const currentUser = useCurrentUser();
-  const parcels = useParcels();
+  const allParcels = useAllParcels();
+  const farms = useFarms();
   const products = useProducts();
 
   const [parcelPickerOpen, setParcelPickerOpen] = useState(false);
@@ -48,6 +51,10 @@ export function WorkOrderModal({ initial, onClose }: WorkOrderModalProps) {
    * en carte compacte. Une seule à la fois pour densifier l'affichage. */
   const [editingLineId, setEditingLineId] = useState<string | null>(null);
   const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
+
+  // Parcelles filtrées par client : on n'affiche que celles de l'exploitation
+  // correspondant au client du bon (match nom Farm ↔ Client), pas du current
+  // farm utilisateur. Recalculées quand draft.clientId change.
 
   const [draft, setDraft] = useState<WorkOrder>(() => ({
     id: initial?.id ?? `WO-${Date.now()}`,
@@ -72,8 +79,21 @@ export function WorkOrderModal({ initial, onClose }: WorkOrderModalProps) {
     notes: initial?.notes,
   }));
 
+  const selectedClient = clients.find((c) => c.id === draft.clientId);
+  const clientFarm = useMemo(
+    () => findFarmForClient(selectedClient, farms),
+    [selectedClient, farms],
+  );
+  const parcels = useMemo(
+    () => (clientFarm ? allParcels.filter((p) => p.farmId === clientFarm.id) : []),
+    [allParcels, clientFarm],
+  );
+
   const setField = <K extends keyof WorkOrder>(k: K, v: WorkOrder[K]) =>
     setDraft((d) => ({ ...d, [k]: v }));
+
+  // Note : la coherence parcelIds ↔ client est maintenue au moment de la mutation
+  // du client (handler onChange) ; pas besoin d'effet de pruning.
 
   // ─── Lignes ────────────────────────────────────────────────────────────
   const updateLine = (id: string, patch: Partial<WorkOrderLine>) => {
@@ -360,7 +380,9 @@ export function WorkOrderModal({ initial, onClose }: WorkOrderModalProps) {
               <Field label="Client" required>
                 <select
                   value={draft.clientId}
-                  onChange={(e) => setField('clientId', e.target.value)}
+                  onChange={(e) =>
+                    setDraft((d) => ({ ...d, clientId: e.target.value, parcelIds: [] }))
+                  }
                   className={fieldClass}
                 >
                   <option value="">— Sélectionner —</option>

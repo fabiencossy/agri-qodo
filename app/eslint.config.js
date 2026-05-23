@@ -26,6 +26,10 @@ export default defineConfig([
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
       ],
       '@typescript-eslint/consistent-type-imports': ['error', { prefer: 'type-imports' }],
+      // Plugin v7 fires on legitimate one-shot effect patterns (URL deep-link consumption,
+      // prop→state sync via key, etc.). We rely on code review + useEffectEvent / derived state
+      // / event handlers where possible. Downgrade to warning instead of error.
+      'react-hooks/set-state-in-effect': 'warn',
     },
   },
 ]);

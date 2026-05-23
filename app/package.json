@@ -22,6 +22,8 @@
     "@types/geojson": "^7946.0.16",
     "@types/leaflet": "^1.9.21",
     "@types/shpjs": "^3.4.7",
+    "jspdf": "^4.2.1",
+    "jspdf-autotable": "^5.0.8",
     "leaflet": "^1.9.4",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",

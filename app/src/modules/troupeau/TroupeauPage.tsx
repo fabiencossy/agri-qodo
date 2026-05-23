@@ -1,4 +1,6 @@
 import { useMemo, useState } from 'react';
+import { useActionParam } from '../../layouts/useActionParam';
+import { notify } from '../../layouts/notice.store';
 import { SearchBar, type FieldDescriptor, type SearchState } from '../../components/SearchBar';
 import { ViewSwitcher, type ViewKey } from '../../components/ViewSwitcher';
 import { DataTable } from '../../components/DataTable';
@@ -40,6 +42,22 @@ export default function TroupeauPage() {
   const [editing, setEditing] = useState<Partial<LivestockEntry> | null>(null);
   const [view, setView] = useState<TroupeauView>('table');
   const [searchState, setSearchState] = useState<SearchState>({ facets: [], groupBy: [] });
+
+  // Consomme actions FAB
+  useActionParam(({ action }) => {
+    const STUBS: Record<string, string> = {
+      weigh: 'Saisie pesée : disponible Phase 3 (animaux individuels via BDTA).',
+      health: 'Saisie santé/vétérinaire : disponible Phase 3 (lien dossier sanitaire).',
+      move: 'Mouvement entrée/sortie : disponible Phase 3 (notification BDTA).',
+      birth: 'Mise bas/agnelage : disponible Phase 3 (registre généalogique).',
+      inventory: 'Inventaire troupeau : disponible Phase 3 (export PDF officiel).',
+    };
+    if (action === 'new') setEditing({});
+    else {
+      const msg = STUBS[action];
+      if (msg) notify(msg, 'info');
+    }
+  });
 
   // ─── FAB ───────────────────────────────────────────────────────────────
   const onAddLivestock = useMemo(() => () => setEditing({}), []);

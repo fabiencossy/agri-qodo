@@ -1,6 +1,8 @@
 import { useMemo, useRef, useState } from 'react';
 import { addWorkOrder, useClients } from './travaux.store';
-import { useParcels } from '../parcellaire/parcellaire.store';
+import { useAllParcels } from '../parcellaire/parcellaire.store';
+import { useFarms } from '../farms/farms.store';
+import { findFarmForClient } from '../farms/farms.helpers';
 import { PrestationPicker } from './PrestationPicker';
 import { isPerHectareUnit, type PrestationSource } from './prestation-source';
 import type { WorkOrder, WorkOrderLine, WorkOrderStatus } from './travaux.types';
@@ -30,7 +32,8 @@ export function QuickWorkOrderModal({
   initialParcelId,
 }: QuickWorkOrderModalProps) {
   const clients = useClients();
-  const parcels = useParcels();
+  const allParcels = useAllParcels();
+  const farms = useFarms();
 
   const today = useMemo(() => new Date().toISOString().slice(0, 10), []);
   const [date, setDate] = useState(today);
@@ -50,7 +53,21 @@ export function QuickWorkOrderModal({
     return `${prefix}-${idSeed}-${idCounterRef.current}`;
   };
 
-  const selectedParcel = parcels.find((p) => p.id === parcelId);
+  // Parcelles filtrées par client sélectionné : on n'affiche QUE celles de
+  // l'exploitation du client (match nom Farm ↔ Client), pas du current farm
+  // de l'utilisateur. Si aucun client → liste vide.
+  const selectedClient = clients.find((c) => c.id === clientId);
+  const clientFarm = useMemo(
+    () => findFarmForClient(selectedClient, farms),
+    [selectedClient, farms],
+  );
+  const parcels = useMemo(
+    () => (clientFarm ? allParcels.filter((p) => p.farmId === clientFarm.id) : []),
+    [allParcels, clientFarm],
+  );
+  // Dérive parcelId effectif : si plus dans la liste (changement de client), traite comme vide.
+  const effectiveParcelId = parcels.some((p) => p.id === parcelId) ? parcelId : '';
+  const selectedParcel = parcels.find((p) => p.id === effectiveParcelId);
   const attention = selectedParcel?.attentionNote;
   // Le quick ne sert qu'à PLANIFIER (futur, simple). Pour saisir un travail
   // réalisé avec détails (durée, opérateurs, tarif), passer par "Aller plus
@@ -85,7 +102,7 @@ export function QuickWorkOrderModal({
       date,
       scheduledTime: scheduledTime || undefined,
       clientId,
-      parcelIds: parcelId ? [parcelId] : [],
+      parcelIds: effectiveParcelId ? [effectiveParcelId] : [],
       description: description || undefined,
       status,
       priority: '1',
@@ -177,7 +194,10 @@ export function QuickWorkOrderModal({
               id="qwo-client"
               autoFocus
               value={clientId}
-              onChange={(e) => setClientId(e.target.value)}
+              onChange={(e) => {
+                setClientId(e.target.value);
+                setParcelId('');
+              }}
               className={fieldClass}
             >
               <option value="">— Sélectionner —</option>
@@ -198,7 +218,7 @@ export function QuickWorkOrderModal({
             </label>
             <select
               id="qwo-parcel"
-              value={parcelId}
+              value={effectiveParcelId}
               onChange={(e) => setParcelId(e.target.value)}
               className={fieldClass}
             >

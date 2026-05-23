@@ -32,7 +32,7 @@ export function ExportButton({
   columns,
   formats = EXPORT_DEFAULTS.formats,
   filenameBase,
-  pdfMeta: _pdfMeta,
+  pdfMeta,
   disabled = false,
   onBeforeExport,
   onExported,
@@ -97,7 +97,12 @@ export function ExportButton({
         if (format === 'csv') {
           exportCsv(data, effectiveColumns, filename);
         } else if (format === 'pdf') {
-          await exportPdf({ data, columns: effectiveColumns, filename });
+          await exportPdf({
+            data,
+            columns: effectiveColumns,
+            filename,
+            title: pdfMeta?.title ?? filenameBase,
+          });
         } else {
           await exportXlsx({ data, columns: effectiveColumns, filename });
         }
@@ -112,7 +117,7 @@ export function ExportButton({
         setOpen(false);
       }
     },
-    [columns, data, filenameBase, isBusy, isDisabled, onBeforeExport, onError, onExported],
+    [columns, data, filenameBase, isBusy, isDisabled, onBeforeExport, onError, onExported, pdfMeta],
   );
 
   /* ---------- Render ---------- */

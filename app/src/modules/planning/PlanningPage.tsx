@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useActionParam } from '../../layouts/useActionParam';
 import { SearchBar, type FieldDescriptor, type SearchState } from '../../components/SearchBar';
 import { ViewSwitcher, type ViewKey } from '../../components/ViewSwitcher';
 import { CalendarShowcase } from '../composants/ComposantsPage';
@@ -50,26 +51,35 @@ export default function PlanningPage() {
   const [editing, setEditing] = useState<Partial<WorkOrder> | null>(null);
   const [quickCreating, setQuickCreating] = useState(false);
   const [view, setView] = useState<PlanningView>('table');
+
+  // Consomme action FAB
+  useActionParam(({ action }) => {
+    if (action === 'new') setQuickCreating(true);
+  });
   const [searchState, setSearchState] = useState<SearchState>({
     facets: [],
     groupBy: [],
   });
 
-  const effectiveSearchState: SearchState = inviteeClientId
-    ? {
-        ...searchState,
-        facets: [
-          ...searchState.facets.filter((f) => f.fieldId !== 'client'),
-          {
-            id: `facet-client-${inviteeClientId}`,
-            fieldId: 'client',
-            operator: 'eq' as const,
-            values: [inviteeClientId],
-            customLabel: `Client : ${matchedClient?.name ?? inviteeClientId}`,
-          },
-        ],
-      }
-    : searchState;
+  const effectiveSearchState = useMemo<SearchState>(
+    () =>
+      inviteeClientId
+        ? {
+            ...searchState,
+            facets: [
+              ...searchState.facets.filter((f) => f.fieldId !== 'client'),
+              {
+                id: `facet-client-${inviteeClientId}`,
+                fieldId: 'client',
+                operator: 'eq' as const,
+                values: [inviteeClientId],
+                customLabel: `Client : ${matchedClient?.name ?? inviteeClientId}`,
+              },
+            ],
+          }
+        : searchState,
+    [inviteeClientId, searchState, matchedClient?.name],
+  );
 
   // ─── FAB ────────────────────────────────────────────────────────────────
   const onAddPlanned = useMemo(() => () => setQuickCreating(true), []);

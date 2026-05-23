@@ -1,4 +1,6 @@
 import { useMemo, useState } from 'react';
+import { useActionParam } from '../../layouts/useActionParam';
+import { notify } from '../../layouts/notice.store';
 import { SearchBar, type FieldDescriptor, type SearchState } from '../../components/SearchBar';
 import { ViewSwitcher, type ViewKey } from '../../components/ViewSwitcher';
 import { CalendarShowcase } from '../composants/ComposantsPage';
@@ -77,26 +79,58 @@ export default function TravauxPage() {
     groupBy: [],
   });
 
+  // Consomme actions FAB (après déclaration searchState pour pouvoir le muter)
+  useActionParam(({ action }) => {
+    if (action === 'new') {
+      // Nouveau bon complet : ouvre WorkOrderModal direct (toutes sections)
+      setEditing({});
+    } else if (action === 'plan') {
+      // Planification rapide : QuickWorkOrderModal seulement
+      setQuickCreating(true);
+    } else if (action === 'validate') {
+      setView('table');
+      // Pose un filtre status='done' (bons réalisés à valider/facturer)
+      setSearchState((s) => ({
+        ...s,
+        facets: [
+          ...s.facets.filter((f) => f.fieldId !== 'status'),
+          {
+            id: 'facet-status-validate',
+            fieldId: 'status',
+            operator: 'eq' as const,
+            values: ['done'],
+            customLabel: 'Statut : Réalisé (à valider)',
+          },
+        ],
+      }));
+      notify('Bons réalisés à valider/facturer affichés.', 'info');
+    }
+  });
+
   // Mode invité : on injecte le filtre client de force dans le searchState
   // affiché à la SearchBar (et utilisé pour le filtrage), sans toucher au
   // state. Pas de setState pendant le render → pas de boucle infinie. L'user
   // peut quand même ajouter/retirer ses propres facets, le filtre invité
   // reste persistant tant que la current farm est invitée.
-  const effectiveSearchState: SearchState = inviteeClientId
-    ? {
-        ...searchState,
-        facets: [
-          ...searchState.facets.filter((f) => f.fieldId !== 'client'),
-          {
-            id: `facet-client-${inviteeClientId}`,
-            fieldId: 'client',
-            operator: 'eq' as const,
-            values: [inviteeClientId],
-            customLabel: `Client : ${matchedClient?.name ?? inviteeClientId}`,
-          },
-        ],
-      }
-    : searchState;
+  const effectiveSearchState = useMemo<SearchState>(
+    () =>
+      inviteeClientId
+        ? {
+            ...searchState,
+            facets: [
+              ...searchState.facets.filter((f) => f.fieldId !== 'client'),
+              {
+                id: `facet-client-${inviteeClientId}`,
+                fieldId: 'client',
+                operator: 'eq' as const,
+                values: [inviteeClientId],
+                customLabel: `Client : ${matchedClient?.name ?? inviteeClientId}`,
+              },
+            ],
+          }
+        : searchState,
+    [inviteeClientId, searchState, matchedClient?.name],
+  );
 
   // ─── FAB ───────────────────────────────────────────────────────────────
   const onAddWorkOrder = useMemo(() => () => setQuickCreating(true), []);

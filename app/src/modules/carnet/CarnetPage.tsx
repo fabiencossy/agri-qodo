@@ -1,5 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { useActionParam } from '../../layouts/useActionParam';
+import { notify } from '../../layouts/notice.store';
 import { useIsDesktop } from '../../hooks/useMediaQuery';
 import { SearchBar, type FieldDescriptor, type SearchState } from '../../components/SearchBar';
 import { ViewSwitcher, type ViewKey } from '../../components/ViewSwitcher';
@@ -80,6 +82,22 @@ export default function CarnetPage() {
   //     éventuellement pré-remplie avec une catégorie spécifique.
   const [editing, setEditing] = useState<Intervention | Partial<Intervention> | null>(null);
   const isEditingExisting = editing !== null && 'id' in editing && Boolean(editing.id);
+
+  // Consomme actions FAB : new (intervention), new&type=observation, photo, voice
+  useActionParam(({ action, params }) => {
+    if (action === 'new') {
+      const type = params.get('type');
+      if (type === 'observation') {
+        setEditing({ parcelId: initialParcelId, category: 'observation' });
+      } else {
+        setEditing({ parcelId: initialParcelId });
+      }
+    } else if (action === 'photo') {
+      notify('Capture photo GPS : disponible en Phase 3 (PWA + caméra native).', 'info');
+    } else if (action === 'voice') {
+      notify('Note vocale : disponible en Phase 3 (Web Speech API).', 'info');
+    }
+  });
 
   // Index parcelles par id (pour affichage du nom dans la liste)
   const parcelsById = useMemo(() => new Map(parcels.map((p) => [p.id, p])), [parcels]);

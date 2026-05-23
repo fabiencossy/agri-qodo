@@ -1,35 +1,53 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useFab } from './useFab';
+import { FAB_SECTORS, type FabSector } from './fab-catalog';
 
 /**
  * FAB global — bouton rond `+` en bas à droite.
- * Au clic : bottom sheet qui slide depuis le bas, avec la liste des actions.
- * Permet d'afficher plusieurs actions rapides confortablement.
- * Si aucune action : caché.
+ * Drawer 2 niveaux :
+ *   - Niveau 1 : actions contextuelles à la page (si présentes) + secteurs globaux
+ *   - Niveau 2 : actions du secteur sélectionné, avec retour arrière
+ * Esc / backdrop / X = ferme.
  */
 export function Fab() {
   const { actions, hidden } = useFab();
+  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
+  const [sectorId, setSectorId] = useState<string | null>(null);
+  const sector: FabSector | null = sectorId
+    ? (FAB_SECTORS.find((s) => s.id === sectorId) ?? null)
+    : null;
+
+  const close = () => {
+    setOpen(false);
+    setSectorId(null);
+  };
 
   // Esc pour fermer
   useEffect(() => {
     if (!open) return;
     function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') setOpen(false);
+      if (e.key === 'Escape') {
+        if (sectorId) setSectorId(null);
+        else setOpen(false);
+      }
     }
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [open]);
+  }, [open, sectorId]);
 
-  // Si la page masque le FAB (ex. bottom sheet ouverte), on dérive `open` à false
-  // sans setState dans un effet (et on reset l'intent au moment du flip).
-  const [prevHidden, setPrevHidden] = useState(hidden);
-  if (hidden !== prevHidden) {
-    setPrevHidden(hidden);
-    if (hidden && open) setOpen(false);
-  }
+  // Si la page masque le FAB, on ferme aussi le menu.
+  useEffect(() => {
+    if (hidden && open) close();
+  }, [hidden, open]);
 
-  if (actions.length === 0 || hidden) return null;
+  // Reset navigation interne quand on (re)ferme.
+  useEffect(() => {
+    if (!open && sectorId) setSectorId(null);
+  }, [open, sectorId]);
+
+  if (hidden) return null;
 
   return (
     <>
@@ -57,7 +75,7 @@ export function Fab() {
           {/* Backdrop */}
           <div
             className="fixed inset-0 z-[1100] animate-[fadeIn_180ms_ease-out] bg-black/40 backdrop-blur-sm"
-            onClick={() => setOpen(false)}
+            onClick={close}
             aria-hidden="true"
           />
 
@@ -72,6 +90,7 @@ export function Fab() {
               'rounded-t-(--radius-lg) border-t border-(--color-border)',
               'bg-(--color-surface) shadow-(--shadow-popup)',
               'animate-[slideUp_220ms_ease-out]',
+              'flex max-h-[85vh] flex-col',
             ].join(' ')}
           >
             {/* Handle */}
@@ -83,13 +102,43 @@ export function Fab() {
             </div>
 
             {/* Header */}
-            <header className="flex items-center px-4 pt-1 pb-2">
-              <h2 className="m-0 text-xs font-medium tracking-wider text-(--color-muted) uppercase">
-                Actions rapides
-              </h2>
+            <header className="flex items-center gap-2 px-4 pt-1 pb-2">
+              {sector ? (
+                <button
+                  type="button"
+                  onClick={() => setSectorId(null)}
+                  className="inline-flex items-center gap-2 text-sm font-medium text-(--color-text) hover:text-(--color-primary)"
+                  aria-label="Retour aux secteurs"
+                >
+                  <ChevronLeftIcon />
+                  <span
+                    className="inline-flex h-7 w-7 items-center justify-center rounded-(--radius-pill)"
+                    style={{ background: `${sector.color}1a`, color: sector.color }}
+                  >
+                    <svg
+                      viewBox="0 0 24 24"
+                      width={16}
+                      height={16}
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth={1.75}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      {sector.icon}
+                    </svg>
+                  </span>
+                  <span>{sector.label}</span>
+                </button>
+              ) : (
+                <h2 className="m-0 text-xs font-medium tracking-wider text-(--color-muted) uppercase">
+                  Actions rapides
+                </h2>
+              )}
               <button
                 type="button"
-                onClick={() => setOpen(false)}
+                onClick={close}
                 aria-label="Fermer"
                 className="ml-auto inline-flex h-9 w-9 items-center justify-center rounded-(--radius-sm) text-(--color-muted) hover:bg-[#f1f1ee] hover:text-(--color-text)"
               >
@@ -97,56 +146,159 @@ export function Fab() {
               </button>
             </header>
 
-            {/* Actions list */}
-            <ul
-              role="menu"
-              aria-label="Actions"
-              className="m-0 list-none p-0 pb-[max(env(safe-area-inset-bottom),12px)]"
-            >
-              {actions.map((action) => {
-                const isPrimary = action.variant === 'primary';
-                const isDanger = action.variant === 'danger';
-                return (
-                  <li key={action.id} className="border-t border-(--color-border)/60">
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={() => {
-                        action.onClick();
-                        setOpen(false);
-                      }}
-                      className={[
-                        'flex w-full items-center gap-3 px-4 py-4 text-left text-sm',
-                        isDanger
-                          ? 'text-(--color-error) hover:bg-[#fef2f2]'
-                          : isPrimary
-                            ? 'bg-(--color-primary)/6 font-semibold text-(--color-primary) hover:bg-(--color-primary)/10'
-                            : 'text-(--color-text) hover:bg-[#fbfbf9]',
-                      ].join(' ')}
-                    >
-                      <span
-                        className={[
-                          'inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-(--radius-pill)',
-                          isDanger
-                            ? 'bg-(--color-error)/10 text-(--color-error)'
-                            : isPrimary
-                              ? 'bg-(--color-primary) text-white'
-                              : 'bg-[#f1f1ee] text-(--color-muted)',
-                        ].join(' ')}
+            {/* Body scrollable */}
+            <div className="flex-1 overflow-y-auto pb-[max(env(safe-area-inset-bottom),12px)]">
+              {sector ? (
+                /* ───── Niveau 2 : actions d'un secteur ───── */
+                <ul role="menu" aria-label={sector.label} className="m-0 list-none p-0">
+                  {sector.actions.map((a) => (
+                    <li key={a.id} className="border-t border-(--color-border)/60">
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          a.run(navigate);
+                          close();
+                        }}
+                        className="flex w-full items-center gap-3 px-4 py-4 text-left text-sm text-(--color-text) hover:bg-[#fbfbf9]"
                       >
-                        {action.icon ?? <PlusIcon size={16} />}
-                      </span>
-                      <span className="flex-1">{action.label}</span>
-                      <span
-                        className={isPrimary ? 'text-(--color-primary)' : 'text-(--color-muted)'}
-                      >
-                        <ChevronRightIcon />
-                      </span>
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
+                        <span
+                          className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-(--radius-pill)"
+                          style={{ background: `${sector.color}1a`, color: sector.color }}
+                        >
+                          <svg
+                            viewBox="0 0 24 24"
+                            width={18}
+                            height={18}
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth={1.75}
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            aria-hidden="true"
+                          >
+                            {a.icon}
+                          </svg>
+                        </span>
+                        <span className="flex-1">{a.label}</span>
+                        <span className="text-(--color-muted)">
+                          <ChevronRightIcon />
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                /* ───── Niveau 1 : actions page (si présentes) + secteurs ───── */
+                <>
+                  {actions.length > 0 && (
+                    <>
+                      <div className="px-4 pt-3 pb-1 text-[10px] font-semibold tracking-wider text-(--color-muted) uppercase">
+                        Cette page
+                      </div>
+                      <ul role="menu" aria-label="Actions de la page" className="m-0 list-none p-0">
+                        {actions.map((action) => {
+                          const isPrimary = action.variant === 'primary';
+                          const isDanger = action.variant === 'danger';
+                          return (
+                            <li key={action.id} className="border-t border-(--color-border)/60">
+                              <button
+                                type="button"
+                                role="menuitem"
+                                onClick={() => {
+                                  action.onClick();
+                                  close();
+                                }}
+                                className={[
+                                  'flex w-full items-center gap-3 px-4 py-4 text-left text-sm',
+                                  isDanger
+                                    ? 'text-(--color-error) hover:bg-[#fef2f2]'
+                                    : isPrimary
+                                      ? 'bg-(--color-primary)/6 font-semibold text-(--color-primary) hover:bg-(--color-primary)/10'
+                                      : 'text-(--color-text) hover:bg-[#fbfbf9]',
+                                ].join(' ')}
+                              >
+                                <span
+                                  className={[
+                                    'inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-(--radius-pill)',
+                                    isDanger
+                                      ? 'bg-(--color-error)/10 text-(--color-error)'
+                                      : isPrimary
+                                        ? 'bg-(--color-primary) text-white'
+                                        : 'bg-[#f1f1ee] text-(--color-muted)',
+                                  ].join(' ')}
+                                >
+                                  {action.icon ?? <PlusIcon size={16} />}
+                                </span>
+                                <span className="flex-1">{action.label}</span>
+                                <span
+                                  className={
+                                    isPrimary ? 'text-(--color-primary)' : 'text-(--color-muted)'
+                                  }
+                                >
+                                  <ChevronRightIcon />
+                                </span>
+                              </button>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </>
+                  )}
+
+                  <div className="px-4 pt-3 pb-1 text-[10px] font-semibold tracking-wider text-(--color-muted) uppercase">
+                    Tous les secteurs
+                  </div>
+                  <ul role="menu" aria-label="Secteurs" className="m-0 list-none p-0">
+                    {FAB_SECTORS.map((s) => (
+                      <li key={s.id} className="border-t border-(--color-border)/60">
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={() => {
+                            if (s.directRun) {
+                              s.directRun(navigate);
+                              close();
+                              return;
+                            }
+                            setSectorId(s.id);
+                          }}
+                          className="flex w-full items-center gap-3 px-4 py-4 text-left text-sm text-(--color-text) hover:bg-[#fbfbf9]"
+                        >
+                          <span
+                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-(--radius-pill)"
+                            style={{ background: `${s.color}1a`, color: s.color }}
+                          >
+                            <svg
+                              viewBox="0 0 24 24"
+                              width={18}
+                              height={18}
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth={1.75}
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              aria-hidden="true"
+                            >
+                              {s.icon}
+                            </svg>
+                          </span>
+                          <span className="flex-1">{s.label}</span>
+                          {!s.directRun && (
+                            <span className="text-[10px] text-(--color-muted)">
+                              {s.actions.length}
+                            </span>
+                          )}
+                          <span className="text-(--color-muted)">
+                            <ChevronRightIcon />
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
+            </div>
           </div>
         </>
       )}
@@ -204,6 +356,24 @@ function ChevronRightIcon() {
       aria-hidden="true"
     >
       <path d="m9 6 6 6-6 6" />
+    </svg>
+  );
+}
+
+function ChevronLeftIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.75}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      width={18}
+      height={18}
+      aria-hidden="true"
+    >
+      <path d="m15 6-6 6 6 6" />
     </svg>
   );
 }

@@ -143,14 +143,18 @@ export function subscribeParcels(listener: () => void): () => void {
 
 export async function addParcels(additions: ReadonlyArray<ParcelDetail>): Promise<void> {
   if (additions.length === 0) return;
+  // Auto-tag avec la farm courante si l'appelant n'a pas fourni de farmId.
+  // Évite les parcelles orphelines qui apparaîtraient sur toutes les farms.
+  const currentFarmId = getCurrentFarmId();
+  const tagged = additions.map((p) => (p.farmId ? p : { ...p, farmId: currentFarmId }));
   if (getAuth().mode !== 'authenticated' || !supabase) {
-    parcels = [...parcels, ...additions];
+    parcels = [...parcels, ...tagged];
     emit();
     return;
   }
-  const farmId = getCurrentFarmId();
+  const farmId = currentFarmId;
   if (!farmId) return;
-  const rows = additions.map((p) => parcelToInsert(p, farmId));
+  const rows = tagged.map((p) => parcelToInsert(p, farmId));
   const { error } = await supabase.from('parcels').insert(rows);
   if (error) {
     console.error('[parcels] insert failed:', error.message);
@@ -205,12 +209,10 @@ export async function removeParcel(id: string): Promise<void> {
 }
 
 /**
- * Retourne les parcelles de l'exploitation active. Une parcelle sans
- * `farmId` (legacy / créée avant la multi-tenancy) reste visible partout —
- * c'est intentionnel pour ne rien casser sur les bons de travail existants.
- * En Phase 3 (Supabase), le filtrage est déjà fait côté serveur via
- * hydrateFromSupabase(farmId), donc le filtre client est un no-op (toutes
- * les parcelles en mémoire matchent déjà le current farm).
+ * Retourne les parcelles de l'exploitation active. Filtrage STRICT par
+ * `farmId` : on ne mélange jamais les parcelles d'un client avec celles d'une
+ * autre exploitation. Les parcelles sans `farmId` (legacy import) sont
+ * ignorées sous une farm spécifique pour éviter ce mélange.
  *
  * Mémoïsation impérative : `.filter()` crée un nouveau tableau à chaque
  * render, ce qui faisait boucler les useEffect de MapView dépendant de
@@ -220,7 +222,7 @@ export async function removeParcel(id: string): Promise<void> {
 export function useParcels(): ReadonlyArray<ParcelDetail> {
   const all = useSyncExternalStore(subscribeParcels, getParcels, getParcels);
   const farmId = useCurrentFarmId();
-  return useMemo(() => all.filter((p) => !p.farmId || p.farmId === farmId), [all, farmId]);
+  return useMemo(() => all.filter((p) => p.farmId === farmId), [all, farmId]);
 }
 
 /** Variante : toutes les parcelles toutes farms confondues (rare — pour exports). */

@@ -20,8 +20,8 @@ import { UtilisateurDetailPage } from './modules/parametres/sections/Utilisateur
 import { PreferencesSection } from './modules/parametres/sections/PreferencesSection';
 import { CulturesSection } from './modules/parametres/sections/CulturesSection';
 import { ProduitsSection } from './modules/parametres/sections/ProduitsSection';
+import { ClientsSection } from './modules/parametres/sections/ClientsSection';
 import { CheptelSection } from './modules/parametres/sections/CheptelSection';
-import { TravauxConfigSection } from './modules/parametres/sections/TravauxConfigSection';
 import { OdooSection } from './modules/parametres/sections/OdooSection';
 import { MeteoSection } from './modules/parametres/sections/MeteoSection';
 import LoginPage from './modules/auth/LoginPage';
@@ -47,6 +47,8 @@ const MentionsLegalesPage = lazy(() => import('./modules/marketing/MentionsLegal
 const ConfidentialitePage = lazy(() => import('./modules/marketing/ConfidentialitePage'));
 const OpenSourcePage = lazy(() => import('./modules/marketing/OpenSourcePage'));
 const ComposantsPage = lazy(() => import('./modules/composants/ComposantsPage'));
+const FabLabPage = lazy(() => import('./modules/fab-lab/FabLabPage'));
+const ParametresLabPage = lazy(() => import('./modules/parametres-lab/ParametresLabPage'));
 
 function MarketingFallback() {
   return (
@@ -92,6 +94,8 @@ export default function App() {
       <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route path="/accept-invite" element={<AcceptInvitePage />} />
       <Route path="/composants" element={<ComposantsPage />} />
+      <Route path="/fab-lab" element={<FabLabPage />} />
+      <Route path="/parametres-lab" element={<ParametresLabPage />} />
     </>
   );
 
@@ -138,8 +142,9 @@ export default function App() {
             <Route path="preferences" element={<PreferencesSection />} />
             <Route path="cultures" element={<CulturesSection />} />
             <Route path="produits" element={<ProduitsSection />} />
+            <Route path="clients" element={<ClientsSection />} />
             <Route path="cheptel" element={<CheptelSection />} />
-            <Route path="travaux" element={<TravauxConfigSection />} />
+            <Route path="travaux" element={<Navigate to="/parametres/produits" replace />} />
             <Route path="odoo" element={<OdooSection />} />
             <Route path="meteo" element={<MeteoSection />} />
           </Route>

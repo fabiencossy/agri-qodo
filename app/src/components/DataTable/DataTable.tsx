@@ -156,7 +156,7 @@ export function DataTable<T>({
                   <th
                     key={col.key}
                     className={[
-                      'border-b border-(--color-border) px-3 py-2 font-medium',
+                      'border-b border-(--color-border) px-3 py-2 font-medium whitespace-nowrap',
                       col.align === 'right'
                         ? 'text-right'
                         : col.align === 'center'
@@ -199,7 +199,7 @@ export function DataTable<T>({
                         ].join(' ')}
                       >
                         <td
-                          className="w-10 px-3 py-2 text-center"
+                          className="w-10 px-3 py-2 text-center whitespace-nowrap"
                           onClick={(e) => e.stopPropagation()}
                         >
                           <TableCheckbox
@@ -212,7 +212,7 @@ export function DataTable<T>({
                           <td
                             key={col.key}
                             className={[
-                              'px-3 py-2',
+                              'px-3 py-2 whitespace-nowrap',
                               col.align === 'right'
                                 ? 'text-right'
                                 : col.align === 'center'

@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { BulkActionsBar, TableCheckbox, type BulkAction } from '../../components/BulkActionsBar';
 import { useIsDesktop } from '../../hooks/useMediaQuery';
 import type { ParcelDetail } from './parcellaire.mocks';
+import { updateParcel, removeParcel } from './parcellaire.store';
+import { notify } from '../../layouts/notice.store';
 
 const STATUS_LABELS: Record<NonNullable<ParcelDetail['status']>, string> = {
   active: 'Actif',
@@ -43,33 +45,51 @@ export function ParcellaireTable({ parcels, selectedId }: ParcellaireTableProps)
     });
   };
 
+  const ids = Array.from(checked);
+
+  const doGroup = async () => {
+    const raw = prompt('Nom du groupe / îlot (vide = retirer du groupe) :');
+    if (raw === null) return;
+    const groupId = raw.trim() || undefined;
+    await Promise.all(ids.map((id) => updateParcel(id, { groupId })));
+    notify(
+      groupId
+        ? `${ids.length} parcelle(s) regroupées dans "${groupId}".`
+        : `${ids.length} parcelle(s) retirées de leur groupe.`,
+      'success',
+    );
+    setChecked(new Set());
+  };
+
+  const doArchive = async () => {
+    await Promise.all(ids.map((id) => updateParcel(id, { status: 'archived' })));
+    notify(`${ids.length} parcelle(s) archivées.`, 'success');
+    setChecked(new Set());
+  };
+
+  const doDelete = async () => {
+    if (!confirm(`Supprimer ${ids.length} parcelle(s) ? Action irréversible.`)) return;
+    await Promise.all(ids.map((id) => removeParcel(id)));
+    notify(`${ids.length} parcelle(s) supprimées.`, 'success');
+    setChecked(new Set());
+  };
+
   const bulkActions: BulkAction[] = [
     {
-      id: 'merge',
-      label: 'Fusionner',
-      onClick: () => alert(`Fusionner ${checked.size} parcelles (Phase 2.5).`),
-      disabled: checked.size < 2,
-    },
-    {
-      id: 'duplicate',
-      label: 'Dupliquer',
-      onClick: () => alert(`Dupliquer ${checked.size} parcelles (Phase 2.5).`),
+      id: 'group',
+      label: 'Grouper en îlot',
+      onClick: doGroup,
     },
     {
       id: 'archive',
       label: 'Archiver',
-      onClick: () => alert(`Archiver ${checked.size} parcelles (Phase 2.5).`),
-    },
-    {
-      id: 'export',
-      label: 'Exporter la sélection',
-      onClick: () => alert(`Exporter ${checked.size} parcelles (Phase 2.5).`),
+      onClick: doArchive,
     },
     {
       id: 'delete',
       label: 'Supprimer',
       variant: 'danger',
-      onClick: () => confirm(`Supprimer ${checked.size} parcelle(s) ?`) && setChecked(new Set()),
+      onClick: doDelete,
     },
   ];
 
@@ -140,21 +160,30 @@ export function ParcellaireTable({ parcels, selectedId }: ParcellaireTableProps)
                       isHighlighted ? 'ring-1 ring-(--color-primary) ring-inset' : '',
                     ].join(' ')}
                   >
-                    <td className="w-10 px-3 py-2 text-center">
+                    <td className="w-10 px-3 py-2 text-center whitespace-nowrap">
                       <TableCheckbox
                         checked={isChecked}
                         onChange={(next) => toggleOne(p.id, next)}
                         ariaLabel={`Sélectionner ${p.name}`}
                       />
                     </td>
-                    <td className="px-3 py-2 font-mono text-xs">{p.id}</td>
-                    <td className="px-3 py-2 font-medium">{p.name}</td>
-                    <td className="px-3 py-2 text-right font-mono tabular-nums">
+                    <td className="px-3 py-2 font-mono text-xs whitespace-nowrap">{p.id}</td>
+                    <td className="px-3 py-2 font-medium whitespace-nowrap">
+                      {p.name}
+                      {p.groupId && (
+                        <span className="ml-2 inline-flex items-center rounded-(--radius-pill) bg-(--color-primary)/12 px-1.5 py-0.5 text-[10px] font-medium text-(--color-primary)">
+                          {p.groupId}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-right font-mono tabular-nums whitespace-nowrap">
                       {p.surfaceHa.toFixed(2)} ha
                     </td>
-                    <td className="px-3 py-2">{p.culture}</td>
-                    <td className="px-3 py-2 text-(--color-muted)">{p.varietyName ?? '—'}</td>
-                    <td className="px-3 py-2">
+                    <td className="px-3 py-2 whitespace-nowrap">{p.culture}</td>
+                    <td className="px-3 py-2 text-(--color-muted) whitespace-nowrap">
+                      {p.varietyName ?? '—'}
+                    </td>
+                    <td className="px-3 py-2 whitespace-nowrap">
                       {p.status && (
                         <span
                           className={[
@@ -166,7 +195,9 @@ export function ParcellaireTable({ parcels, selectedId }: ParcellaireTableProps)
                         </span>
                       )}
                     </td>
-                    <td className="px-3 py-2 text-right tabular-nums">{p.year}</td>
+                    <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap">
+                      {p.year}
+                    </td>
                   </tr>
                 );
               })}
@@ -261,7 +292,7 @@ function Th({ children, align = 'left' }: { children: React.ReactNode; align?: '
   return (
     <th
       className={[
-        'border-b border-(--color-border) px-3 py-2 font-medium',
+        'border-b border-(--color-border) px-3 py-2 font-medium whitespace-nowrap',
         align === 'right' ? 'text-right' : 'text-left',
       ].join(' ')}
     >

@@ -50,6 +50,7 @@ export function MapView({
   enabledTools = MAP_VIEW_DEFAULTS.enabledTools,
   onCreateGroup,
   onDrawComplete,
+  onMarkerClick,
   center = MAP_VIEW_DEFAULTS.defaultCenter,
   zoom = MAP_VIEW_DEFAULTS.zoom,
   zoomRange = MAP_VIEW_DEFAULTS.zoomRange,
@@ -301,6 +302,10 @@ export function MapView({
   }, [parcels]);
 
   /* ---------- Markers ---------- */
+  const onMarkerClickRef = useRef(onMarkerClick);
+  useEffect(() => {
+    onMarkerClickRef.current = onMarkerClick;
+  });
   useEffect(() => {
     const map = mapRef.current;
     const layer = markersLayerRef.current;
@@ -309,13 +314,17 @@ export function MapView({
     for (const m of markers) {
       const color = m.color ?? MARKER_COLORS[m.kind];
       const icon = L.divIcon({
-        html: `<span style="display:inline-block;width:16px;height:16px;background:${color};border:2px solid white;border-radius:50%;box-shadow:0 0 0 1px rgba(0,0,0,0.3);"></span>`,
+        html: `<span style="display:inline-block;width:16px;height:16px;background:${color};border:2px solid white;border-radius:50%;box-shadow:0 0 0 1px rgba(0,0,0,0.3);cursor:pointer;"></span>`,
         className: '',
         iconSize: [16, 16],
         iconAnchor: [8, 8],
       });
       const marker = L.marker([m.position[1], m.position[0]], { icon });
-      if (m.label) marker.bindPopup(m.label);
+      if (m.label) marker.bindTooltip(m.label, { direction: 'top', offset: [0, -8] });
+      marker.on('click', (ev) => {
+        L.DomEvent.stopPropagation(ev);
+        onMarkerClickRef.current?.(m.id);
+      });
       marker.addTo(layer);
     }
   }, [markers]);
@@ -361,10 +370,18 @@ export function MapView({
     if (activeTool === 'add-marker') {
       setHint('Cliquez sur la carte pour poser un point.');
       const onClick = (e: L.LeafletMouseEvent) => {
-        setDrawnMarkers((curr) => [
-          ...curr,
-          { id: `m-${Date.now()}`, lat: e.latlng.lat, lng: e.latlng.lng, kind: 'pin' },
-        ]);
+        if (onDrawCompleteRef.current) {
+          onDrawCompleteRef.current({
+            tool: 'add-marker',
+            geometry: { type: 'Point', coordinates: [e.latlng.lng, e.latlng.lat] },
+          });
+        } else {
+          // Fallback ephémère : pas de parent qui persiste → on dessine local.
+          setDrawnMarkers((curr) => [
+            ...curr,
+            { id: `m-${Date.now()}`, lat: e.latlng.lat, lng: e.latlng.lng, kind: 'pin' },
+          ]);
+        }
       };
       map.on('click', onClick);
       return () => {

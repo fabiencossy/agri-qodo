@@ -109,6 +109,22 @@ export const PARAMETRES_SECTIONS: ReadonlyArray<ParametresSection> = [
     ),
   },
   {
+    slug: 'clients',
+    label: 'Annuaire clients',
+    description: 'Clients tiers facturés, mappés res.partner Odoo',
+    group: 'donnees',
+    module: 'parametres',
+    requiredLevel: 'read',
+    icon: (
+      <svg {...ICON_PROPS}>
+        <circle cx="9" cy="8" r="3.5" />
+        <circle cx="17" cy="9" r="2.5" />
+        <path d="M2 20c0-3 3-6 7-6s7 3 7 6" />
+        <path d="M15 20c0-2 2-4 4-4s3 2 3 4" />
+      </svg>
+    ),
+  },
+  {
     slug: 'cheptel',
     label: 'Cheptel',
     description: 'Catégories animaux, normes UGB',

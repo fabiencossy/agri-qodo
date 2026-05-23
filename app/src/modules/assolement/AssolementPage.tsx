@@ -1,5 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { useActionParam } from '../../layouts/useActionParam';
+import { notify } from '../../layouts/notice.store';
 import { useIsDesktop } from '../../hooks/useMediaQuery';
 import { MapView, type Parcel } from '../../components/MapView';
 import { SearchBar, type FieldDescriptor, type SearchState } from '../../components/SearchBar';
@@ -75,6 +77,25 @@ export default function AssolementPage() {
   const parcels = useParcels();
   const geojsonInputRef = useRef<HTMLInputElement>(null);
   const shapefileInputRef = useRef<HTMLInputElement>(null);
+
+  // Consomme actions FAB
+  useActionParam(({ action }) => {
+    if (action === 'new') {
+      if (selectedId) {
+        setEditingSegment('new');
+      } else {
+        notify(
+          'Sélectionnez d\'abord une parcelle (carte ou table), puis "Ajouter un segment".',
+          'info',
+        );
+      }
+    } else if (action === 'import') {
+      geojsonInputRef.current?.click();
+    } else if (action === 'export') {
+      setView('table');
+      notify('Utilisez le bouton "Exporter" dans la barre d\'outils.', 'info');
+    }
+  });
 
   // Masque le FAB sur mobile quand le panel de sélection est ouvert
   useHideFab(!isDesktop && Boolean(selectedId));

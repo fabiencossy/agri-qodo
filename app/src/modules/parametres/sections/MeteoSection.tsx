@@ -2,6 +2,8 @@ import { updateMeteoSettings, useIntegrations, type MeteoSettings } from '../int
 import { useCan } from '../../users/permissions';
 import { Field, SectionCard } from './_shared';
 import { inputClass, selectClass } from './_styles';
+import { useActionParam } from '../../../layouts/useActionParam';
+import { notify } from '../../../layouts/notice.store';
 
 const STATIONS: ReadonlyArray<{ id: string; label: string }> = [
   { id: 'PUY', label: 'PUY — Pully (VD)' },
@@ -20,6 +22,15 @@ export function MeteoSection() {
 
   const setField = <K extends keyof MeteoSettings>(k: K, v: MeteoSettings[K]) =>
     updateMeteoSettings({ [k]: v } as Partial<MeteoSettings>);
+
+  useActionParam(({ action }) => {
+    if (action === 'observe') {
+      notify(
+        'Observation météo manuelle : disponible Phase 3 (formulaire pluie/vent/temp).',
+        'info',
+      );
+    }
+  });
 
   return (
     <div className="space-y-4">

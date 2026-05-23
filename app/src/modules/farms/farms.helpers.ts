@@ -96,10 +96,34 @@ export function findClientForFarm<C extends ClientLike>(
   clients: ReadonlyArray<C>,
 ): C | undefined {
   if (!farm) return undefined;
-  const farmName = farm.name.toLowerCase();
+  const farmName = farm.name.toLowerCase().trim();
+  // Match strict bidirectionnel — voir findFarmForClient pour l'historique du bug.
   return clients.find((c) => {
-    const clientName = c.name.toLowerCase();
-    return clientName.includes(farmName) || farmName.includes(clientName.split(/[\s—-]/)[0]!);
+    const clientName = c.name.toLowerCase().trim();
+    return (
+      clientName === farmName || clientName.includes(farmName) || farmName.includes(clientName)
+    );
+  });
+}
+
+/**
+ * Inverse de findClientForFarm : trouve l'exploitation correspondant à un
+ * client (matching nom case-insensitive). Sert à filtrer les parcelles d'un
+ * client dans les modaux de bon de travail.
+ */
+export function findFarmForClient<C extends ClientLike>(
+  client: C | undefined,
+  farms: ReadonlyArray<Farm>,
+): Farm | undefined {
+  if (!client) return undefined;
+  const clientName = client.name.toLowerCase().trim();
+  // Match strict bidirectionnel : un nom doit contenir l'autre entièrement.
+  // Évite que "Ferme des Crausaz" matche "Ferme de la Combe" via préfixe commun.
+  return farms.find((f) => {
+    const farmName = f.name.toLowerCase().trim();
+    return (
+      farmName === clientName || farmName.includes(clientName) || clientName.includes(farmName)
+    );
   });
 }
 

@@ -4,6 +4,7 @@ import { useIsDesktop } from '../hooks/useMediaQuery';
 import { Fab } from './Fab';
 import { FabProvider } from './FabContext';
 import { InterventionFormProvider } from './InterventionFormProvider';
+import { NoticeHost } from './NoticeHost';
 import { NAV_ITEMS, type NavItem } from './nav-items';
 import { FarmSwitcher } from '../modules/farms/FarmSwitcher';
 import { isInviteeAllowedPath, useIsCurrentFarmInvitee } from '../modules/farms/farms.helpers';
@@ -97,6 +98,7 @@ export function AppLayout() {
 
           {/* FAB global (speed dial) — key au pathname pour reset à chaque navigation */}
           <Fab key={location.pathname} />
+          <NoticeHost />
         </div>
       </InterventionFormProvider>
     </FabProvider>

@@ -9,14 +9,35 @@ import {
   SEARCH_BAR_DEFAULTS,
   type FieldDescriptor,
   type Facet as FacetT,
+  type SavedFavorite,
   type SearchBarProps,
 } from './SearchBar.types';
+
+/** localStorage helpers pour favoris auto-persistés quand aucun callback parent. */
+function readLocalFavorites(storageKey: string): SavedFavorite[] {
+  try {
+    const raw = localStorage.getItem(storageKey);
+    if (!raw) return [];
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as SavedFavorite[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeLocalFavorites(storageKey: string, favs: SavedFavorite[]): void {
+  try {
+    localStorage.setItem(storageKey, JSON.stringify(favs));
+  } catch {
+    /* quota / private mode → silencieux */
+  }
+}
 
 export function SearchBar({
   fields,
   value,
   onChange,
-  favorites = [],
+  favorites,
   onSaveFavorite,
   onDeleteFavorite,
   placeholder = SEARCH_BAR_DEFAULTS.placeholder,
@@ -25,12 +46,58 @@ export function SearchBar({
   theme = SEARCH_BAR_DEFAULTS.theme,
   ariaLabel = 'Rechercher',
   className,
+  storageKey,
 }: SearchBarProps) {
   const fieldsById = useMemo(() => {
     const m = new Map<string, FieldDescriptor>();
     for (const f of fields) m.set(f.id, f);
     return m;
   }, [fields]);
+
+  // Clé localStorage stable : si `storageKey` non fourni, dérive du schéma des champs
+  // pour qu'une même SearchBar (même champs) partage ses favoris à travers l'app.
+  const effectiveStorageKey = useMemo(() => {
+    if (storageKey) return `sb-fav:${storageKey}`;
+    const sig = fields
+      .map((f) => f.id)
+      .sort()
+      .join('|');
+    return `sb-fav:auto:${sig}`;
+  }, [storageKey, fields]);
+
+  // Favoris : si parent fournit ses callbacks/liste, on les utilise. Sinon
+  // fallback localStorage interne pour que "Enregistrer la recherche" marche
+  // toujours sans config côté section.
+  const [internalFavorites, setInternalFavorites] = useState<SavedFavorite[]>(() =>
+    readLocalFavorites(effectiveStorageKey),
+  );
+  const usingInternal = !onSaveFavorite && !onDeleteFavorite && favorites === undefined;
+  const effectiveFavorites: SavedFavorite[] = favorites ?? (usingInternal ? internalFavorites : []);
+  const effectiveOnSaveFavorite = onSaveFavorite
+    ? onSaveFavorite
+    : usingInternal
+      ? (name: string, opts: { shared: boolean; isDefault: boolean }) => {
+          const fav: SavedFavorite = {
+            id: `fav-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            name,
+            shared: opts.shared,
+            isDefault: opts.isDefault,
+            state: value,
+          };
+          const next = [...internalFavorites, fav];
+          setInternalFavorites(next);
+          writeLocalFavorites(effectiveStorageKey, next);
+        }
+      : undefined;
+  const effectiveOnDeleteFavorite = onDeleteFavorite
+    ? onDeleteFavorite
+    : usingInternal
+      ? (favoriteId: string) => {
+          const next = internalFavorites.filter((f) => f.id !== favoriteId);
+          setInternalFavorites(next);
+          writeLocalFavorites(effectiveStorageKey, next);
+        }
+      : undefined;
 
   const [query, setQuery] = useState(value.query ?? '');
   const [suggestionsOpen, setSuggestionsOpen] = useState(false);
@@ -272,9 +339,9 @@ export function SearchBar({
           fields={fields}
           state={value}
           onChange={onChange}
-          favorites={favorites}
-          onSaveFavorite={onSaveFavorite}
-          onDeleteFavorite={onDeleteFavorite}
+          favorites={effectiveFavorites}
+          onSaveFavorite={effectiveOnSaveFavorite}
+          onDeleteFavorite={effectiveOnDeleteFavorite}
           onClose={() => setDropdownOpen(false)}
         />
       )}

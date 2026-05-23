@@ -74,72 +74,68 @@ export function useStandardFabActions(opts: StandardFabOpts = {}): FabAction[] {
   } = opts;
 
   return useMemo<FabAction[]>(() => {
-    // Mode invité/managed : on n'expose QUE les extraActions de la page.
-    // Évite d'afficher "Créer une intervention", "Ajouter un segment", etc.
-    // qui pointeraient vers Carnet/Assolement/RH bloqués → trompeur.
+    // "Cette page" = uniquement l'action contextuelle dominante (highlight)
+    // + les éventuelles extraActions de la page. Le reste est accessible via
+    // le catalogue global "Tous les secteurs" — pas de duplication.
     if (onlyExtraActions) {
       return extraActions ? [...extraActions] : [];
     }
+
     const assolementUrl = parcelId ? `/assolement?parcel=${parcelId}` : '/assolement';
-    const primary = (h: FabHighlight) =>
-      h === highlight ? ('primary' as const) : ('secondary' as const);
 
-    // "Créer une intervention" est l'action métier la plus importante de l'app :
-    // toujours en première position, jamais déplacée. Ouvre directement le
-    // formulaire en modal global (pas de navigation).
-    const intervention: FabAction = {
-      id: 'std-intervention',
-      label: 'Créer une intervention',
-      icon: <FabInterventionIcon />,
-      variant: primary('intervention'),
-      onClick: onAddIntervention ?? (() => openInterventionForm({ parcelId })),
-    };
-
-    const others: FabAction[] = [
-      {
-        id: 'std-observation',
-        label: 'Ajouter une observation',
-        icon: <FabObserveIcon />,
-        variant: primary('observation'),
-        onClick:
-          onAddObservation ?? (() => openInterventionForm({ parcelId, category: 'observation' })),
-      },
-      {
-        id: 'std-segment',
-        label: "Ajouter un segment d'assolement",
-        icon: <FabCalendarIcon />,
-        variant: primary('segment'),
-        onClick: onAddSegment ?? (() => navigate(assolementUrl)),
-      },
-      {
-        id: 'std-parcelle',
-        label: 'Nouvelle parcelle (dessin)',
-        icon: <FabDrawIcon />,
-        variant: primary('parcelle'),
-        onClick: onNewParcel ?? (() => navigate('/parcellaire')),
-      },
-      {
-        id: 'std-horaires',
-        label: 'Saisir une présence',
-        icon: <FabClockIcon />,
-        variant: primary('horaires'),
-        onClick: () => navigate('/rh/saisir'),
-      },
-    ];
-
-    // Si une action autre que "Créer une intervention" est en surbrillance,
-    // on la remonte juste après "Créer une intervention" — visibilité immédiate
-    // de l'action contextuelle dominante de la page courante.
-    if (highlight && highlight !== 'intervention') {
-      const idx = others.findIndex((a) => a.variant === 'primary');
-      if (idx > 0) {
-        const [highlighted] = others.splice(idx, 1);
-        if (highlighted) others.unshift(highlighted);
+    const highlightedAction: FabAction | null = (() => {
+      switch (highlight) {
+        case 'intervention':
+          return {
+            id: 'std-intervention',
+            label: 'Créer une intervention',
+            icon: <FabInterventionIcon />,
+            variant: 'primary',
+            onClick: onAddIntervention ?? (() => openInterventionForm({ parcelId })),
+          };
+        case 'observation':
+          return {
+            id: 'std-observation',
+            label: 'Ajouter une observation',
+            icon: <FabObserveIcon />,
+            variant: 'primary',
+            onClick:
+              onAddObservation ??
+              (() => openInterventionForm({ parcelId, category: 'observation' })),
+          };
+        case 'segment':
+          return {
+            id: 'std-segment',
+            label: "Ajouter un segment d'assolement",
+            icon: <FabCalendarIcon />,
+            variant: 'primary',
+            onClick: onAddSegment ?? (() => navigate(assolementUrl)),
+          };
+        case 'parcelle':
+          return {
+            id: 'std-parcelle',
+            label: 'Nouvelle parcelle (dessin)',
+            icon: <FabDrawIcon />,
+            variant: 'primary',
+            onClick: onNewParcel ?? (() => navigate('/parcellaire')),
+          };
+        case 'horaires':
+          return {
+            id: 'std-horaires',
+            label: 'Saisir une présence',
+            icon: <FabClockIcon />,
+            variant: 'primary',
+            onClick: () => navigate('/rh/saisir'),
+          };
+        default:
+          return null;
       }
-    }
+    })();
 
-    const standard: FabAction[] = [intervention, ...others];
-    return extraActions && extraActions.length > 0 ? [...extraActions, ...standard] : standard;
+    const result: FabAction[] = [];
+    if (extraActions && extraActions.length > 0) result.push(...extraActions);
+    if (highlightedAction) result.push(highlightedAction);
+    return result;
   }, [
     navigate,
     openInterventionForm,

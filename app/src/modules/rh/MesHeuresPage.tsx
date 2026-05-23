@@ -2,6 +2,8 @@ import { PageHeader } from '../_shared/PageHeader';
 import { useFabActions } from '../../layouts/useFab';
 import { useStandardFabActions } from '../../layouts/useStandardFabActions';
 import { HoursTableMonth, type HoursMonthRow } from '../../components/HoursTableMonth';
+import { useActionParam } from '../../layouts/useActionParam';
+import { notify } from '../../layouts/notice.store';
 
 const HOURS_DATA: HoursMonthRow[] = [
   { month: 1, monthName: 'Janvier', hoursWorked: 150, hoursDue: 145, balance: 5, leavesTaken: 2 },
@@ -22,6 +24,19 @@ const HOURS_DATA: HoursMonthRow[] = [
 export default function MesHeuresPage() {
   // FAB unifié : "Saisir une présence" est l'action mise en avant sur MesHeures.
   useFabActions(useStandardFabActions({ highlight: 'horaires' }));
+  useActionParam(({ action }) => {
+    if (action === 'export') {
+      notify(
+        'Export feuille de temps : disponible Phase 3 (PDF mensuel signature employeur).',
+        'info',
+      );
+    } else if (action === 'expense') {
+      notify(
+        'Note de frais : disponible Phase 3 (formulaire + photo justificatif + Odoo hr.expense).',
+        'info',
+      );
+    }
+  });
 
   return (
     <>

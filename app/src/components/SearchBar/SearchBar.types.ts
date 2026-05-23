@@ -123,6 +123,11 @@ export interface SearchBarProps {
   ariaLabel?: string;
   /** Classe CSS optionnelle. */
   className?: string;
+  /** Identifiant stable pour persister les favoris en localStorage si aucun
+   *  callback `onSaveFavorite`/`onDeleteFavorite` n'est fourni. Sans cette clé
+   *  ni callback, le bouton "Enregistrer la recherche" reste affiché et persiste
+   *  les favoris sous une clé dérivée du schéma de champs. */
+  storageKey?: string;
 }
 
 export const SEARCH_BAR_DEFAULTS = {

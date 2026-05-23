@@ -83,21 +83,91 @@ export function exportCsv(
 }
 
 /* ============================================================
- * PDF / XLSX — stubs Phase 1
- * Les libs (jspdf, exceljs) seront ajoutées dans une étape dédiée.
- * Pour l'instant, on simule la génération (delay + erreur claire).
+ * PDF — jspdf + jspdf-autotable
  * ============================================================ */
 
-export async function exportPdf(_args: {
+function formatCell(raw: unknown, row: Record<string, unknown>, col: ExportColumn): string {
+  const value = col.format ? col.format(raw, row) : raw;
+  if (value === null || value === undefined) return '';
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  return String(value);
+}
+
+export async function exportPdf(args: {
   data: ReadonlyArray<Record<string, unknown>>;
   columns: ExportColumn[];
   filename: string;
+  title?: string;
 }): Promise<void> {
-  // TODO Phase 1 : intégrer jspdf + autotable + logo Qodo.
-  // En attendant, on fallback en CSV pour ne pas bloquer la démo.
-  await new Promise((r) => setTimeout(r, 400));
-  throw new Error('Export PDF pas encore implémenté (lib jspdf à brancher).');
+  // Imports dynamiques : libs PDF chargées seulement au premier export.
+  const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([
+    import('jspdf'),
+    import('jspdf-autotable'),
+  ]);
+
+  const { data, columns, filename, title } = args;
+
+  // Orientation auto : portrait si ≤ 5 colonnes, sinon paysage.
+  const orientation: 'portrait' | 'landscape' = columns.length > 5 ? 'landscape' : 'portrait';
+  const doc = new jsPDF({ orientation, unit: 'pt', format: 'a4' });
+
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const margin = 32;
+
+  // En-tête
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(14);
+  doc.text(title ?? filename.replace(/\.pdf$/i, ''), margin, 36);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(120, 120, 120);
+  const subtitle = `${data.length} ligne(s) — généré le ${new Date().toLocaleString('fr-CH')}`;
+  doc.text(subtitle, margin, 50);
+  doc.setTextColor(0, 0, 0);
+
+  // Tableau
+  const head = [columns.map((c) => c.label)];
+  const body = data.map((row) => columns.map((col) => formatCell(row[col.key], row, col)));
+
+  autoTable(doc, {
+    startY: 64,
+    head,
+    body,
+    margin: { left: margin, right: margin },
+    styles: { font: 'helvetica', fontSize: 9, cellPadding: 4, overflow: 'linebreak' },
+    headStyles: { fillColor: [46, 125, 50], textColor: 255, fontStyle: 'bold' },
+    alternateRowStyles: { fillColor: [248, 250, 246] },
+    columnStyles: Object.fromEntries(
+      columns.map((c, i) => [
+        i,
+        {
+          halign: c.align === 'right' ? 'right' : c.align === 'center' ? 'center' : 'left',
+        },
+      ]),
+    ),
+    didDrawPage: (data) => {
+      const pageCount = doc.getNumberOfPages();
+      const page = data.pageNumber;
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(140, 140, 140);
+      doc.text(
+        `Agri Qodo · page ${page} / ${pageCount}`,
+        pageWidth - margin,
+        doc.internal.pageSize.getHeight() - 16,
+        { align: 'right' },
+      );
+      doc.setTextColor(0, 0, 0);
+    },
+  });
+
+  doc.save(filename);
 }
+
+/* ============================================================
+ * XLSX — stub (lib exceljs à brancher)
+ * ============================================================ */
 
 export async function exportXlsx(_args: {
   data: ReadonlyArray<Record<string, unknown>>;
