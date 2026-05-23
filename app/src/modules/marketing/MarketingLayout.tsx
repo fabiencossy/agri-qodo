@@ -162,7 +162,7 @@ export default function MarketingLayout() {
               </li>
               <li>
                 <a
-                  href="https://github.com/fabiencossy/newagriqodo"
+                  href="https://github.com/Qodo-Digital/agri-qodo"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="hover:text-(--color-primary)"

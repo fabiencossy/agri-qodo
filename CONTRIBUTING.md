@@ -4,8 +4,8 @@ Merci de votre intérêt ! NewagriQodo est édité par [Qodo Digital](https://qo
 
 ## Façons de contribuer
 
-- **Signaler un bug** → [Ouvrir une issue](https://github.com/fabiencossy/newagriqodo/issues/new)
-- **Proposer une fonctionnalité** → [Démarrer une discussion](https://github.com/fabiencossy/newagriqodo/discussions/new)
+- **Signaler un bug** → [Ouvrir une issue](https://github.com/Qodo-Digital/agri-qodo/issues/new)
+- **Proposer une fonctionnalité** → [Démarrer une discussion](https://github.com/Qodo-Digital/agri-qodo/discussions/new)
 - **Améliorer le code** → fork + pull request (voir ci-dessous)
 - **Améliorer la doc** → idem, modifier les `.md` dans `docs/`
 - **Signaler une vulnérabilité** → email `security@qodo.ch` (NE PAS ouvrir d'issue publique, cf. [`SECURITY.md`](SECURITY.md))
@@ -14,8 +14,8 @@ Merci de votre intérêt ! NewagriQodo est édité par [Qodo Digital](https://qo
 ## Démarrage développeur (5 min)
 
 ```bash
-git clone https://github.com/fabiencossy/newagriqodo.git
-cd newagriqodo/app
+git clone https://github.com/Qodo-Digital/agri-qodo.git
+cd agri-qodo/app
 npm install
 npm run dev         # http://localhost:5173 (mode démo avec données mock Darval)
 ```
@@ -89,5 +89,5 @@ Ce projet adhère au [Contributor Covenant](CODE_OF_CONDUCT.md). En contribuant,
 
 ## Questions ?
 
-- Discussion ouverte : https://github.com/fabiencossy/newagriqodo/discussions
+- Discussion ouverte : https://github.com/Qodo-Digital/agri-qodo/discussions
 - Email : info@qodo.ch

@@ -34,8 +34,8 @@ Cette transparence est essentielle pour un outil qui touche aux contrôles canto
 ## Démarrage rapide
 
 ```bash
-git clone https://github.com/fabiencossy/newagriqodo.git
-cd newagriqodo/app
+git clone https://github.com/Qodo-Digital/agri-qodo.git
+cd agri-qodo/app
 npm install
 npm run dev         # http://localhost:5173 (mode démo immédiat avec données mock Darval)
 npm test            # 71 tests Vitest
