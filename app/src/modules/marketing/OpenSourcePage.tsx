@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 
-const GITHUB_URL = 'https://github.com/fabiencossy/newagriqodo';
+const GITHUB_URL = 'https://github.com/Qodo-Digital/agri-qodo';
 
 export default function OpenSourcePage() {
   return (
