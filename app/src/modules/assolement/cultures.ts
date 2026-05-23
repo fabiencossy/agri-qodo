@@ -110,15 +110,23 @@ export const CULTURES: ReadonlyArray<CultureInfo> = [
 
 const DEFAULT_COLOR = '#9ca3af';
 
+// Fusion catalogue Agridéa + cultures custom utilisateur (overlay localStorage).
+// cultures-custom n'importe que des `type` depuis ce fichier → pas de cycle runtime.
+import { getCustomCultures } from './cultures-custom.store';
+
+function allCultures(): ReadonlyArray<CultureInfo> {
+  return [...CULTURES, ...getCustomCultures()];
+}
+
 export function cultureByLabel(label: string | undefined): CultureInfo | undefined {
   if (!label) return undefined;
   const norm = label.toLowerCase();
-  return CULTURES.find((c) => c.label.toLowerCase() === norm);
+  return allCultures().find((c) => c.label.toLowerCase() === norm);
 }
 
 export function cultureByKey(key: string | undefined): CultureInfo | undefined {
   if (!key) return undefined;
-  return CULTURES.find((c) => c.key === key);
+  return allCultures().find((c) => c.key === key);
 }
 
 /** Conversion label FR -> key stable (pour persistance DB). */
@@ -152,7 +160,9 @@ export function contrastTextColor(hexBg: string): '#000' | '#fff' {
 
 /** Cultures disponibles dans les sélecteurs (exclut "Archivé"). */
 export function listCultureLabels(): string[] {
-  return CULTURES.filter((c) => c.category !== 'other').map((c) => c.label);
+  return allCultures()
+    .filter((c) => c.category !== 'other')
+    .map((c) => c.label);
 }
 
 /**
@@ -174,7 +184,7 @@ export function cultureGroup(label: string | undefined): string {
 /** Groupes uniques (radicaux) — utilisé dans les options des filtres. */
 export function listCultureGroups(): string[] {
   const groups = new Set<string>();
-  for (const c of CULTURES) {
+  for (const c of allCultures()) {
     if (c.category === 'other') continue;
     groups.add(cultureGroup(c.label));
   }

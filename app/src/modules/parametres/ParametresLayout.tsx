@@ -1,8 +1,15 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { PARAMETRES_SECTIONS, SECTION_GROUPS } from './parametres.sections';
+import { ParametresMobileSelectorProvider } from './parametres.context';
 import { useCan } from '../users/permissions';
 import { useCurrentFarm } from '../farms/farms.store';
+
+export type ParametresOutletContext = {
+  /** Engrenage à monter dans toolbar mobile (Produits/Cultures) ou consommé
+   *  automatiquement par SectionCard via useParametresMobileSelector(). */
+  mobileSelector: ReactNode;
+};
 
 export default function ParametresLayout() {
   const canReadParametres = useCan('parametres', 'read');
@@ -24,72 +31,72 @@ export default function ParametresLayout() {
     return visibleSections.find((s) => s.slug === slug);
   }, [location.pathname, visibleSections]);
 
+  const mobileSelectorButton: ReactNode = (
+    <button
+      type="button"
+      onClick={() => setMobileOpen(true)}
+      aria-label={`Changer de section (actuelle : ${activeSection?.label ?? 'Sections'})`}
+      title={activeSection?.label ?? 'Sections'}
+      className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-(--radius) border border-(--color-border) bg-(--color-surface) hover:bg-[#f8f8f5]"
+    >
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        width="16"
+        height="16"
+        aria-hidden="true"
+      >
+        <circle cx="12" cy="12" r="3" />
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+      </svg>
+    </button>
+  );
+
   return (
-    <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-6 sm:px-6 sm:py-8 md:flex-row md:gap-6">
-      {/* Sidebar gauche : visible md+ ; sur mobile remplacée par un bouton */}
-      <aside className="hidden w-64 shrink-0 md:block">
-        <SidebarContent
-          activeSlug={activeSection?.slug}
-          farmName={farm?.name ?? 'Mon exploitation'}
-        />
-      </aside>
+    <ParametresMobileSelectorProvider value={mobileSelectorButton}>
+      <div className="mx-auto flex max-w-7xl flex-col gap-0 px-3 py-0 sm:px-6 md:flex-row md:gap-6 md:py-6">
+        {/* Sidebar gauche : visible md+ ; sur mobile remplacée par un bouton */}
+        <aside className="hidden w-64 shrink-0 md:block">
+          <SidebarContent
+            activeSlug={activeSection?.slug}
+            farmName={farm?.name ?? 'Mon exploitation'}
+          />
+        </aside>
 
-      {/* Mobile : bouton Sections + drawer */}
-      <div className="flex items-center justify-between md:hidden">
-        <div>
-          <h1 className="m-0 text-xl font-semibold">Paramètres</h1>
-          <p className="m-0 mt-0.5 text-xs text-(--color-muted)">{farm?.name ?? 'Exploitation'}</p>
-        </div>
-        <button
-          type="button"
-          onClick={() => setMobileOpen(true)}
-          className="inline-flex h-9 items-center gap-1.5 rounded-(--radius) border border-(--color-border) bg-(--color-surface) px-3 text-xs font-medium hover:bg-[#f8f8f5]"
-        >
-          {activeSection?.label ?? 'Sections'}
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.75"
-            width="14"
-            height="14"
-          >
-            <path d="m6 9 6 6 6-6" />
-          </svg>
-        </button>
-      </div>
-
-      {mobileOpen && (
-        <div
-          className="fixed inset-0 z-[1200] bg-black/40 md:hidden"
-          onClick={() => setMobileOpen(false)}
-          role="dialog"
-          aria-modal="true"
-        >
+        {mobileOpen && (
           <div
-            className="absolute inset-y-0 left-0 w-72 overflow-y-auto bg-(--color-surface) p-4"
-            onClick={(e) => e.stopPropagation()}
+            className="fixed inset-0 z-[1200] bg-black/40 md:hidden"
+            onClick={() => setMobileOpen(false)}
+            role="dialog"
+            aria-modal="true"
           >
-            <SidebarContent
-              activeSlug={activeSection?.slug}
-              farmName={farm?.name ?? 'Mon exploitation'}
-              onItemClick={() => setMobileOpen(false)}
-            />
+            <div
+              className="absolute inset-y-0 left-0 w-72 overflow-y-auto bg-(--color-surface) p-4"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <SidebarContent
+                activeSlug={activeSection?.slug}
+                farmName={farm?.name ?? 'Mon exploitation'}
+                onItemClick={() => setMobileOpen(false)}
+              />
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Zone centrale */}
-      <main className="min-w-0 flex-1">
-        <header className="mb-5 hidden md:block">
-          <h1 className="m-0 text-xl font-semibold">{activeSection?.label ?? 'Paramètres'}</h1>
-          {activeSection?.description && (
-            <p className="m-0 mt-0.5 text-sm text-(--color-muted)">{activeSection.description}</p>
-          )}
-        </header>
-        <Outlet />
-      </main>
-    </div>
+        {/* Zone centrale. Sections avec toolbar (Produits/Cultures) consomment l'engrenage
+            via useOutletContext. Sections avec SectionCard l'injectent dans le header
+            via useParametresMobileSelector(). pt-2 mobile pour aérer le bloc sous topbar. */}
+        <main className="min-w-0 flex-1 pt-2 md:pt-0">
+          <Outlet
+            context={{ mobileSelector: mobileSelectorButton } satisfies ParametresOutletContext}
+          />
+        </main>
+      </div>
+    </ParametresMobileSelectorProvider>
   );
 }
 

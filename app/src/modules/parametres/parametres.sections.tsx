@@ -95,8 +95,8 @@ export const PARAMETRES_SECTIONS: ReadonlyArray<ParametresSection> = [
   },
   {
     slug: 'produits',
-    label: 'Catalogue produits',
-    description: 'Phytos OFAG, engrais, semences',
+    label: 'Catalogue',
+    description: 'Phytos OFAG, engrais, semences, prestations',
     group: 'donnees',
     module: 'parametres',
     requiredLevel: 'read',
@@ -121,20 +121,6 @@ export const PARAMETRES_SECTIONS: ReadonlyArray<ParametresSection> = [
         <circle cx="7" cy="9" r="1.5" />
         <circle cx="13" cy="9" r="1.5" />
         <path d="M16 12h4M16 16h3" />
-      </svg>
-    ),
-  },
-  {
-    slug: 'travaux',
-    label: 'Travaux pour tiers',
-    description: 'Types de prestations, tarifs, clients',
-    group: 'donnees',
-    module: 'parametres',
-    requiredLevel: 'read',
-    icon: (
-      <svg {...ICON_PROPS}>
-        <rect x="2" y="7" width="20" height="14" rx="2" />
-        <path d="M16 3v4M8 3v4M2 13h20" />
       </svg>
     ),
   },

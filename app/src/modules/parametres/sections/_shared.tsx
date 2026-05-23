@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { useParametresMobileSelector } from '../parametres.context';
 
 export function SectionCard({
   title,
@@ -11,10 +12,17 @@ export function SectionCard({
   children: ReactNode;
   actions?: ReactNode;
 }) {
+  const mobileSelector = useParametresMobileSelector();
+  const hasHeader = Boolean(title || actions);
   return (
-    <section className="rounded-(--radius) border border-(--color-border) bg-(--color-surface) p-5">
-      {(title || actions) && (
-        <header className="mb-4 flex flex-wrap items-start justify-between gap-2">
+    <section className="relative rounded-(--radius) border border-(--color-border) bg-(--color-surface) p-5">
+      {/* Engrenage paramètres : top-right absolu, hors flux du header pour ne
+          pas se mélanger aux `actions` ni wrapper sur viewport étroit. */}
+      {mobileSelector && (
+        <div className="absolute right-3 top-3 z-10 md:hidden">{mobileSelector}</div>
+      )}
+      {hasHeader && (
+        <header className="mb-4 flex flex-wrap items-start justify-between gap-2 pr-12 md:pr-0">
           <div>
             {title && (
               <h2 className="m-0 text-sm font-semibold tracking-wider text-(--color-muted) uppercase">
