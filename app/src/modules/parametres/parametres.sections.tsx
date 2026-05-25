@@ -110,7 +110,7 @@ export const PARAMETRES_SECTIONS: ReadonlyArray<ParametresSection> = [
   },
   {
     slug: 'clients',
-    label: 'Annuaire clients',
+    label: 'Clients',
     description: 'Clients tiers facturés, mappés res.partner Odoo',
     group: 'donnees',
     module: 'parametres',

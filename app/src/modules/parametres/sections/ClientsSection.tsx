@@ -48,7 +48,7 @@ export function ClientsSection() {
   return (
     <div className="space-y-4">
       <SectionCard
-        title={`Annuaire clients — ${filtered.length}`}
+        title={`Clients — ${filtered.length}`}
         description="Clients tiers facturés via les bons de travail. Mappés vers res.partner Odoo (Phase 3)."
         actions={
           canWrite && (

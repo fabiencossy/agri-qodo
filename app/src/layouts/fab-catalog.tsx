@@ -365,7 +365,7 @@ export const FAB_SECTORS: FabSector[] = [
   },
   {
     id: 'annuaire',
-    label: 'Annuaire clients',
+    label: 'Clients',
     color: '#9333ea',
     icon: I.users,
     actions: [],
