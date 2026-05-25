@@ -1,18 +1,16 @@
 /**
- * Client XML-RPC Odoo minimal — usage côté navigateur.
+ * Client XML-RPC Odoo — usage côté navigateur via proxy Vercel Edge.
  *
- * Couvre les deux appels du test de connexion :
+ * Couvre :
  *   - `version()` sur /xmlrpc/2/common (sans auth)
  *   - `authenticate(db, login, key)` sur /xmlrpc/2/common (retourne uid > 0)
+ *   - `execute_kw(db, uid, key, model, method, args, kwargs?)` sur
+ *     /xmlrpc/2/object — utilisé pour search_read, create, write, unlink…
  *
  * Les requêtes passent par notre Vercel Edge Function `/api/odoo-proxy` car
  * Odoo SaaS (*.odoo.com) ne renvoie pas d'en-têtes CORS pour les origines
  * tierces. Le proxy whiteliste les domaines Odoo autorisés et limite
  * l'endpoint au path /xmlrpc/*.
- *
- * Limitations volontaires (Phase 3 = sync complet via Edge Function dédiée) :
- *   - Pas de support des types XML-RPC complexes en argument (struct ≠ vide,
- *     array, dateTime). Suffit pour version + authenticate.
  */
 
 const PROXY_BASE = '/api/odoo-proxy';
@@ -116,6 +114,63 @@ async function callAuthenticate(
   if (typeof result === 'number') return result;
   if (result === false) return 0;
   return 0;
+}
+
+/* ─── execute_kw — appel générique méthode modèle Odoo ────────────────── */
+
+/**
+ * Appel ORM Odoo. Exemples :
+ *   executeKw(conn, uid, 'res.partner', 'search_read',
+ *     [[['is_company', '=', true]]],
+ *     { fields: ['id','name','email'], limit: 1000 })
+ *   executeKw(conn, uid, 'res.partner', 'create', [{ name: 'X', email: 'a@b' }])
+ *   executeKw(conn, uid, 'res.partner', 'write', [[42], { phone: '0...' }])
+ */
+export async function executeKw(
+  details: OdooConnectionDetails,
+  uid: number,
+  model: string,
+  method: string,
+  args: unknown[],
+  kwargs?: Record<string, unknown>,
+): Promise<unknown> {
+  const base = details.url.replace(/\/+$/, '');
+  const payload = `<?xml version="1.0"?>
+<methodCall>
+  <methodName>execute_kw</methodName>
+  <params>
+    <param><value><string>${escapeXml(details.database)}</string></value></param>
+    <param><value><int>${uid}</int></value></param>
+    <param><value><string>${escapeXml(details.apiKey)}</string></value></param>
+    <param><value><string>${escapeXml(model)}</string></value></param>
+    <param><value><string>${escapeXml(method)}</string></value></param>
+    <param>${valueToXml(args)}</param>
+    <param>${valueToXml(kwargs ?? {})}</param>
+  </params>
+</methodCall>`;
+  return await xmlrpcCall(`${base}/xmlrpc/2/object`, payload);
+}
+
+/** Sérialise une valeur JS vers <value>…</value> XML-RPC. */
+function valueToXml(v: unknown): string {
+  if (v === null || v === undefined) return '<value><nil/></value>';
+  if (typeof v === 'boolean') return `<value><boolean>${v ? 1 : 0}</boolean></value>`;
+  if (typeof v === 'number') {
+    if (Number.isInteger(v)) return `<value><int>${v}</int></value>`;
+    return `<value><double>${v}</double></value>`;
+  }
+  if (typeof v === 'string') return `<value><string>${escapeXml(v)}</string></value>`;
+  if (Array.isArray(v)) {
+    const inner = v.map((it) => valueToXml(it)).join('');
+    return `<value><array><data>${inner}</data></array></value>`;
+  }
+  if (typeof v === 'object') {
+    const members = Object.entries(v as Record<string, unknown>)
+      .map(([k, val]) => `<member><name>${escapeXml(k)}</name>${valueToXml(val)}</member>`)
+      .join('');
+    return `<value><struct>${members}</struct></value>`;
+  }
+  return '<value><string/></value>';
 }
 
 /* ─── Transport + parsing ─────────────────────────────────────────────── */

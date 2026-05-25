@@ -17,13 +17,69 @@ import {
   Field,
 } from './_shared';
 import { inputClass } from './_styles';
+import { useIntegrations } from '../integrations.store';
+import {
+  pullFromOdoo,
+  pushToOdoo,
+  syncBidirectional,
+  type SyncResult,
+  type SyncFailure,
+} from '../clients-odoo-sync';
+import { notify } from '../../../layouts/notice.store';
 
 export function ClientsSection() {
   const canWrite = useCan('parametres', 'admin');
   const clients = useClients();
+  const { odoo } = useIntegrations();
   const [editing, setEditing] = useState<Partial<ThirdPartyClient> | null>(null);
   const [search, setSearch] = useState('');
   const [showArchived, setShowArchived] = useState(false);
+  const [syncing, setSyncing] = useState<null | 'pull' | 'push' | 'sync'>(null);
+  const [lastSync, setLastSync] = useState<{ at: string; result: SyncResult } | null>(() => {
+    try {
+      const raw = localStorage.getItem('agriqodo.clients-sync.last');
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  const odooReady = Boolean(odoo.enabled && odoo.url && odoo.database && odoo.login && odoo.apiKey);
+
+  const runSync = async (mode: 'pull' | 'push' | 'sync') => {
+    if (!odooReady) {
+      notify("Configurez d'abord Odoo dans Paramètres → Intégration Odoo.", 'error');
+      return;
+    }
+    setSyncing(mode);
+    const conn = {
+      url: odoo.url,
+      database: odoo.database,
+      login: odoo.login,
+      apiKey: odoo.apiKey,
+    };
+    let result: SyncResult | SyncFailure;
+    if (mode === 'pull') result = await pullFromOdoo(conn);
+    else if (mode === 'push') result = await pushToOdoo(conn);
+    else result = await syncBidirectional(conn);
+    setSyncing(null);
+    if (result.ok) {
+      const at = new Date().toISOString();
+      const stored = { at, result };
+      try {
+        localStorage.setItem('agriqodo.clients-sync.last', JSON.stringify(stored));
+      } catch {
+        /* ignore quota */
+      }
+      setLastSync(stored);
+      const msg = `Sync OK — ${result.pulled} importé(s), ${result.pushed} envoyé(s), ${result.updated} mis à jour${
+        result.errors.length ? ` · ${result.errors.length} erreur(s)` : ''
+      }`;
+      notify(msg, result.errors.length ? 'info' : 'success');
+    } else {
+      notify(`Sync échouée (${result.stage}) — ${result.message}`, 'error');
+    }
+  };
 
   const filtered = useMemo(() => {
     const lc = search.toLowerCase().trim();
@@ -47,6 +103,59 @@ export function ClientsSection() {
 
   return (
     <div className="space-y-4">
+      {/* Bandeau sync Odoo bidirectionnel */}
+      <SectionCard
+        title="Synchronisation Odoo"
+        description={
+          odooReady
+            ? "Sync bidirectionnel res.partner ↔ Clients AgriQodo. Pull = importer Odoo → local. Push = envoyer local → Odoo. Sync = les deux dans l'ordre."
+            : "Configurez d'abord Paramètres → Intégration Odoo (URL, base, login, clé API) pour activer la synchronisation."
+        }
+      >
+        <div className="flex flex-wrap items-center gap-2">
+          <PrimaryButton onClick={() => runSync('sync')} disabled={!odooReady || syncing !== null}>
+            {syncing === 'sync' ? 'Synchro en cours…' : '↔ Synchroniser maintenant'}
+          </PrimaryButton>
+          <SecondaryButton
+            onClick={() => runSync('pull')}
+            disabled={!odooReady || syncing !== null}
+          >
+            {syncing === 'pull' ? 'Pull…' : '↓ Importer depuis Odoo'}
+          </SecondaryButton>
+          <SecondaryButton
+            onClick={() => runSync('push')}
+            disabled={!odooReady || syncing !== null || !canWrite}
+          >
+            {syncing === 'push' ? 'Push…' : '↑ Envoyer vers Odoo'}
+          </SecondaryButton>
+          {lastSync && (
+            <span className="ml-auto text-[11px] text-(--color-muted)">
+              Dernière sync :{' '}
+              {new Date(lastSync.at).toLocaleString('fr-CH', {
+                dateStyle: 'short',
+                timeStyle: 'short',
+              })}
+              {' · '}
+              {lastSync.result.pulled} importé(s), {lastSync.result.pushed} envoyé(s),{' '}
+              {lastSync.result.updated} mis à jour
+              {lastSync.result.errors.length > 0 && ` · ${lastSync.result.errors.length} erreur(s)`}
+            </span>
+          )}
+        </div>
+        {lastSync && lastSync.result.errors.length > 0 && (
+          <details className="mt-3 text-xs">
+            <summary className="cursor-pointer text-(--color-muted)">
+              Voir les {lastSync.result.errors.length} erreur(s)
+            </summary>
+            <ul className="m-0 mt-2 list-disc space-y-1 pl-5 text-(--color-error)">
+              {lastSync.result.errors.slice(0, 20).map((e, i) => (
+                <li key={i}>{e}</li>
+              ))}
+            </ul>
+          </details>
+        )}
+      </SectionCard>
+
       <SectionCard
         title={`Clients — ${filtered.length}`}
         description="Clients tiers facturés via les bons de travail. Mappés vers res.partner Odoo (Phase 3)."
