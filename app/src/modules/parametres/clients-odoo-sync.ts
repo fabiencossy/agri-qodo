@@ -37,12 +37,14 @@ export interface SyncFailure {
   message: string;
 }
 
+// Champs sûrs sur Odoo SaaS 17/18/19 (community + entreprise). Le champ
+// `mobile` est absent dans certaines installations (KeyError au search_read)
+// — on s'en passe et on retombe sur `phone` seul.
 const PARTNER_FIELDS = [
   'id',
   'name',
   'email',
   'phone',
-  'mobile',
   'city',
   'vat',
   'active',
@@ -56,7 +58,6 @@ interface OdooPartner {
   name: string;
   email: string | false;
   phone: string | false;
-  mobile: string | false;
   city: string | false;
   vat: string | false;
   active: boolean;
@@ -127,7 +128,7 @@ export async function pullFromOdoo(conn: OdooConnectionDetails): Promise<SyncRes
         const fields: Partial<ThirdPartyClient> = {
           name: p.name,
           email: s(p.email),
-          phone: s(p.phone) ?? s(p.mobile),
+          phone: s(p.phone),
           city: s(p.city),
           vatNumber: s(p.vat),
           notes: s(p.comment),

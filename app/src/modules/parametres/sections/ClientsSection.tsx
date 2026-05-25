@@ -1,21 +1,16 @@
 /**
- * Section Paramètres → Annuaire clients (res.partner Odoo).
+ * Section Paramètres → Clients (res.partner Odoo).
  *
- * Extrait depuis TravauxConfigSection. Liste + CRUD clients tiers utilisés
- * dans le module Travaux + Parcellaire (panneau de droite).
+ * Pattern aligné sur ProduitsSection : DataTable + SearchBar + bouton inline.
+ * Bandeau "Synchronisation Odoo" séparé en tête. Lignes erreur via toast
+ * global (notify), pas inline.
  */
 import { useMemo, useState } from 'react';
+import { useOutletContext } from 'react-router-dom';
 import { useClients, addClient, updateClient, removeClient } from '../../travaux/travaux.store';
 import type { ThirdPartyClient } from '../../travaux/travaux.types';
 import { useCan } from '../../users/permissions';
-import {
-  SectionCard,
-  PrimaryButton,
-  SecondaryButton,
-  DangerButton,
-  EmptyState,
-  Field,
-} from './_shared';
+import { SectionCard, PrimaryButton, SecondaryButton, Field } from './_shared';
 import { inputClass } from './_styles';
 import { useIntegrations } from '../integrations.store';
 import {
@@ -26,14 +21,17 @@ import {
   type SyncFailure,
 } from '../clients-odoo-sync';
 import { notify } from '../../../layouts/notice.store';
+import { DataTable, type Column } from '../../../components/DataTable';
+import { SearchBar, type FieldDescriptor, type SearchState } from '../../../components/SearchBar';
+import type { ParametresOutletContext } from '../ParametresLayout';
 
 export function ClientsSection() {
+  const { mobileSelector } = useOutletContext<ParametresOutletContext>();
   const canWrite = useCan('parametres', 'admin');
   const clients = useClients();
   const { odoo } = useIntegrations();
   const [editing, setEditing] = useState<Partial<ThirdPartyClient> | null>(null);
-  const [search, setSearch] = useState('');
-  const [showArchived, setShowArchived] = useState(false);
+  const [searchState, setSearchState] = useState<SearchState>({ facets: [], groupBy: [] });
   const [syncing, setSyncing] = useState<null | 'pull' | 'push' | 'sync'>(null);
   const [lastSync, setLastSync] = useState<{ at: string; result: SyncResult } | null>(() => {
     try {
@@ -72,28 +70,82 @@ export function ClientsSection() {
         /* ignore quota */
       }
       setLastSync(stored);
-      const msg = `Sync OK — ${result.pulled} importé(s), ${result.pushed} envoyé(s), ${result.updated} mis à jour${
-        result.errors.length ? ` · ${result.errors.length} erreur(s)` : ''
-      }`;
-      notify(msg, result.errors.length ? 'info' : 'success');
+      notify(
+        `Sync OK — ${result.pulled} importé(s), ${result.pushed} envoyé(s), ${result.updated} mis à jour${
+          result.errors.length ? ` · ${result.errors.length} erreur(s)` : ''
+        }`,
+        result.errors.length ? 'info' : 'success',
+      );
     } else {
+      // Message court pour le toast (premier ~200 caractères, le reste est tronqué
+      // par NoticeHost qui propose "Voir détails").
       notify(`Sync échouée (${result.stage}) — ${result.message}`, 'error');
     }
   };
 
+  // ─── Filtres SearchBar ──────────────────────────────────────────────
+  const fields: FieldDescriptor[] = useMemo(
+    () => [
+      { id: 'city', label: 'Ville', type: 'text' },
+      { id: 'vat', label: 'IDE/TVA', type: 'text' },
+      {
+        id: 'status',
+        label: 'Statut',
+        type: 'select',
+        options: [
+          { label: 'Actif', value: 'active' },
+          { label: 'Archivé', value: 'archived' },
+        ],
+        groupable: true,
+      },
+      {
+        id: 'odoo',
+        label: 'Sync Odoo',
+        type: 'select',
+        options: [
+          { label: 'Synchronisé', value: 'yes' },
+          { label: 'Non synchronisé', value: 'no' },
+        ],
+      },
+    ],
+    [],
+  );
+
   const filtered = useMemo(() => {
-    const lc = search.toLowerCase().trim();
-    return clients
-      .filter((c) => (showArchived ? true : c.active))
-      .filter((c) =>
-        !lc
-          ? true
-          : c.name.toLowerCase().includes(lc) ||
-            (c.city ?? '').toLowerCase().includes(lc) ||
-            (c.email ?? '').toLowerCase().includes(lc) ||
-            (c.vatNumber ?? '').toLowerCase().includes(lc),
-      );
-  }, [clients, search, showArchived]);
+    const q = (searchState.query ?? '').toLowerCase().trim();
+    return clients.filter((c) => {
+      if (q) {
+        const hay =
+          `${c.name} ${c.city ?? ''} ${c.email ?? ''} ${c.phone ?? ''} ${c.vatNumber ?? ''}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      for (const facet of searchState.facets) {
+        if (facet.values.length === 0) continue;
+        if (facet.fieldId === 'city') {
+          if (
+            !facet.values.some((v) =>
+              (c.city ?? '').toLowerCase().includes(String(v).toLowerCase()),
+            )
+          )
+            return false;
+        } else if (facet.fieldId === 'vat') {
+          if (
+            !facet.values.some((v) =>
+              (c.vatNumber ?? '').toLowerCase().includes(String(v).toLowerCase()),
+            )
+          )
+            return false;
+        } else if (facet.fieldId === 'status') {
+          const status = c.active ? 'active' : 'archived';
+          if (!facet.values.includes(status)) return false;
+        } else if (facet.fieldId === 'odoo') {
+          const synced = typeof c.odooPartnerId === 'number';
+          if (!facet.values.includes(synced ? 'yes' : 'no')) return false;
+        }
+      }
+      return true;
+    });
+  }, [clients, searchState]);
 
   const handleDelete = (c: ThirdPartyClient) => {
     if (confirm(`Supprimer le client ${c.name} ?`)) {
@@ -101,20 +153,36 @@ export function ClientsSection() {
     }
   };
 
+  const activeCount = clients.filter((c) => c.active).length;
+  const syncedCount = clients.filter((c) => typeof c.odooPartnerId === 'number').length;
+
+  const newClientButton = canWrite ? (
+    <button
+      type="button"
+      onClick={() => setEditing({ active: true })}
+      aria-label="Nouveau client"
+      title="Nouveau client"
+      className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-(--radius) border border-(--color-primary) bg-(--color-primary) px-3 text-sm font-medium text-white hover:bg-(--color-primary-hover)"
+    >
+      <span aria-hidden>+</span>
+      <span className="hidden md:inline">Nouveau client</span>
+    </button>
+  ) : null;
+
   return (
-    <div className="space-y-4">
-      {/* Bandeau sync Odoo bidirectionnel */}
+    <div className="flex flex-col gap-4">
+      {/* Bandeau sync Odoo bidirectionnel — affiché en tête, séparé de la liste. */}
       <SectionCard
         title="Synchronisation Odoo"
         description={
           odooReady
-            ? "Sync bidirectionnel res.partner ↔ Clients AgriQodo. Pull = importer Odoo → local. Push = envoyer local → Odoo. Sync = les deux dans l'ordre."
-            : "Configurez d'abord Paramètres → Intégration Odoo (URL, base, login, clé API) pour activer la synchronisation."
+            ? 'Sync bidirectionnel res.partner ↔ Clients AgriQodo.'
+            : "Configurez d'abord Paramètres → Intégration Odoo pour activer la synchronisation."
         }
       >
         <div className="flex flex-wrap items-center gap-2">
           <PrimaryButton onClick={() => runSync('sync')} disabled={!odooReady || syncing !== null}>
-            {syncing === 'sync' ? 'Synchro en cours…' : '↔ Synchroniser maintenant'}
+            {syncing === 'sync' ? 'Synchro…' : '↔ Synchroniser'}
           </PrimaryButton>
           <SecondaryButton
             onClick={() => runSync('pull')}
@@ -136,96 +204,209 @@ export function ClientsSection() {
                 timeStyle: 'short',
               })}
               {' · '}
-              {lastSync.result.pulled} importé(s), {lastSync.result.pushed} envoyé(s),{' '}
-              {lastSync.result.updated} mis à jour
-              {lastSync.result.errors.length > 0 && ` · ${lastSync.result.errors.length} erreur(s)`}
+              {lastSync.result.pulled} importés, {lastSync.result.pushed} envoyés
             </span>
           )}
         </div>
-        {lastSync && lastSync.result.errors.length > 0 && (
-          <details className="mt-3 text-xs">
-            <summary className="cursor-pointer text-(--color-muted)">
-              Voir les {lastSync.result.errors.length} erreur(s)
-            </summary>
-            <ul className="m-0 mt-2 list-disc space-y-1 pl-5 text-(--color-error)">
-              {lastSync.result.errors.slice(0, 20).map((e, i) => (
-                <li key={i}>{e}</li>
-              ))}
-            </ul>
-          </details>
-        )}
       </SectionCard>
 
-      <SectionCard
-        title={`Clients — ${filtered.length}`}
-        description="Clients tiers facturés via les bons de travail. Mappés vers res.partner Odoo (Phase 3)."
-        actions={
-          canWrite && (
-            <PrimaryButton onClick={() => setEditing({ active: true })}>
-              + Nouveau client
-            </PrimaryButton>
-          )
-        }
-      >
-        <div className="mb-3 flex flex-wrap items-center gap-3">
-          <input
-            type="search"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Rechercher (nom, ville, email, IDE)"
-            className={`${inputClass} max-w-sm flex-1`}
-          />
-          <label className="inline-flex items-center gap-2 text-xs text-(--color-muted)">
-            <input
-              type="checkbox"
-              checked={showArchived}
-              onChange={(e) => setShowArchived(e.target.checked)}
-              className="h-4 w-4 accent-(--color-primary)"
+      {/* Liste clients — DataTable style ProduitsSection */}
+      <div className="flex flex-col">
+        {/* Toolbar desktop */}
+        <div className="sticky top-0 z-10 hidden items-center gap-3 border-b border-(--color-border) bg-(--color-bg) py-2 md:flex">
+          <div className="shrink-0">
+            <h2 className="m-0 text-sm font-semibold">Clients</h2>
+            <span className="text-[11px] text-(--color-muted)">
+              {activeCount} actifs · {syncedCount} synchronisés Odoo · {clients.length} total
+            </span>
+          </div>
+          <div className="min-w-0 flex-1">
+            <SearchBar
+              fields={fields}
+              value={searchState}
+              onChange={setSearchState}
+              ariaLabel="Rechercher dans les clients"
             />
-            Afficher les archivés
-          </label>
+          </div>
+          {newClientButton}
         </div>
 
-        {filtered.length === 0 ? (
-          <EmptyState>Aucun client ne correspond.</EmptyState>
-        ) : (
-          <ul className="m-0 list-none space-y-2 p-0">
-            {filtered.map((c) => (
-              <li
-                key={c.id}
-                className="flex items-center gap-3 rounded-(--radius-sm) border border-(--color-border) bg-(--color-surface) p-3"
-              >
+        {/* Toolbar mobile */}
+        <div className="sticky top-0 z-10 flex flex-col gap-1 border-b border-(--color-border) bg-(--color-bg) pt-1 pb-1.5 md:hidden">
+          <div className="flex items-center gap-2">
+            <div className="min-w-0 flex-1">
+              <SearchBar
+                fields={fields}
+                value={searchState}
+                onChange={setSearchState}
+                ariaLabel="Rechercher dans les clients"
+              />
+            </div>
+            {newClientButton}
+            {mobileSelector}
+          </div>
+          <span className="px-1 text-[10px] text-(--color-muted)">
+            {activeCount} actifs · {syncedCount} synchronisés
+          </span>
+        </div>
+
+        <div className="pt-1.5">
+          <DataTable<ThirdPartyClient>
+            rows={filtered}
+            getId={(c) => c.id}
+            emptyMessage="Aucun client pour ce filtre."
+            entityLabel="client"
+            columns={clientColumns({ canWrite, setEditing, handleDelete })}
+            onRowClick={(c) => setEditing(c)}
+            renderMobileCard={(c, { checkbox }) => (
+              <>
+                <div className="shrink-0 pt-0.5">{checkbox}</div>
                 <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm font-medium">{c.name}</div>
-                  <div className="truncate text-[11px] text-(--color-muted)">
+                  <div className="flex items-center gap-1.5">
+                    <span className="min-w-0 flex-1 truncate text-sm font-semibold">{c.name}</span>
+                    {typeof c.odooPartnerId === 'number' && (
+                      <span
+                        title={`Odoo res.partner #${c.odooPartnerId}`}
+                        className="rounded-(--radius-pill) bg-(--color-primary)/12 px-1.5 py-0.5 text-[9px] font-semibold tracking-wider text-(--color-primary) uppercase"
+                      >
+                        Odoo
+                      </span>
+                    )}
+                    {!c.active && (
+                      <span className="rounded-(--radius-pill) bg-[#e5e5e5] px-1.5 py-0.5 text-[9px] font-semibold tracking-wider text-(--color-muted) uppercase">
+                        Archivé
+                      </span>
+                    )}
+                  </div>
+                  <div className="mt-0.5 truncate text-[11px] text-(--color-muted)">
                     {c.city ?? '—'}
                     {c.email && ` · ${c.email}`}
                     {c.phone && ` · ${c.phone}`}
-                    {c.vatNumber && ` · ${c.vatNumber}`}
-                    {!c.active && ' · ARCHIVÉ'}
                   </div>
+                  {c.vatNumber && (
+                    <div className="mt-0.5 font-mono text-[11px] text-(--color-muted)">
+                      {c.vatNumber}
+                    </div>
+                  )}
                 </div>
-                <SecondaryButton onClick={() => setEditing(c)} disabled={!canWrite}>
-                  {canWrite ? 'Modifier' : 'Voir'}
-                </SecondaryButton>
-                {canWrite && (
-                  <DangerButton
-                    onClick={() => handleDelete(c)}
-                    className="!h-9 !w-9 !justify-center !px-0"
-                    aria-label={`Supprimer ${c.name}`}
-                  >
-                    ×
-                  </DangerButton>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
+              </>
+            )}
+          />
+        </div>
+      </div>
 
-        {editing && <ClientEditModal initial={editing} onClose={() => setEditing(null)} />}
-      </SectionCard>
+      {editing && <ClientEditModal initial={editing} onClose={() => setEditing(null)} />}
     </div>
   );
+}
+
+/** Définition des colonnes de la table Clients. */
+function clientColumns(opts: {
+  canWrite: boolean;
+  setEditing: (c: Partial<ThirdPartyClient>) => void;
+  handleDelete: (c: ThirdPartyClient) => void;
+}): Column<ThirdPartyClient>[] {
+  const { canWrite, setEditing, handleDelete } = opts;
+  return [
+    {
+      key: 'name',
+      label: 'Nom',
+      render: (c) => (
+        <div className="min-w-0">
+          <div className="flex items-center gap-1.5">
+            <span className="truncate font-medium">{c.name}</span>
+            {typeof c.odooPartnerId === 'number' && (
+              <span
+                title={`Odoo res.partner #${c.odooPartnerId}`}
+                className="shrink-0 rounded-(--radius-pill) bg-(--color-primary)/12 px-1.5 py-0.5 text-[9px] font-semibold tracking-wider text-(--color-primary) uppercase"
+              >
+                Odoo
+              </span>
+            )}
+          </div>
+          {c.email && <div className="truncate text-[11px] text-(--color-muted)">{c.email}</div>}
+        </div>
+      ),
+    },
+    {
+      key: 'city',
+      label: 'Ville',
+      render: (c) => (c.city ? c.city : <span className="text-(--color-muted)">—</span>),
+    },
+    {
+      key: 'phone',
+      label: 'Téléphone',
+      render: (c) =>
+        c.phone ? (
+          <span className="font-mono text-xs">{c.phone}</span>
+        ) : (
+          <span className="text-(--color-muted)">—</span>
+        ),
+    },
+    {
+      key: 'vat',
+      label: 'IDE / TVA',
+      render: (c) =>
+        c.vatNumber ? (
+          <span className="font-mono text-xs">{c.vatNumber}</span>
+        ) : (
+          <span className="text-(--color-muted)">—</span>
+        ),
+    },
+    {
+      key: 'status',
+      label: 'Statut',
+      render: (c) =>
+        c.active ? (
+          <span className="rounded-(--radius-pill) bg-(--color-success)/12 px-2 py-0.5 text-[10px] font-semibold tracking-wider text-[#166534] uppercase">
+            Actif
+          </span>
+        ) : (
+          <span className="rounded-(--radius-pill) bg-[#e5e5e5] px-2 py-0.5 text-[10px] font-semibold tracking-wider text-(--color-muted) uppercase">
+            Archivé
+          </span>
+        ),
+    },
+    {
+      key: 'actions',
+      label: '',
+      align: 'right',
+      render: (c) => (
+        <div className="flex items-center justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
+          <button
+            type="button"
+            onClick={() => setEditing(c)}
+            disabled={!canWrite}
+            className="rounded-(--radius) border border-(--color-border) bg-white px-2 py-1 text-xs font-medium hover:bg-[#fbfbf9] disabled:opacity-50"
+          >
+            Modifier
+          </button>
+          {canWrite && (
+            <button
+              type="button"
+              onClick={() => handleDelete(c)}
+              aria-label={`Supprimer ${c.name}`}
+              className="inline-flex h-7 w-7 items-center justify-center rounded-(--radius) text-(--color-error) hover:bg-[#fef2f2]"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                width={14}
+                height={14}
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={1.75}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2M6 6l1 14a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-14" />
+                <path d="M10 11v6M14 11v6" />
+              </svg>
+            </button>
+          )}
+        </div>
+      ),
+    },
+  ];
 }
 
 function ClientEditModal({
@@ -270,6 +451,14 @@ function ClientEditModal({
           <h2 className="m-0 text-sm font-semibold">
             {isExisting ? 'Modifier le client' : 'Nouveau client'}
           </h2>
+          {typeof draft.odooPartnerId === 'number' && (
+            <span
+              title={`Odoo res.partner #${draft.odooPartnerId}`}
+              className="rounded-(--radius-pill) bg-(--color-primary)/12 px-1.5 py-0.5 text-[10px] font-semibold tracking-wider text-(--color-primary) uppercase"
+            >
+              Odoo #{draft.odooPartnerId}
+            </span>
+          )}
           <button
             type="button"
             onClick={onClose}
