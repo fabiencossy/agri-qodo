@@ -5,25 +5,23 @@
  * Bandeau "Synchronisation Odoo" séparé en tête. Lignes erreur via toast
  * global (notify), pas inline.
  */
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { useClients, addClient, updateClient, removeClient } from '../../travaux/travaux.store';
 import type { ThirdPartyClient } from '../../travaux/travaux.types';
 import { useCan } from '../../users/permissions';
-import { SectionCard, PrimaryButton, SecondaryButton, Field } from './_shared';
+import { Field } from './_shared';
 import { inputClass } from './_styles';
 import { useIntegrations } from '../integrations.store';
-import {
-  pullFromOdoo,
-  pushToOdoo,
-  syncBidirectional,
-  type SyncResult,
-  type SyncFailure,
-} from '../clients-odoo-sync';
+import { syncBidirectional } from '../clients-odoo-sync';
 import { notify } from '../../../layouts/notice.store';
 import { DataTable, type Column } from '../../../components/DataTable';
 import { SearchBar, type FieldDescriptor, type SearchState } from '../../../components/SearchBar';
 import type { ParametresOutletContext } from '../ParametresLayout';
+
+/** Intervalle minimum entre deux auto-sync (10 min). */
+const AUTO_SYNC_MIN_MS = 10 * 60 * 1000;
+const LAST_SYNC_KEY = 'agriqodo.clients-sync.last';
 
 export function ClientsSection() {
   const { mobileSelector } = useOutletContext<ParametresOutletContext>();
@@ -32,56 +30,80 @@ export function ClientsSection() {
   const { odoo } = useIntegrations();
   const [editing, setEditing] = useState<Partial<ThirdPartyClient> | null>(null);
   const [searchState, setSearchState] = useState<SearchState>({ facets: [], groupBy: [] });
-  const [syncing, setSyncing] = useState<null | 'pull' | 'push' | 'sync'>(null);
-  const [lastSync, setLastSync] = useState<{ at: string; result: SyncResult } | null>(() => {
-    try {
-      const raw = localStorage.getItem('agriqodo.clients-sync.last');
-      return raw ? JSON.parse(raw) : null;
-    } catch {
-      return null;
-    }
-  });
 
   const odooReady = Boolean(odoo.enabled && odoo.url && odoo.database && odoo.login && odoo.apiKey);
 
-  const runSync = async (mode: 'pull' | 'push' | 'sync') => {
-    if (!odooReady) {
-      notify("Configurez d'abord Odoo dans Paramètres → Intégration Odoo.", 'error');
-      return;
-    }
-    setSyncing(mode);
-    const conn = {
-      url: odoo.url,
-      database: odoo.database,
-      login: odoo.login,
-      apiKey: odoo.apiKey,
-    };
-    let result: SyncResult | SyncFailure;
-    if (mode === 'pull') result = await pullFromOdoo(conn);
-    else if (mode === 'push') result = await pushToOdoo(conn);
-    else result = await syncBidirectional(conn);
-    setSyncing(null);
-    if (result.ok) {
-      const at = new Date().toISOString();
-      const stored = { at, result };
-      try {
-        localStorage.setItem('agriqodo.clients-sync.last', JSON.stringify(stored));
-      } catch {
-        /* ignore quota */
+  // ─── Auto-sync transparent (background) ───────────────────────────────
+  // Sync silencieux : pas d'UI, juste un toast d'erreur si le sync échoue.
+  // Cadence : au mount si dernière sync > 10 min, et toutes les 10 min ensuite.
+  const lastErrorRef = useRef<number>(0);
+  useEffect(() => {
+    if (!odooReady) return;
+    let cancelled = false;
+
+    const runSilent = async () => {
+      const conn = {
+        url: odoo.url,
+        database: odoo.database,
+        login: odoo.login,
+        apiKey: odoo.apiKey,
+      };
+      const result = await syncBidirectional(conn);
+      if (cancelled) return;
+      if (result.ok) {
+        try {
+          localStorage.setItem(
+            LAST_SYNC_KEY,
+            JSON.stringify({ at: new Date().toISOString(), result }),
+          );
+        } catch {
+          /* quota */
+        }
+      } else {
+        // Throttle erreurs : pas plus d'un toast d'erreur toutes les 10 min
+        // pour éviter de spammer en cas d'Odoo inaccessible.
+        const now = Date.now();
+        if (now - lastErrorRef.current > AUTO_SYNC_MIN_MS) {
+          lastErrorRef.current = now;
+          notify(`Sync Odoo échouée — ${result.message}`, 'error');
+        }
       }
-      setLastSync(stored);
-      notify(
-        `Sync OK — ${result.pulled} importé(s), ${result.pushed} envoyé(s), ${result.updated} mis à jour${
-          result.errors.length ? ` · ${result.errors.length} erreur(s)` : ''
-        }`,
-        result.errors.length ? 'info' : 'success',
-      );
-    } else {
-      // Message court pour le toast (premier ~200 caractères, le reste est tronqué
-      // par NoticeHost qui propose "Voir détails").
-      notify(`Sync échouée (${result.stage}) — ${result.message}`, 'error');
+    };
+
+    // Récupère timestamp de la dernière sync OK
+    let lastAtMs = 0;
+    try {
+      const raw = localStorage.getItem(LAST_SYNC_KEY);
+      if (raw) lastAtMs = new Date(JSON.parse(raw).at).getTime();
+    } catch {
+      /* ignore */
     }
-  };
+    if (Date.now() - lastAtMs > AUTO_SYNC_MIN_MS) {
+      void runSilent();
+    }
+
+    // Re-sync sur focus fenêtre + intervalle 10 min
+    const onFocus = () => {
+      let lastMs = 0;
+      try {
+        const raw = localStorage.getItem(LAST_SYNC_KEY);
+        if (raw) lastMs = new Date(JSON.parse(raw).at).getTime();
+      } catch {
+        /* ignore */
+      }
+      if (Date.now() - lastMs > AUTO_SYNC_MIN_MS) void runSilent();
+    };
+    window.addEventListener('focus', onFocus);
+    const intervalId = setInterval(() => {
+      void runSilent();
+    }, AUTO_SYNC_MIN_MS);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener('focus', onFocus);
+      clearInterval(intervalId);
+    };
+  }, [odooReady, odoo.url, odoo.database, odoo.login, odoo.apiKey]);
 
   // ─── Filtres SearchBar ──────────────────────────────────────────────
   const fields: FieldDescriptor[] = useMemo(
@@ -171,46 +193,10 @@ export function ClientsSection() {
 
   return (
     <div className="flex flex-col gap-4">
-      {/* Bandeau sync Odoo bidirectionnel — affiché en tête, séparé de la liste. */}
-      <SectionCard
-        title="Synchronisation Odoo"
-        description={
-          odooReady
-            ? 'Sync bidirectionnel res.partner ↔ Clients AgriQodo.'
-            : "Configurez d'abord Paramètres → Intégration Odoo pour activer la synchronisation."
-        }
-      >
-        <div className="flex flex-wrap items-center gap-2">
-          <PrimaryButton onClick={() => runSync('sync')} disabled={!odooReady || syncing !== null}>
-            {syncing === 'sync' ? 'Synchro…' : '↔ Synchroniser'}
-          </PrimaryButton>
-          <SecondaryButton
-            onClick={() => runSync('pull')}
-            disabled={!odooReady || syncing !== null}
-          >
-            {syncing === 'pull' ? 'Pull…' : '↓ Importer depuis Odoo'}
-          </SecondaryButton>
-          <SecondaryButton
-            onClick={() => runSync('push')}
-            disabled={!odooReady || syncing !== null || !canWrite}
-          >
-            {syncing === 'push' ? 'Push…' : '↑ Envoyer vers Odoo'}
-          </SecondaryButton>
-          {lastSync && (
-            <span className="ml-auto text-[11px] text-(--color-muted)">
-              Dernière sync :{' '}
-              {new Date(lastSync.at).toLocaleString('fr-CH', {
-                dateStyle: 'short',
-                timeStyle: 'short',
-              })}
-              {' · '}
-              {lastSync.result.pulled} importés, {lastSync.result.pushed} envoyés
-            </span>
-          )}
-        </div>
-      </SectionCard>
-
-      {/* Liste clients — DataTable style ProduitsSection */}
+      {/* Liste clients — DataTable style ProduitsSection.
+       * Pas de panel "Synchronisation Odoo" visible : sync bidirectionnel
+       * se fait en arrière-plan toutes les 10 min + au focus. Erreurs via
+       * toast bas-droite uniquement (NoticeHost). */}
       <div className="flex flex-col">
         {/* Toolbar desktop */}
         <div className="sticky top-0 z-10 hidden items-center gap-3 border-b border-(--color-border) bg-(--color-bg) py-2 md:flex">
