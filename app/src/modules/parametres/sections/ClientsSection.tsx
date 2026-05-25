@@ -298,33 +298,57 @@ function clientColumns(opts: {
       key: 'name',
       label: 'Nom',
       render: (c) => (
-        <div className="min-w-0">
-          <div className="flex items-center gap-1.5">
-            <span className="truncate font-medium">{c.name}</span>
-            {typeof c.odooPartnerId === 'number' && (
-              <span
-                title={`Odoo res.partner #${c.odooPartnerId}`}
-                className="shrink-0 rounded-(--radius-pill) bg-(--color-primary)/12 px-1.5 py-0.5 text-[9px] font-semibold tracking-wider text-(--color-primary) uppercase"
-              >
-                Odoo
-              </span>
-            )}
-          </div>
-          {c.email && <div className="truncate text-[11px] text-(--color-muted)">{c.email}</div>}
+        <div className="flex min-w-0 items-center gap-1.5">
+          <span className="truncate font-medium">{c.name}</span>
+          {typeof c.odooPartnerId === 'number' && (
+            <span
+              title={`Odoo res.partner #${c.odooPartnerId}`}
+              className="shrink-0 rounded-(--radius-pill) bg-(--color-primary)/12 px-1.5 py-0.5 text-[9px] font-semibold tracking-wider text-(--color-primary) uppercase"
+            >
+              Odoo
+            </span>
+          )}
         </div>
       ),
     },
     {
+      key: 'email',
+      label: 'Email',
+      render: (c) =>
+        c.email ? (
+          <a
+            href={`mailto:${c.email}`}
+            onClick={(e) => e.stopPropagation()}
+            className="truncate text-(--color-primary) hover:underline"
+          >
+            {c.email}
+          </a>
+        ) : (
+          <span className="text-(--color-muted)">—</span>
+        ),
+    },
+    {
       key: 'city',
       label: 'Ville',
-      render: (c) => (c.city ? c.city : <span className="text-(--color-muted)">—</span>),
+      render: (c) =>
+        c.city ? (
+          <span className="truncate">{c.city}</span>
+        ) : (
+          <span className="text-(--color-muted)">—</span>
+        ),
     },
     {
       key: 'phone',
       label: 'Téléphone',
       render: (c) =>
         c.phone ? (
-          <span className="font-mono text-xs">{c.phone}</span>
+          <a
+            href={`tel:${c.phone}`}
+            onClick={(e) => e.stopPropagation()}
+            className="truncate font-mono text-xs hover:underline"
+          >
+            {c.phone}
+          </a>
         ) : (
           <span className="text-(--color-muted)">—</span>
         ),
@@ -334,7 +358,7 @@ function clientColumns(opts: {
       label: 'IDE / TVA',
       render: (c) =>
         c.vatNumber ? (
-          <span className="font-mono text-xs">{c.vatNumber}</span>
+          <span className="truncate font-mono text-xs">{c.vatNumber}</span>
         ) : (
           <span className="text-(--color-muted)">—</span>
         ),
