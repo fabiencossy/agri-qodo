@@ -5,13 +5,17 @@
  *   - `version()` sur /xmlrpc/2/common (sans auth)
  *   - `authenticate(db, login, key)` sur /xmlrpc/2/common (retourne uid > 0)
  *
- * Limitations volontaires (Phase 3 = sync complet via Edge Function) :
+ * Les requêtes passent par notre Vercel Edge Function `/api/odoo-proxy` car
+ * Odoo SaaS (*.odoo.com) ne renvoie pas d'en-têtes CORS pour les origines
+ * tierces. Le proxy whiteliste les domaines Odoo autorisés et limite
+ * l'endpoint au path /xmlrpc/*.
+ *
+ * Limitations volontaires (Phase 3 = sync complet via Edge Function dédiée) :
  *   - Pas de support des types XML-RPC complexes en argument (struct ≠ vide,
  *     array, dateTime). Suffit pour version + authenticate.
- *   - CORS : nécessite que l'instance Odoo autorise l'origine de l'app. Sans ça,
- *     fetch lèvera une TypeError "Failed to fetch" que le caller doit traduire
- *     en message utilisateur ("CORS non autorisé côté Odoo").
  */
+
+const PROXY_BASE = '/api/odoo-proxy';
 
 export interface OdooConnectionDetails {
   url: string;
@@ -117,13 +121,16 @@ async function callAuthenticate(
 /* ─── Transport + parsing ─────────────────────────────────────────────── */
 
 async function xmlrpcCall(endpoint: string, body: string): Promise<unknown> {
-  const res = await fetch(endpoint, {
+  // Passe par le proxy Vercel Edge pour contourner CORS d'Odoo SaaS.
+  const proxied = `${PROXY_BASE}?url=${encodeURIComponent(endpoint)}`;
+  const res = await fetch(proxied, {
     method: 'POST',
     headers: { 'Content-Type': 'text/xml; charset=utf-8' },
     body,
   });
   if (!res.ok) {
-    throw new Error(`HTTP ${res.status} ${res.statusText}`);
+    const detail = await res.text().catch(() => '');
+    throw new Error(`HTTP ${res.status} ${res.statusText}${detail ? ` — ${detail}` : ''}`);
   }
   const text = await res.text();
   return parseXmlrpcResponse(text);
@@ -204,7 +211,10 @@ function escapeXml(s: string): string {
 function humanizeFetchError(e: unknown, baseUrl: string): string {
   const msg = e instanceof Error ? e.message : String(e);
   if (msg === 'Failed to fetch' || msg.includes('NetworkError')) {
-    return `Impossible de joindre ${baseUrl}. Causes probables : URL erronée, serveur Odoo arrêté, ou CORS non autorisé pour l'origine ${window.location.origin}.`;
+    return `Le proxy /api/odoo-proxy n'a pas pu joindre ${baseUrl}. Vérifiez l'URL et que l'instance Odoo est en ligne.`;
+  }
+  if (msg.includes('403')) {
+    return `Domaine non autorisé par le proxy. ${baseUrl} doit matcher *.odoo.com / *.odoo.sh / odoo.<domaine>.<tld>.`;
   }
   return msg;
 }
