@@ -8,6 +8,7 @@ import {
   type UserMarkerKind,
 } from './userMarkers.store';
 import { useParcels } from './parcellaire.store';
+import { PhotoGallery } from '../photos/PhotoGallery';
 
 const KIND_ORDER: UserMarkerKind[] = ['observation', 'danger', 'note'];
 
@@ -89,27 +90,6 @@ export function UserMarkerModal({ marker, onClose }: Props) {
             </svg>
           </span>
           <h2 className="m-0 flex-1 text-base font-semibold text-(--color-text)">Balise GPS</h2>
-          <button
-            type="button"
-            onClick={del}
-            aria-label="Supprimer la balise"
-            title="Supprimer la balise"
-            className="inline-flex h-9 w-9 items-center justify-center rounded-(--radius-sm) text-(--color-error) hover:bg-[#fef2f2]"
-          >
-            <svg
-              viewBox="0 0 24 24"
-              width={18}
-              height={18}
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={1.75}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2M6 6l1 14a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-14" />
-              <path d="M10 11v6M14 11v6" />
-            </svg>
-          </button>
           <button
             type="button"
             onClick={onClose}
@@ -198,6 +178,8 @@ export function UserMarkerModal({ marker, onClose }: Props) {
               className="w-full rounded-(--radius) border border-(--color-border) bg-white px-3 py-2 text-sm focus:border-(--color-primary) focus:outline-none"
             />
           </div>
+
+          <PhotoGallery entityType="marker" entityId={marker.id} title="Photos" />
 
           <div className="space-y-1 text-[11px] text-(--color-muted)">
             {linkedParcel && (

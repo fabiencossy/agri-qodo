@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import type { Intervention, InterventionCategory } from './carnet.types';
+import { PhotoGallery } from '../photos/PhotoGallery';
 import { CATEGORY_COLORS, CATEGORY_LABELS } from './carnet.helpers';
 import { InterventionTypeIcon } from './InterventionTypeIcon';
 import type { ParcelDetail } from '../parcellaire/parcellaire.mocks';
@@ -53,11 +54,16 @@ export function InterventionForm({
   onDelete,
 }: InterventionFormProps) {
   const isNew = !initial?.id;
+  // ID stable pour PhotoGallery — généré au mount si nouvelle intervention.
+  const [stableId] = useState<string>(
+    () => initial?.id ?? `INT-${initial?.parcelId ?? lockedParcelId ?? 'X'}-${Date.now()}`,
+  );
   const [draft, setDraft] = useState<Partial<Intervention>>({
     parcelId: lockedParcelId ?? parcels[0]?.id ?? '',
     date: TODAY,
     category: 'observation',
     ...initial,
+    id: initial?.id ?? stableId,
   });
   const [bbchHelpOpen, setBbchHelpOpen] = useState(false);
   const [productPickerOpen, setProductPickerOpen] = useState(false);
@@ -159,7 +165,9 @@ export function InterventionForm({
 
   const submit = () => {
     if (!draft.parcelId || !draft.date || !draft.category) return;
-    const baseId = draft.id ?? `INT-${draft.parcelId}-${draft.date}-${Date.now()}`;
+    // baseId : on garde stableId pour préserver le lien avec les photos uploadées
+    // pendant la création (l'utilisateur peut prendre des photos avant submit).
+    const baseId = draft.id ?? stableId;
     const intervention: Intervention = {
       id: baseId,
       parcelId: draft.parcelId,
@@ -713,6 +721,11 @@ export function InterventionForm({
               placeholder="Observations, contexte, suivi…"
               className={inputClass.replace('h-10', 'min-h-[72px] py-2')}
             />
+          </FormField>
+
+          {/* Photos terrain */}
+          <FormField label="Photos">
+            <PhotoGallery entityType="intervention" entityId={stableId} title="" />
           </FormField>
         </div>
         <footer className="flex flex-wrap items-center gap-2 border-t border-(--color-border) p-3">

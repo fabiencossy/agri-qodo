@@ -6,6 +6,14 @@ import { useFabActions, useHideFab } from '../../layouts/useFab';
 import { useStandardFabActions } from '../../layouts/useStandardFabActions';
 import { type ParcelDetail } from './parcellaire.mocks';
 import { useParcels } from './parcellaire.store';
+import {
+  USER_MARKER_KIND_COLORS,
+  USER_MARKER_KIND_LABELS,
+  useUserMarkers,
+  type UserMarker,
+} from './userMarkers.store';
+import { UserMarkerModal } from './UserMarkerModal';
+import { PhotoGallery } from '../photos/PhotoGallery';
 import { AssolementTimeline } from '../assolement/AssolementTimeline';
 import { AssolementSegmentModal } from '../assolement/AssolementSegmentModal';
 import { getActiveSegment, getSegmentsForParcelYear } from '../assolement/assolement.helpers';
@@ -108,6 +116,14 @@ export default function ParcelleDetailPage() {
   >(null);
   const [activeTab, setActiveTab] = useState<string>('overview');
   const [mapFullscreen, setMapFullscreen] = useState(false);
+  const [editingMarker, setEditingMarker] = useState<UserMarker | null>(null);
+
+  // Balises GPS rattachées à cette parcelle (observation / danger / note)
+  const allUserMarkers = useUserMarkers();
+  const parcelMarkers = useMemo(
+    () => allUserMarkers.filter((m) => m.parcelId === id),
+    [allUserMarkers, id],
+  );
   const [quickWorkOrder, setQuickWorkOrder] = useState<{
     clientId?: string;
     parcelId?: string;
@@ -361,6 +377,80 @@ export default function ParcelleDetailPage() {
           {/* Résumés cliquables — naviguent vers l'onglet correspondant */}
           {!isInvitee && <OverviewSummaries parcel={draft} onNavigate={setActiveTab} />}
 
+          {/* Photos de la parcelle */}
+          {!isInvitee && (
+            <section className="rounded-(--radius) border border-(--color-border) bg-(--color-surface) p-5 lg:col-span-3">
+              <PhotoGallery entityType="parcel" entityId={draft.id} title="Photos parcelle" />
+            </section>
+          )}
+
+          {/* Balises GPS rattachées à la parcelle (observation / danger / note) */}
+          {!isInvitee && parcelMarkers.length > 0 && (
+            <section className="rounded-(--radius) border border-(--color-border) bg-(--color-surface) p-5 lg:col-span-3">
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <h2 className="m-0 text-sm font-semibold tracking-wider text-(--color-muted) uppercase">
+                  Balises GPS — {parcelMarkers.length}
+                </h2>
+                <span className="text-[11px] text-(--color-muted)">
+                  Cliquer une balise pour modifier ou supprimer
+                </span>
+              </div>
+              <ul className="m-0 grid list-none gap-2 p-0 sm:grid-cols-2 lg:grid-cols-3">
+                {parcelMarkers.map((m) => (
+                  <li key={m.id}>
+                    <button
+                      type="button"
+                      onClick={() => setEditingMarker(m)}
+                      className="flex w-full items-start gap-3 rounded-(--radius) border border-(--color-border) bg-(--color-surface) px-3 py-2.5 text-left text-sm hover:bg-[#fbfbf9]"
+                    >
+                      <span
+                        className="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-(--radius-pill)"
+                        style={{
+                          background: `${USER_MARKER_KIND_COLORS[m.kind]}1a`,
+                          color: USER_MARKER_KIND_COLORS[m.kind],
+                        }}
+                      >
+                        <svg
+                          viewBox="0 0 24 24"
+                          width={14}
+                          height={14}
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth={1.75}
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <path d="M12 22s-7-7-7-12a7 7 0 0 1 14 0c0 5-7 12-7 12z" />
+                          <circle cx="12" cy="10" r="2.5" />
+                        </svg>
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-baseline gap-2">
+                          <span className="truncate font-medium text-(--color-text)">
+                            {m.label || USER_MARKER_KIND_LABELS[m.kind]}
+                          </span>
+                          {m.label && (
+                            <span className="shrink-0 text-[10px] tracking-wider text-(--color-muted) uppercase">
+                              {USER_MARKER_KIND_LABELS[m.kind]}
+                            </span>
+                          )}
+                        </div>
+                        {m.notes && (
+                          <p className="m-0 mt-0.5 line-clamp-2 text-[11px] text-(--color-muted)">
+                            {m.notes}
+                          </p>
+                        )}
+                        <p className="m-0 mt-1 font-mono text-[10px] text-(--color-muted)">
+                          {m.lat.toFixed(5)}, {m.lng.toFixed(5)}
+                        </p>
+                      </div>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
           {/* En mode invité, on remplace les cards agronomiques par un résumé
            * des travaux que J'AI effectués sur cette parcelle (cliquables). */}
           {isInvitee && (
@@ -551,6 +641,14 @@ export default function ParcelleDetailPage() {
 
       {fullWorkOrder && (
         <WorkOrderModal initial={fullWorkOrder} onClose={() => setFullWorkOrder(null)} />
+      )}
+
+      {editingMarker && (
+        <UserMarkerModal
+          key={editingMarker.id}
+          marker={editingMarker}
+          onClose={() => setEditingMarker(null)}
+        />
       )}
 
       {/* Sticky footer save — visible UNIQUEMENT sur l'onglet Aperçu (seul onglet avec

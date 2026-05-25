@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { addWorkOrder, updateWorkOrder, useClients } from './travaux.store';
+import { PhotoGallery } from '../photos/PhotoGallery';
 import { getWorkType } from './travaux.catalog';
 import {
   durationFromTimes,
@@ -937,6 +938,11 @@ export function WorkOrderModal({ initial, onClose }: WorkOrderModalProps) {
               className="w-full rounded-(--radius) border border-(--color-border) bg-(--color-surface) px-3 py-2 text-sm"
             />
           </Field>
+
+          {/* ─── Photos terrain ─── */}
+          <div className="rounded-(--radius) border border-(--color-border) bg-(--color-surface) p-3">
+            <PhotoGallery entityType="workOrder" entityId={draft.id} title="Photos terrain" />
+          </div>
         </div>
 
         <footer className="flex items-center justify-end gap-2 border-t border-(--color-border) p-3">
