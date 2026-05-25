@@ -16,7 +16,7 @@ import {
 } from './userMarkers.store';
 import { UserMarkerModal } from './UserMarkerModal';
 import type { ParcelDetail } from './parcellaire.mocks';
-import { addParcels, useParcels } from './parcellaire.store';
+import { addParcels, updateParcel, useParcels } from './parcellaire.store';
 import {
   estimateSurfaceHa,
   featuresToParcels,
@@ -108,6 +108,10 @@ export default function ParcellairePage() {
   const [activeTool, setActiveTool] = useState<MapTool>('select');
   const [searchState, setSearchState] = useState<SearchState>({ facets: [], groupBy: [] });
   const [selectedId, setSelectedId] = useState<string | undefined>(undefined);
+  // Multi-sélection sur carte (shift+clic). `selectedId` reste = dernière parcelle
+  // cliquée pour le panel latéral. `mapSelectedIds` = toutes les parcelles cochées
+  // pour group/export bulk depuis la carte.
+  const [mapSelectedIds, setMapSelectedIds] = useState<ReadonlyArray<string>>([]);
   const [quickWorkOrder, setQuickWorkOrder] = useState<{
     clientId?: string;
     parcelId?: string;
@@ -166,8 +170,16 @@ export default function ParcellairePage() {
     } else if (action === 'import-cadastre') {
       notify('Import cadastre cantonal : disponible Phase 3 (API GELAN VD).', 'info');
     } else if (action === 'group-select') {
-      setView('table');
-      notify('Cochez les parcelles à grouper dans le tableau.', 'info');
+      // Mode group-select : reste sur la carte si déjà dessus, sinon switch.
+      // Active l'outil sélection et instruit l'utilisateur.
+      if (view !== 'map' && view !== 'table') setView('map');
+      setActiveTool('select');
+      notify(
+        view === 'table'
+          ? 'Cochez les parcelles à grouper, puis cliquez "Grouper en îlot".'
+          : 'Maj+clic sur les parcelles à grouper, puis "Grouper" en haut de carte.',
+        'info',
+      );
     } else if (action === 'export') {
       setView('table');
       notify('Utilisez le bouton "Exporter" dans la barre d\'outils.', 'info');
@@ -460,7 +472,28 @@ export default function ParcellairePage() {
             parcels={filtered}
             markers={mapMarkers}
             selectedId={selectedId}
-            onSelectionChange={(ids) => setSelectedId(ids[0])}
+            selectedIds={mapSelectedIds.slice()}
+            onSelectionChange={(ids) => {
+              setMapSelectedIds(ids);
+              // Le panel latéral suit la dernière parcelle cliquée
+              setSelectedId(ids[ids.length - 1]);
+            }}
+            onCreateGroup={async (ids) => {
+              if (ids.length === 0) return;
+              const raw = prompt(
+                `Nom du groupe pour ${ids.length} parcelle(s) (vide = retirer du groupe) :`,
+              );
+              if (raw === null) return;
+              const groupId = raw.trim() || undefined;
+              await Promise.all(ids.map((pid) => updateParcel(pid, { groupId })));
+              notify(
+                groupId
+                  ? `${ids.length} parcelle(s) regroupées dans "${groupId}".`
+                  : `${ids.length} parcelle(s) retirées de leur groupe.`,
+                'success',
+              );
+              setMapSelectedIds([]);
+            }}
             activeTool={activeTool}
             onToolChange={setActiveTool}
             onDrawComplete={(e) => {
