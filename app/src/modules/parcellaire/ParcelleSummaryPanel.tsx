@@ -10,6 +10,13 @@ import type { AssolementSegment } from '../assolement/assolement.types';
 import { useIsCurrentFarmInvitee } from '../farms/farms.helpers';
 import { useWorkOrders, useClients } from '../travaux/travaux.store';
 import { getWorkType } from '../travaux/travaux.catalog';
+import {
+  USER_MARKER_KIND_COLORS,
+  USER_MARKER_KIND_LABELS,
+  useUserMarkers,
+  type UserMarker,
+} from './userMarkers.store';
+import { UserMarkerModal } from './UserMarkerModal';
 
 const TODAY = new Date().toISOString().slice(0, 10);
 
@@ -52,6 +59,14 @@ export function ParcelleSummaryPanel({
   const [editingSegment, setEditingSegment] = useState<
     AssolementSegment | { draft: true; parcelId: string; year: number } | null
   >(null);
+  const [editingMarker, setEditingMarker] = useState<UserMarker | null>(null);
+
+  // Balises GPS rattachées à cette parcelle
+  const allMarkers = useUserMarkers();
+  const markers = useMemo(
+    () => allMarkers.filter((m) => m.parcelId === parcel.id),
+    [allMarkers, parcel.id],
+  );
 
   // Mocks Phase 2.5 (interventions à brancher au Carnet réel — Phase 3)
   const interventions = mockInterventions(parcel.id);
@@ -221,6 +236,59 @@ export function ParcelleSummaryPanel({
         )}
       </Section>
 
+      {/* Balises GPS rattachées */}
+      {markers.length > 0 && (
+        <Section title={`Balises GPS — ${markers.length}`}>
+          <ul className="m-0 list-none space-y-1.5 p-0">
+            {markers.map((m) => (
+              <li key={m.id}>
+                <button
+                  type="button"
+                  onClick={() => setEditingMarker(m)}
+                  className="flex w-full items-start gap-2.5 rounded-(--radius-sm) border border-(--color-border) bg-(--color-surface) px-2.5 py-2 text-left hover:bg-[#fbfbf9]"
+                >
+                  <span
+                    aria-hidden="true"
+                    className="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-(--radius-pill)"
+                    style={{
+                      background: `${USER_MARKER_KIND_COLORS[m.kind]}1a`,
+                      color: USER_MARKER_KIND_COLORS[m.kind],
+                    }}
+                  >
+                    <svg
+                      viewBox="0 0 24 24"
+                      width={12}
+                      height={12}
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth={1.75}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M12 22s-7-7-7-12a7 7 0 0 1 14 0c0 5-7 12-7 12z" />
+                      <circle cx="12" cy="10" r="2.5" />
+                    </svg>
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="truncate text-sm font-medium">
+                        {m.label || USER_MARKER_KIND_LABELS[m.kind]}
+                      </span>
+                      <span className="shrink-0 text-[10px] tracking-wider text-(--color-muted) uppercase">
+                        {USER_MARKER_KIND_LABELS[m.kind]}
+                      </span>
+                    </div>
+                    {m.notes && (
+                      <p className="m-0 line-clamp-2 text-[11px] text-(--color-muted)">{m.notes}</p>
+                    )}
+                  </div>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </Section>
+      )}
+
       {/* Notes */}
       {parcel.notes && (
         <Section title="Notes">
@@ -233,6 +301,14 @@ export function ParcelleSummaryPanel({
       {/* Modal d'édition de segment — accessible depuis le panel sans quitter la carte. */}
       {editingSegment && (
         <AssolementSegmentModal target={editingSegment} onClose={() => setEditingSegment(null)} />
+      )}
+
+      {editingMarker && (
+        <UserMarkerModal
+          key={editingMarker.id}
+          marker={editingMarker}
+          onClose={() => setEditingMarker(null)}
+        />
       )}
     </DetailPanel>
   );
