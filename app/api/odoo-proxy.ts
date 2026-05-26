@@ -69,7 +69,12 @@ export default async function handler(req: Request): Promise<Response> {
     });
   }
 
+  // Limite de taille du body (audit R-003) — XML-RPC est compact, 64 Ko suffit
+  const MAX_BODY = 64 * 1024;
   const body = await req.text();
+  if (body.length > MAX_BODY) {
+    return new Response('Payload trop grand', { status: 413, headers: corsHeaders(req) });
+  }
   try {
     const upstream = await fetch(target.toString(), {
       method: 'POST',
@@ -93,14 +98,23 @@ export default async function handler(req: Request): Promise<Response> {
   }
 }
 
+// SÉCURITÉ (audit F-002, 2026-05-25) : whitelist stricte d'origines. Réflichir
+// l'Origin reçu = ouvrir CORS à tout site tiers (CSRF-like). Refusé.
+const ALLOWED_ORIGINS = new Set([
+  'https://agri.qodo.ch',
+  'https://newagri.qodo.ch',
+  'http://localhost:5173',
+  'http://localhost:4173', // preview Vite
+]);
+
 function corsHeaders(req: Request): Record<string, string> {
-  // L'origine attendue est agri.qodo.ch ; en dev localhost:5173. On reflète
-  // l'origine pour éviter d'avoir à gérer une whitelist côté navigateur.
-  const origin = req.headers.get('origin') ?? '*';
+  const origin = req.headers.get('origin') ?? '';
+  const allowed = ALLOWED_ORIGINS.has(origin) ? origin : 'https://agri.qodo.ch';
   return {
-    'Access-Control-Allow-Origin': origin,
+    'Access-Control-Allow-Origin': allowed,
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type',
     'Access-Control-Max-Age': '86400',
+    Vary: 'Origin',
   };
 }

@@ -95,16 +95,30 @@ const DEFAULTS: IntegrationsState = {
 
 const STORAGE_KEY = 'newagriqodo-integrations';
 
+// SÉCURITÉ (audit F-003, 2026-05-25) : la clé API Odoo donne accès complet à
+// l'ERP. Elle ne doit JAMAIS être persistée en localStorage en clair (lisible
+// par toute extension navigateur / script XSS futur). On la garde uniquement
+// en mémoire (session-only) ; l'utilisateur la ressaisit au démarrage tant que
+// la migration vers Edge Function + secret serveur n'est pas faite.
+function stripSecrets(s: IntegrationsState): IntegrationsState {
+  return {
+    ...s,
+    odoo: { ...s.odoo, apiKey: '' },
+  };
+}
+
 function load(): IntegrationsState {
   if (typeof window === 'undefined') return DEFAULTS;
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return DEFAULTS;
     const parsed = JSON.parse(raw) as Partial<IntegrationsState>;
-    return {
+    const loaded: IntegrationsState = {
       odoo: { ...DEFAULTS.odoo, ...parsed.odoo },
       meteo: { ...DEFAULTS.meteo, ...parsed.meteo },
     };
+    // Garde-fou : si une ancienne version a persisté la clé, on la purge.
+    return stripSecrets(loaded);
   } catch {
     return DEFAULTS;
   }
@@ -120,7 +134,8 @@ function emit(): void {
 function persist(): void {
   if (typeof window === 'undefined') return;
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    // On persiste TOUT sauf les secrets (audit F-003).
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(stripSecrets(state)));
   } catch {
     // ignore
   }
