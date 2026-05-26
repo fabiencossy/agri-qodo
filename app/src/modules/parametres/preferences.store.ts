@@ -20,7 +20,11 @@ export type UnitSystem = 'metric' | 'imperial';
  *
  * Le mode "invité" (lecture seule sur exploitations tierces + droit
  * cross-farm Travaux) est gratuit, indépendant du plan ci-dessus.
- * Phase 3 : Stripe + table `subscriptions` côté Supabase.
+ *
+ * SÉCURITÉ : cette valeur n'est PAS la source de vérité. Elle sert
+ * uniquement à hint l'UI (afficher tel ou tel CTA). L'enforcement réel
+ * du paywall doit être fait côté serveur (Codomaster + RLS Supabase).
+ * Voir audit F-001 (2026-05-25) : un client peut éditer localStorage.
  */
 export type SubscriptionPlan = 'solo' | 'multi';
 
@@ -47,7 +51,7 @@ const DEFAULTS: AppPreferences = {
   notifyOnBalanceOver: true,
   notifyOnWithholdingViolation: true,
   notifyOnLowDosage: false,
-  subscriptionPlan: 'multi',
+  subscriptionPlan: 'solo',
 };
 
 const STORAGE_KEY = 'newagriqodo-preferences';

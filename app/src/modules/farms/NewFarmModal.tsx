@@ -7,7 +7,7 @@ import {
   filterOwnedFarms,
 } from './farms.helpers';
 import { useCurrentUser } from '../users/permissions';
-import { usePreferences, updatePreferences } from '../parametres/preferences.store';
+import { usePreferences } from '../parametres/preferences.store';
 import { useClients } from '../travaux/travaux.store';
 import type { Farm } from './farms.types';
 
@@ -72,11 +72,11 @@ export function NewFarmModal({ onClose }: NewFarmModalProps) {
       managedByCurrentUser: isManaged || undefined,
       linkedClientId: isManaged ? linkedClientId : undefined,
     };
-    // Une exploitation 'managed' (client externe) ne compte pas dans le forfait
-    // perso → pas d'upsell à déclencher.
-    if (!isManaged && pricingState === 'upgrade-warning') {
-      updatePreferences({ subscriptionPlan: 'multi' });
-    }
+    // SÉCURITÉ (audit F-001, 2026-05-25) : ne JAMAIS muter subscriptionPlan
+    // côté client (falsifiable). Le passage Solo → Multi est déclenché par
+    // Codomaster côté serveur, via webhook après confirmation paiement /
+    // ajustement de l'abonnement Odoo. L'UI affiche l'avertissement mais ne
+    // bascule pas le plan elle-même.
     addFarmLocal(newFarm);
     onClose();
   };
